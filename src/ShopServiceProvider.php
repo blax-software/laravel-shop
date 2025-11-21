@@ -24,13 +24,8 @@ class ShopServiceProvider extends ServiceProvider
 
         // Publish migrations
         $this->publishes([
-            __DIR__ . '/../database/migrations' => database_path('migrations'),
+            __DIR__ . '/../database/migrations/create_blax_shop_tables.php.stub' => $this->getMigrationFileName('create_blax_shop_tables.php'),
         ], 'shop-migrations');
-
-        // Load migrations
-        if ($this->app->runningInConsole()) {
-            $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
-        }
 
         // Load routes if enabled (API only)
         if (config('shop.routes.enabled', true)) {
@@ -51,5 +46,20 @@ class ShopServiceProvider extends ServiceProvider
                 \Blax\Shop\Console\Commands\ShopStatsCommand::class,
             ]);
         }
+    }
+
+    /**
+     * Returns existing migration file if found, else uses the current timestamp.
+     */
+    protected function getMigrationFileName(string $migrationFileName): string
+    {
+        $timestamp = date('Y_m_d_His');
+
+        $filesystem = $this->app->make(\Illuminate\Filesystem\Filesystem::class);
+
+        return \Illuminate\Support\Collection::make([$this->app->databasePath() . DIRECTORY_SEPARATOR . 'migrations' . DIRECTORY_SEPARATOR])
+            ->flatMap(fn($path) => $filesystem->glob($path . '*_' . $migrationFileName))
+            ->push($this->app->databasePath() . "/migrations/{$timestamp}_{$migrationFileName}")
+            ->first();
     }
 }
