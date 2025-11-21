@@ -1,0 +1,299 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        // Products table
+        if (!Schema::hasTable(config('shop.tables.products', 'products'))) {
+            Schema::create(config('shop.tables.products', 'products'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->string('slug')->unique();
+                $table->string('sku')->nullable()->unique();
+                $table->string('type')->default('simple'); // simple, variable, grouped, external
+                $table->string('stripe_product_id')->nullable();
+                $table->decimal('price', 10, 2)->default(0);
+                $table->decimal('regular_price', 10, 2)->nullable();
+                $table->decimal('sale_price', 10, 2)->nullable();
+                $table->timestamp('sale_start')->nullable();
+                $table->timestamp('sale_end')->nullable();
+                $table->boolean('manage_stock')->default(false);
+                $table->integer('stock_quantity')->default(0);
+                $table->integer('low_stock_threshold')->nullable();
+                $table->boolean('in_stock')->default(true);
+                $table->string('stock_status')->default('instock'); // instock, outofstock, onbackorder
+                $table->decimal('weight', 10, 2)->nullable();
+                $table->decimal('length', 10, 2)->nullable();
+                $table->decimal('width', 10, 2)->nullable();
+                $table->decimal('height', 10, 2)->nullable();
+                $table->boolean('virtual')->default(false);
+                $table->boolean('downloadable')->default(false);
+                $table->uuid('parent_id')->nullable();
+                $table->boolean('featured')->default(false);
+                $table->boolean('visible')->default(true);
+                $table->string('status')->default('draft'); // draft, published, archived
+                $table->timestamp('published_at')->nullable();
+                $table->integer('sort_order')->default(0);
+                $table->json('meta')->default('{}');
+                $table->string('tax_class')->nullable();
+                $table->timestamps();
+                $table->softDeletes();
+
+                $table->index(['slug', 'status']);
+                $table->index(['featured', 'visible', 'status']);
+                $table->index('parent_id');
+                $table->foreign('parent_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+            });
+        } else {
+            // Add new fields to existing products table
+            Schema::table(config('shop.tables.products', 'products'), function (Blueprint $table) {
+                if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'low_stock_threshold')) {
+                    $table->integer('low_stock_threshold')->nullable()->after('stock_quantity');
+                }
+                if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'published_at')) {
+                    $table->timestamp('published_at')->nullable()->after('status');
+                }
+                if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'sort_order')) {
+                    $table->integer('sort_order')->default(0)->after('published_at');
+                }
+            });
+        }
+
+        // Product categories table
+        if (!Schema::hasTable(config('shop.tables.product_categories', 'product_categories'))) {
+            Schema::create(config('shop.tables.product_categories', 'product_categories'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->string('slug')->unique();
+                $table->uuid('parent_id')->nullable();
+                $table->integer('sort_order')->default(0);
+                $table->boolean('visible')->default(true);
+                $table->json('meta')->nullable();
+                $table->timestamps();
+                $table->softDeletes();
+
+                $table->index(['parent_id', 'visible']);
+                $table->foreign('parent_id')->references('id')->on(config('shop.tables.product_categories', 'product_categories'))->onDelete('cascade');
+            });
+        }
+
+        // Product category pivot table
+        if (!Schema::hasTable(config('shop.tables.product_category_product', 'product_category_product'))) {
+            Schema::create(config('shop.tables.product_category_product', 'product_category_product'), function (Blueprint $table) {
+                $table->uuid('product_id');
+                $table->uuid('product_category_id');
+                $table->integer('sort_order')->default(0);
+                $table->timestamps();
+
+                $table->primary(['product_id', 'product_category_id'], 'product_category_product_primary');
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+                $table->foreign('product_category_id')->references('id')->on(config('shop.tables.product_categories', 'product_categories'))->onDelete('cascade');
+            });
+        }
+
+        // Product prices table (multi-currency support)
+        if (!Schema::hasTable(config('shop.tables.product_prices', 'product_prices'))) {
+            Schema::create(config('shop.tables.product_prices', 'product_prices'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('product_id');
+                $table->string('currency', 3)->default('USD');
+                $table->decimal('price', 10, 2);
+                $table->string('stripe_price_id')->nullable();
+                $table->boolean('is_default')->default(false);
+                $table->timestamps();
+
+                $table->index(['product_id', 'currency']);
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+            });
+        }
+
+        // Product attributes table
+        if (!Schema::hasTable(config('shop.tables.product_attributes', 'product_attributes'))) {
+            Schema::create(config('shop.tables.product_attributes', 'product_attributes'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('product_id');
+                $table->string('key');
+                $table->text('value')->nullable();
+                $table->string('type')->default('text'); // text, select, color, image
+                $table->integer('sort_order')->default(0);
+                $table->json('meta')->nullable();
+                $table->timestamps();
+
+                $table->index(['product_id', 'key']);
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+            });
+        }
+
+        // Product stocks table (reservations)
+        if (!Schema::hasTable(config('shop.tables.product_stocks', 'product_stocks'))) {
+            Schema::create(config('shop.tables.product_stocks', 'product_stocks'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('product_id');
+                $table->integer('quantity');
+                $table->string('type')->default('reservation'); // reservation, adjustment, sale, return
+                $table->string('status')->default('pending'); // pending, completed, cancelled, expired
+                $table->string('reference_type')->nullable();
+                $table->string('reference_id')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->text('note')->nullable();
+                $table->timestamps();
+
+                $table->index(['product_id', 'status']);
+                $table->index(['reference_type', 'reference_id']);
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+            });
+        }
+
+        // Product stock logs table
+        if (!Schema::hasTable(config('shop.tables.product_stock_logs', 'product_stock_logs'))) {
+            Schema::create(config('shop.tables.product_stock_logs', 'product_stock_logs'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('product_id');
+                $table->integer('quantity_change');
+                $table->integer('quantity_after');
+                $table->string('type'); // increase, decrease, adjustment
+                $table->string('reference_type')->nullable();
+                $table->string('reference_id')->nullable();
+                $table->text('note')->nullable();
+                $table->timestamps();
+
+                $table->index(['product_id', 'created_at']);
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+            });
+        }
+
+        // Product relations table (related, upsell, cross-sell)
+        if (!Schema::hasTable(config('shop.tables.product_relations', 'product_relations'))) {
+            Schema::create(config('shop.tables.product_relations', 'product_relations'), function (Blueprint $table) {
+                $table->uuid('product_id');
+                $table->uuid('related_product_id');
+                $table->string('type')->default('related'); // related, upsell, cross-sell
+                $table->integer('sort_order')->default(0);
+                $table->timestamps();
+
+                $table->primary(['product_id', 'related_product_id', 'type'], 'product_relations_primary');
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+                $table->foreign('related_product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+                
+                $table->index(['product_id', 'type']);
+            });
+        }
+
+        // Product actions table
+        if (!Schema::hasTable(config('shop.tables.product_actions', 'product_actions'))) {
+            Schema::create(config('shop.tables.product_actions', 'product_actions'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('product_id');
+                $table->string('action_type');
+                $table->string('event')->default('purchased'); // purchased, refunded, etc.
+                $table->json('config')->nullable();
+                $table->boolean('active')->default(true);
+                $table->integer('sort_order')->default(0);
+                $table->timestamps();
+
+                $table->index(['product_id', 'event', 'active']);
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+            });
+        }
+
+        // Product purchases table
+        if (!Schema::hasTable(config('shop.tables.product_purchases', 'product_purchases'))) {
+            Schema::create(config('shop.tables.product_purchases', 'product_purchases'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('product_id');
+                $table->morphs('purchasable');
+                $table->string('status')->default('pending');
+                $table->integer('quantity')->default(1);
+                $table->json('meta')->nullable();
+                $table->timestamps();
+
+                $table->index(['product_id', 'status']);
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+            });
+        }
+
+        // Carts table
+        if (!Schema::hasTable(config('shop.tables.carts', 'carts'))) {
+            Schema::create(config('shop.tables.carts', 'carts'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->string('session_id')->nullable()->unique();
+                $table->nullableMorphs('customer');
+                $table->string('currency', 3)->default('USD');
+                $table->string('status')->default('active'); // active, abandoned, converted, expired
+                $table->timestamp('last_activity_at')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->timestamp('converted_at')->nullable();
+                $table->json('meta')->nullable();
+                $table->timestamps();
+                $table->softDeletes();
+
+                $table->index(['session_id', 'status']);
+                $table->index(['customer_type', 'customer_id', 'status']);
+            });
+        }
+
+        // Cart items table
+        if (!Schema::hasTable(config('shop.tables.cart_items', 'cart_items'))) {
+            Schema::create(config('shop.tables.cart_items', 'cart_items'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('cart_id');
+                $table->uuid('product_id');
+                $table->integer('quantity')->default(1);
+                $table->decimal('price', 10, 2);
+                $table->decimal('regular_price', 10, 2)->nullable();
+                $table->decimal('subtotal', 10, 2);
+                $table->json('attributes')->nullable();
+                $table->json('meta')->nullable();
+                $table->timestamps();
+
+                $table->index(['cart_id', 'product_id']);
+                $table->foreign('cart_id')->references('id')->on(config('shop.tables.carts', 'carts'))->onDelete('cascade');
+                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+            });
+        }
+
+        // Cart discounts table
+        if (!Schema::hasTable(config('shop.tables.cart_discounts', 'cart_discounts'))) {
+            Schema::create(config('shop.tables.cart_discounts', 'cart_discounts'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('cart_id');
+                $table->string('code')->nullable();
+                $table->string('type')->default('percentage'); // percentage, fixed, shipping
+                $table->decimal('amount', 10, 2);
+                $table->decimal('discount_amount', 10, 2);
+                $table->json('meta')->nullable();
+                $table->timestamps();
+
+                $table->index('cart_id');
+                $table->foreign('cart_id')->references('id')->on(config('shop.tables.carts', 'carts'))->onDelete('cascade');
+            });
+        }
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists(config('shop.tables.cart_discounts', 'cart_discounts'));
+        Schema::dropIfExists(config('shop.tables.cart_items', 'cart_items'));
+        Schema::dropIfExists(config('shop.tables.carts', 'carts'));
+        Schema::dropIfExists(config('shop.tables.product_purchases', 'product_purchases'));
+        Schema::dropIfExists(config('shop.tables.product_actions', 'product_actions'));
+        Schema::dropIfExists(config('shop.tables.product_category_product', 'product_category_product'));
+        Schema::dropIfExists(config('shop.tables.product_relations', 'product_relations'));
+        Schema::dropIfExists(config('shop.tables.product_stock_logs', 'product_stock_logs'));
+        Schema::dropIfExists(config('shop.tables.product_stocks', 'product_stocks'));
+        Schema::dropIfExists(config('shop.tables.product_attributes', 'product_attributes'));
+        Schema::dropIfExists(config('shop.tables.product_prices', 'product_prices'));
+        Schema::dropIfExists('product_category_product');
+        Schema::dropIfExists(config('shop.tables.product_categories', 'product_categories'));
+        Schema::dropIfExists(config('shop.tables.products', 'products'));
+    }
+};
