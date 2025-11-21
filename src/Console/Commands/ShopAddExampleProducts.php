@@ -126,6 +126,7 @@ class ShopAddExampleProducts extends Command
         $onSale = $this->faker->boolean(30); // 30% chance of being on sale
 
         $product = Product::create([
+            'name' => $productName,
             'slug' => $slug,
             'sku' => 'EX-' . strtoupper($this->faker->bothify('??-####')),
             'type' => $type,

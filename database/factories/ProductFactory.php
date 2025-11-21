@@ -15,6 +15,7 @@ class ProductFactory extends Factory
         $name = $this->faker->words(3, true);
 
         return [
+            'name' => ucfirst($name),
             'slug' => Str::slug($name),
             'sku' => strtoupper($this->faker->bothify('??-####')),
             'type' => 'simple',
