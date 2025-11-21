@@ -141,6 +141,31 @@ return [
 
 ## Commands
 
+### Add Example Products
+
+Create example products for testing and demonstration purposes:
+
+```bash
+# Create 2 products of each type (default)
+php artisan shop:add-example-products
+
+# Create 5 products of each type
+php artisan shop:add-example-products --count=5
+
+# Clean existing example products first
+php artisan shop:add-example-products --clean
+```
+
+This command creates:
+- ✅ All 4 product types (simple, variable, grouped, external)
+- ✅ Product categories
+- ✅ Product attributes (material, size, color, etc.)
+- ✅ Multiple pricing options (multi-currency, subscriptions)
+- ✅ Example product actions (email notifications, stats updates)
+- ✅ Variations for variable products
+- ✅ Child products for grouped products
+- ✅ Realistic data using Faker
+
 ### Reinstall Shop Tables
 
 ```bash

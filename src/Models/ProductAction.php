@@ -37,36 +37,6 @@ class ProductAction extends Model
         return $this->belongsTo(config('shop.models.product', Product::class));
     }
 
-    public static function getAvailableActions(): array
-    {
-        if (!config('shop.actions.auto_discover')) {
-            return [];
-        }
-
-        $path = config('shop.actions.path', app_path('Jobs/ProductAction'));
-        $namespace = config('shop.actions.namespace', 'App\\Jobs\\ProductAction');
-
-        if (!file_exists($path)) {
-            return [];
-        }
-
-        $actions = collect(glob($path . '/*.php'));
-
-        $actions = $actions->mapWithKeys(function ($filePath) use ($path, $namespace) {
-            $className = str_replace(['.php', $path . '/'], '', $filePath);
-            $class = $namespace . '\\' . $className;
-
-            if (!class_exists($class) || !method_exists($class, 'parameters')) {
-                return [];
-            }
-
-            $params = $class::parameters();
-            return [$className => $params];
-        });
-
-        return $actions->toArray();
-    }
-
     public static function callForProduct(
         Product $product,
         string $event,

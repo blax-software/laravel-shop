@@ -38,12 +38,11 @@ class ShopServiceProvider extends ServiceProvider
                 ShopReinstallCommand::class,
                 \Blax\Shop\Console\Commands\ReleaseExpiredStocks::class,
                 \Blax\Shop\Console\Commands\ShopListProductsCommand::class,
-                \Blax\Shop\Console\Commands\ShopListActionsCommand::class,
                 \Blax\Shop\Console\Commands\ShopToggleActionCommand::class,
                 \Blax\Shop\Console\Commands\ShopTestActionCommand::class,
                 \Blax\Shop\Console\Commands\ShopListPurchasesCommand::class,
-                \Blax\Shop\Console\Commands\ShopAvailableActionsCommand::class,
                 \Blax\Shop\Console\Commands\ShopStatsCommand::class,
+                \Blax\Shop\Console\Commands\ShopAddExampleProducts::class,
             ]);
         }
     }
