@@ -19,7 +19,10 @@ class Product extends Model implements Purchasable
     use HasFactory, HasUuids, HasMetaTranslation;
 
     protected $fillable = [
+        'name',
         'slug',
+        'short_description',
+        'description',
         'type',
         'stripe_product_id',
         'price',

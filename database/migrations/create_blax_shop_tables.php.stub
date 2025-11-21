@@ -15,8 +15,11 @@ return new class extends Migration
         if (!Schema::hasTable(config('shop.tables.products', 'products'))) {
             Schema::create(config('shop.tables.products', 'products'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
+                $table->string('name');
                 $table->string('slug')->unique();
                 $table->string('sku')->nullable()->unique();
+                $table->text('short_description')->nullable();
+                $table->longText('description')->nullable();
                 $table->string('type')->default('simple'); // simple, variable, grouped, external
                 $table->string('stripe_product_id')->nullable();
                 $table->decimal('price', 10, 2)->default(0);
@@ -54,6 +57,15 @@ return new class extends Migration
         } else {
             // Add new fields to existing products table
             Schema::table(config('shop.tables.products', 'products'), function (Blueprint $table) {
+                if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'name')) {
+                    $table->string('name')->after('id');
+                }
+                if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'short_description')) {
+                    $table->text('short_description')->nullable()->after('sku');
+                }
+                if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'description')) {
+                    $table->longText('description')->nullable()->after('short_description');
+                }
                 if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'low_stock_threshold')) {
                     $table->integer('low_stock_threshold')->nullable()->after('stock_quantity');
                 }
