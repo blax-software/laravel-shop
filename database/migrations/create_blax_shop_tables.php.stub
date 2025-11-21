@@ -82,7 +82,9 @@ return new class extends Migration
         if (!Schema::hasTable(config('shop.tables.product_categories', 'product_categories'))) {
             Schema::create(config('shop.tables.product_categories', 'product_categories'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
+                $table->string('name');
                 $table->string('slug')->unique();
+                $table->text('description')->nullable();
                 $table->uuid('parent_id')->nullable();
                 $table->integer('sort_order')->default(0);
                 $table->boolean('visible')->default(true);
@@ -91,6 +93,7 @@ return new class extends Migration
                 $table->softDeletes();
 
                 $table->index(['parent_id', 'visible']);
+                $table->index(['slug', 'visible']);
                 $table->foreign('parent_id')->references('id')->on(config('shop.tables.product_categories', 'product_categories'))->onDelete('cascade');
             });
         }
