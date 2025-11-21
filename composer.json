@@ -1,6 +1,6 @@
 {
     "name": "blax-software/laravel-shop",
-    "description": "A comprehensive e-commerce package for Laravel",
+    "description": "A comprehensive headless e-commerce package for Laravel",
     "type": "library",
     "license": "MIT",
     "autoload": {

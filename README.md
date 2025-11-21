@@ -1,6 +1,6 @@
 # Laravel Shop Package
 
-A comprehensive headless e-commerce package for Laravel with multi-currency support, stock management, Stripe integration, and product actions.
+A comprehensive headless e-commerce package for Laravel with stock management, Stripe integration, and product actions.
 
 ## Features
 
