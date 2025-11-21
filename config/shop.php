@@ -21,6 +21,7 @@ return [
         'product_category' => \Blax\Shop\Models\ProductCategory::class,
         'product_stock' => \Blax\Shop\Models\ProductStock::class,
         'product_attribute' => \Blax\Shop\Models\ProductAttribute::class,
+        'product_purchase' => \Blax\Shop\Models\ProductPurchase::class,
         'cart' => \Blax\Shop\Models\Cart::class,
         'cart_item' => \Blax\Shop\Models\CartItem::class,
     ],
