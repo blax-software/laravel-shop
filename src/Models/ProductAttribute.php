@@ -13,7 +13,7 @@ class ProductAttribute extends Model
 
     protected $fillable = [
         'product_id',
-        'name',
+        'key',
         'value',
         'sort_order',
         'meta',

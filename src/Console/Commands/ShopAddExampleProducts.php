@@ -268,7 +268,7 @@ class ShopAddExampleProducts extends Command
         foreach ($attributes as $index => $attr) {
             ProductAttribute::create([
                 'product_id' => $product->id,
-                'name' => $attr['name'],
+                'key' => $attr['name'],
                 'value' => $attr['value'],
                 'sort_order' => $index,
                 'meta' => json_encode((object)[]),
