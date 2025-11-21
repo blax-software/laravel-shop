@@ -41,7 +41,7 @@ return new class extends Migration
                 $table->string('status')->default('draft'); // draft, published, archived
                 $table->timestamp('published_at')->nullable();
                 $table->integer('sort_order')->default(0);
-                $table->json('meta')->default('{}');
+                $table->json('meta')->nullable();
                 $table->string('tax_class')->nullable();
                 $table->timestamps();
                 $table->softDeletes();
