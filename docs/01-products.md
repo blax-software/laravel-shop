@@ -30,7 +30,7 @@ $product = Product::create([
     'price' => 49.99,
     'regular_price' => 49.99,
     'status' => 'published',
-    'visible' => true,
+    'is_visible' => true,
     'featured' => false,
 ]);
 
@@ -49,7 +49,7 @@ $product = Product::create([
     'sku' => 'HEAD-PREM-001',
     'type' => 'simple',
     'status' => 'published',
-    'visible' => true,
+    'is_visible' => true,
     'featured' => true,
     'published_at' => now(),
     'sort_order' => 10,

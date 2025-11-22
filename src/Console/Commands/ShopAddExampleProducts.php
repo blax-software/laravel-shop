@@ -107,7 +107,7 @@ class ShopAddExampleProducts extends Command
                 [
                     'name' => $name,
                     'description' => $description,
-                    'visible' => true,
+                    'is_visible' => true,
                     'sort_order' => 0,
                     'meta' => json_encode((object)[]),
                 ]
@@ -131,7 +131,7 @@ class ShopAddExampleProducts extends Command
             'sku' => 'EX-' . strtoupper($this->faker->bothify('??-####')),
             'type' => $type,
             'status' => $this->faker->randomElement(['published', 'published', 'published', 'draft']), // mostly published
-            'visible' => true,
+            'is_visible' => true,
             'featured' => $this->faker->boolean(20), // 20% featured
             'price' => $onSale ? $regularPrice * 0.8 : $regularPrice,
             'regular_price' => $regularPrice,
@@ -353,12 +353,13 @@ class ShopAddExampleProducts extends Command
 
         foreach ($variations as $index => $variation) {
             $variationProduct = Product::create([
+                'name' => $product->name . ' - ' . $variation,
                 'slug' => $product->slug . '-' . \Illuminate\Support\Str::slug($variation),
                 'sku' => $product->sku . '-' . strtoupper(substr($variation, 0, 1)),
                 'type' => 'simple',
                 'parent_id' => $product->id,
                 'status' => 'published',
-                'visible' => false, // Variations are not directly visible
+                'is_visible' => false, // Variations are not directly visible
                 'price' => $product->price + ($index * 5), // Slight price increase per size
                 'regular_price' => $product->regular_price + ($index * 5),
                 'manage_stock' => true,
@@ -373,7 +374,7 @@ class ShopAddExampleProducts extends Command
 
             ProductAttribute::create([
                 'product_id' => $variationProduct->id,
-                'name' => 'Size',
+                'key' => 'Size',
                 'value' => $variation,
                 'sort_order' => 0,
                 'meta' => json_encode((object)[]),
@@ -387,12 +388,13 @@ class ShopAddExampleProducts extends Command
 
         for ($i = 0; $i < $groupSize; $i++) {
             $childProduct = Product::create([
+                'name' => $product->name . ' Item ' . ($i + 1),
                 'slug' => $product->slug . '-item-' . ($i + 1),
                 'sku' => $product->sku . '-' . ($i + 1),
                 'type' => 'simple',
                 'parent_id' => $product->id,
                 'status' => 'published',
-                'visible' => false,
+                'is_visible' => false,
                 'price' => $this->faker->randomFloat(2, 10, 100),
                 'manage_stock' => true,
                 'stock_quantity' => $this->faker->numberBetween(10, 50),

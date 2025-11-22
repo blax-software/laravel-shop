@@ -20,12 +20,12 @@ class ProductCategory extends Model
         'description',
         'parent_id',
         'sort_order',
-        'visible',
+        'is_visible',
         'meta',
     ];
 
     protected $casts = [
-        'visible' => 'boolean',
+        'is_visible' => 'boolean',
         'meta' => 'object',
     ];
 
@@ -82,7 +82,7 @@ class ProductCategory extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id')
-            ->where('visible', true)
+            ->where('is_visible', true)
             ->orderBy('sort_order');
     }
 
@@ -94,7 +94,7 @@ class ProductCategory extends Model
 
     public function scopeVisible($query)
     {
-        return $query->where('visible', true);
+        return $query->where('is_visible', true);
     }
 
     public function scopeRoots($query)
@@ -105,7 +105,7 @@ class ProductCategory extends Model
     // Backward compatibility accessor
     public function getIsVisibleAttribute(): bool
     {
-        return $this->attributes['visible'] ?? true;
+        return $this->attributes['is_visible'] ?? true;
     }
 
     public function getProductCountAttribute(): int

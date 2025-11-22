@@ -43,7 +43,7 @@ class Product extends Model implements Purchasable
         'downloadable',
         'parent_id',
         'featured',
-        'visible',
+        'is_visible',
         'status',
         'published_at',
         'meta',
@@ -62,7 +62,7 @@ class Product extends Model implements Purchasable
         'sale_end' => 'datetime',
         'published_at' => 'datetime',
         'featured' => 'boolean',
-        'visible' => 'boolean',
+        'is_visible' => 'boolean',
         'low_stock_threshold' => 'integer',
         'sort_order' => 'integer',
     ];
@@ -348,7 +348,7 @@ class Product extends Model implements Purchasable
 
     public function scopeVisible($query)
     {
-        return $query->where('visible', true)
+        return $query->where('is_visible', true)
             ->where('status', 'published')
             ->where(function ($q) {
                 $q->whereNull('published_at')
@@ -405,7 +405,7 @@ class Product extends Model implements Purchasable
 
     public function isVisible(): bool
     {
-        if (!$this->visible || $this->status !== 'published') {
+        if (!$this->is_visible || $this->status !== 'published') {
             return false;
         }
 

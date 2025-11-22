@@ -275,12 +275,12 @@ class ProductManagementTest extends TestCase
     public function it_can_scope_visible_products()
     {
         Product::factory()->create([
-            'visible' => true,
+            'is_visible' => true,
             'status' => 'published',
         ]);
 
         Product::factory()->create([
-            'visible' => false,
+            'is_visible' => false,
             'status' => 'published',
         ]);
 

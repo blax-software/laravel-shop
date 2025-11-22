@@ -92,11 +92,11 @@ class ProductCategoryTest extends TestCase
     public function it_can_check_visibility()
     {
         $visibleCategory = ProductCategory::factory()->create([
-            'visible' => true,
+            'is_visible' => true,
         ]);
 
         $hiddenCategory = ProductCategory::factory()->create([
-            'visible' => false,
+            'is_visible' => false,
         ]);
 
         $this->assertTrue($visibleCategory->is_visible);

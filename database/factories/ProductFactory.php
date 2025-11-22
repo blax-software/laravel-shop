@@ -20,7 +20,7 @@ class ProductFactory extends Factory
             'sku' => strtoupper($this->faker->bothify('??-####')),
             'type' => 'simple',
             'status' => 'published',
-            'visible' => true,
+            'is_visible' => true,
             'featured' => false,
             'price' => $this->faker->randomFloat(2, 10, 1000),
             'regular_price' => $this->faker->randomFloat(2, 10, 1000),
