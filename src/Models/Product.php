@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class Product extends Model implements Purchasable
 {
@@ -25,15 +26,11 @@ class Product extends Model implements Purchasable
         'description',
         'type',
         'stripe_product_id',
-        'price',
-        'regular_price',
-        'sale_price',
         'sale_start',
         'sale_end',
         'manage_stock',
         'stock_quantity',
         'low_stock_threshold',
-        'in_stock',
         'stock_status',
         'weight',
         'length',
@@ -298,7 +295,7 @@ class Product extends Model implements Purchasable
 
     protected function logStockChange(int $quantityChange, string $type): void
     {
-        \DB::table('product_stock_logs')->insert([
+        DB::table('product_stock_logs')->insert([
             'product_id' => $this->id,
             'quantity_change' => $quantityChange,
             'quantity_after' => $this->stock_quantity,

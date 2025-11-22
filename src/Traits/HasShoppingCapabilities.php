@@ -4,6 +4,7 @@ namespace Blax\Shop\Traits;
 
 use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Models\Product;
+use Blax\Shop\Models\ProductPrice;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;
 
@@ -41,12 +42,25 @@ trait HasShoppingCapabilities
      *
      * @param Product $product
      * @param int $quantity
-     * @param array $options Additional options (price_id, meta, etc.)
+     * 
      * @return ProductPurchase
      * @throws \Exception
      */
-    public function purchase(Product $product, int $quantity = 1, array $options = []): ProductPurchase
-    {
+    public function purchase(
+        ProductPrice|string $productPrice,
+        int $quantity = 1,
+    ): ProductPurchase {
+        if ($productPrice instanceof ProductPrice) {
+        } else {
+            $productPrice = ProductPrice::findOrFail($productPrice);
+        }
+
+        if (!$productPrice?->product?->id) {
+            throw new \Exception("Price does not belong to the specified product");
+        }
+
+        $product = $productPrice->product;
+
         // Validate stock availability
         if ($product->manage_stock) {
             $available = $product->getAvailableStock();
@@ -65,27 +79,21 @@ trait HasShoppingCapabilities
             throw new \Exception("Unable to decrease stock");
         }
 
-        // Determine price
-        $priceId = $options['price_id'] ?? null;
-        $price = $this->determinePurchasePrice($product, $priceId);
-
         // Create purchase record
         $purchase = $this->purchases()->create([
             'product_id' => $product->id,
             'quantity' => $quantity,
-            'status' => $options['status'] ?? 'completed',
+            'status' => 'unpaid',
             'meta' => array_merge([
-                'price_id' => $priceId,
-                'price' => $price,
-                'amount' => $price * $quantity,
-                'charge_id' => $options['charge_id'] ?? null,
-            ], $options['meta'] ?? []),
+                'price_id' => $productPrice->id,
+                'price' => $productPrice->price,
+                'amount' => $productPrice->price * $quantity,
+            ]),
         ]);
 
         // Trigger product actions
         $product->callActions('purchased', $purchase, [
             'purchaser' => $this,
-            ...$options,
         ]);
 
         return $purchase;

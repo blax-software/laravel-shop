@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Rapidez\Shop\Services;
+namespace Blax\Shop\Services;
 
 use Blax\Shop\Models\Product;
 use Illuminate\Support\Collection;

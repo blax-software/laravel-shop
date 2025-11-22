@@ -179,7 +179,7 @@ return new class extends Migration
         // Product stock logs table
         if (!Schema::hasTable(config('shop.tables.product_stock_logs', 'product_stock_logs'))) {
             Schema::create(config('shop.tables.product_stock_logs', 'product_stock_logs'), function (Blueprint $table) {
-                $table->uuid('id')->primary();
+                $table->id();
                 $table->uuid('product_id');
                 $table->integer('quantity_change');
                 $table->integer('quantity_after');
