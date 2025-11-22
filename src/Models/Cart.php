@@ -38,13 +38,6 @@ class Cart extends Model
         $this->table = config('shop.tables.carts', 'carts');
     }
 
-    protected static function boot()
-    {
-        parent::boot();
-
-        // No longer need to generate uuid - using id as primary key
-    }
-
     public function customer(): MorphTo
     {
         return $this->morphTo();
@@ -108,5 +101,12 @@ class Cart extends Model
         $userModel = config('auth.providers.users.model', \Workbench\App\Models\User::class);
         return $query->where('customer_id', $userOrId)
             ->where('customer_type', $userModel);
+    }
+
+    protected static function booted()
+    {
+        static::deleting(function ($cart) {
+            $cart->items()->delete();
+        });
     }
 }

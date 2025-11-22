@@ -15,13 +15,13 @@ class ProductAction extends Model
         'product_id',
         'event',
         'action_type',
-        'config',
+        'parameters',
         'active',
         'sort_order',
     ];
 
     protected $casts = [
-        'config' => 'array',
+        'parameters' => 'array',
         'active' => 'boolean',
         'sort_order' => 'integer',
     ];
@@ -73,7 +73,7 @@ class ProductAction extends Model
                     'product' => $product,
                     'productPurchase' => $productPurchase,
                     'event' => $event,
-                    ...($action->config ?? []),
+                    ...($action->parameters ?? []),
                     ...$additionalData,
                 ];
 
@@ -108,7 +108,7 @@ class ProductAction extends Model
             'product' => $product,
             'productPurchase' => $productPurchase,
             'event' => $this->event,
-            ...($this->config ?? []),
+            ...($this->parameters ?? []),
             ...$additionalData,
         ];
 

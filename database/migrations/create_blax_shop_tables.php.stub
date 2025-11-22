@@ -82,7 +82,7 @@ return new class extends Migration
         if (!Schema::hasTable(config('shop.tables.product_categories', 'product_categories'))) {
             Schema::create(config('shop.tables.product_categories', 'product_categories'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
-                $table->string('name');
+                $table->string('name')->nullable();
                 $table->string('slug')->unique();
                 $table->text('description')->nullable();
                 $table->uuid('parent_id')->nullable();
@@ -206,7 +206,7 @@ return new class extends Migration
                 $table->primary(['product_id', 'related_product_id', 'type'], 'product_relations_primary');
                 $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
                 $table->foreign('related_product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
-                
+
                 $table->index(['product_id', 'type']);
             });
         }
@@ -218,7 +218,7 @@ return new class extends Migration
                 $table->uuid('product_id');
                 $table->string('action_type');
                 $table->string('event')->default('purchased'); // purchased, refunded, etc.
-                $table->json('config')->nullable();
+                $table->json('parameters')->nullable();
                 $table->boolean('active')->default(true);
                 $table->integer('sort_order')->default(0);
                 $table->timestamps();
@@ -232,15 +232,17 @@ return new class extends Migration
         if (!Schema::hasTable(config('shop.tables.product_purchases', 'product_purchases'))) {
             Schema::create(config('shop.tables.product_purchases', 'product_purchases'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
-                $table->uuid('product_id');
-                $table->morphs('purchasable');
                 $table->string('status')->default('pending');
+                $table->foreignUuid('cart_id')->nullable();
+                $table->foreignUuid('price_id')->nullable();
+                $table->nullableUuidMorphs('purchasable');
+                $table->nullableUuidMorphs('purchaser');
                 $table->integer('quantity')->default(1);
+                $table->decimal('amount', 10, 8)->nullable();
+                $table->decimal('amount_paid', 10, 8)->default(0);
+                $table->string('charge_id')->nullable();
                 $table->json('meta')->nullable();
                 $table->timestamps();
-
-                $table->index(['product_id', 'status']);
-                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
             });
         }
 

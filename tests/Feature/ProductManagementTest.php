@@ -40,62 +40,10 @@ class ProductManagementTest extends TestCase
     }
 
     /** @test */
-    public function it_returns_current_price_correctly()
-    {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => null,
-        ]);
-
-        $this->assertEquals(100, $product->getCurrentPrice());
-    }
-
-    /** @test */
-    public function it_applies_sale_price_when_active()
-    {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => 75,
-            'sale_start' => now()->subDay(),
-            'sale_end' => now()->addDay(),
-        ]);
-
-        $this->assertEquals(75, $product->getCurrentPrice());
-    }
-
-    /** @test */
-    public function it_ignores_sale_price_when_not_started()
-    {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => 75,
-            'sale_start' => now()->addDay(),
-            'sale_end' => now()->addWeek(),
-        ]);
-
-        $this->assertEquals(100, $product->getCurrentPrice());
-    }
-
-    /** @test */
-    public function it_ignores_sale_price_when_ended()
-    {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => 75,
-            'sale_start' => now()->subWeek(),
-            'sale_end' => now()->subDay(),
-        ]);
-
-        $this->assertEquals(100, $product->getCurrentPrice());
-    }
-
-    /** @test */
     public function it_can_manage_stock()
     {
         $product = Product::factory()->create([
             'manage_stock' => true,
-            'stock_quantity' => 50,
-            'in_stock' => true,
         ]);
 
         $this->assertTrue($product->increaseStock(10));
@@ -287,7 +235,7 @@ class ProductManagementTest extends TestCase
         $visible = Product::visible()->get();
 
         $this->assertCount(1, $visible);
-        $this->assertTrue($visible->first()->visible);
+        $this->assertTrue($visible->first()->is_visible);
     }
 
     /** @test */

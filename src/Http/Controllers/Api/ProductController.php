@@ -48,7 +48,7 @@ class ProductController extends Controller
             ->published()
             ->visible()
             ->where('slug', $slug)
-            ->with(['categories', 'images', 'children', 'attributes'])
+            ->with(['categories', 'children', 'attributes'])
             ->firstOrFail();
 
         return response()->json([

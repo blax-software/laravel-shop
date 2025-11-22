@@ -6,7 +6,6 @@ return [
         'products' => 'products',
         'product_prices' => 'product_prices',
         'product_categories' => 'product_categories',
-        'product_images' => 'product_images',
         'product_attributes' => 'product_attributes',
         'product_purchases' => 'product_purchases',
         'product_stocks' => 'product_stocks',

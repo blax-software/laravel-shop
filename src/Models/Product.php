@@ -29,9 +29,7 @@ class Product extends Model implements Purchasable
         'sale_start',
         'sale_end',
         'manage_stock',
-        'stock_quantity',
         'low_stock_threshold',
-        'stock_status',
         'weight',
         'length',
         'width',
@@ -116,19 +114,14 @@ class Product extends Model implements Purchasable
             }
         });
 
-        static::created(function ($model) {
-            if (! $model->name) {
-                // Temporarily disabled to fix meta initialization issue
-                // TODO: Fix this properly by ensuring meta is always available
-                // $model->setLocalized('name', 'New Product "' . $model->slug . '"', null, true);
-                // $model->save();
-            }
-        });
-
         static::updated(function ($model) {
             if (config('shop.cache.enabled')) {
                 Cache::forget(config('shop.cache.prefix') . 'product:' . $model->id);
             }
+        });
+
+        static::deleted(function ($model) {
+            $model->actions()->delete();
         });
     }
 
@@ -180,15 +173,6 @@ class Product extends Model implements Purchasable
         return $query->where('status', 'published');
     }
 
-    public function scopeInStock($query)
-    {
-        return $query->where('in_stock', true)
-            ->where(function ($q) {
-                $q->where('manage_stock', false)
-                    ->orWhere('stock_quantity', '>', 0);
-            });
-    }
-
     public function scopeFeatured($query)
     {
         return $query->where('featured', true);
@@ -229,13 +213,6 @@ class Product extends Model implements Purchasable
             return true;
         }
 
-        if ($this->stock_quantity < $quantity && !config('shop.stock.allow_backorders')) {
-            return false;
-        }
-
-        $this->stock_quantity -= $quantity;
-        $this->in_stock = $this->stock_quantity > 0;
-
         if (config('shop.stock.log_changes', true)) {
             $this->logStockChange(-$quantity, 'decrease');
         }
@@ -251,12 +228,7 @@ class Product extends Model implements Purchasable
             return;
         }
 
-        $this->stock_quantity += $quantity;
-        $this->in_stock = true;
-
-        if (config('shop.stock.log_changes', true)) {
-            $this->logStockChange($quantity, 'increase');
-        }
+        $this->logStockChange($quantity, 'increase');
 
         $this->save();
     }

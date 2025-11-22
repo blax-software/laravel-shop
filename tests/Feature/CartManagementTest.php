@@ -332,7 +332,7 @@ class CartManagementTest extends TestCase
 
         $cartItemId = $cartItem->id;
 
-        $cart->delete();
+        $cart->forceDelete();
 
         $this->assertDatabaseMissing('cart_items', ['id' => $cartItemId]);
     }

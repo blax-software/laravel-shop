@@ -11,15 +11,21 @@ class ProductPurchase extends Model
 
     protected $fillable = [
         'status',
-        'purchasable_type',
-        'purchasable_id',
-        'product_id',
+        'cart_id',
+        'price_id',
+        'purchasable',
+        'purchaser',
         'quantity',
+        'amount',
+        'amount_paid',
+        'charge_id',
         'meta',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'amount' => 'integer',
+        'amount_paid' => 'integer',
         'meta' => 'object',
     ];
 
@@ -34,27 +40,22 @@ class ProductPurchase extends Model
         return $this->morphTo();
     }
 
-    // Backward compatibility - user accessor
+    public function purchaser()
+    {
+        return $this->morphTo();
+    }
+
+    public function product()
+    {
+        return $this->belongsTo(config('shop.models.product', Product::class));
+    }
+
     public function user()
     {
         if ($this->purchasable_type === config('auth.providers.users.model', \Workbench\App\Models\User::class)) {
             return $this->purchasable();
         }
         return null;
-    }
-
-    // Backward compatibility accessor
-    public function getUserIdAttribute()
-    {
-        if ($this->purchasable_type === config('auth.providers.users.model', \Workbench\App\Models\User::class)) {
-            return $this->purchasable_id;
-        }
-        return null;
-    }
-
-    public function product()
-    {
-        return $this->belongsTo(config('shop.models.product', Product::class));
     }
 
     public static function scopeFromCart($query, $cartId)

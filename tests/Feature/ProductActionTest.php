@@ -106,6 +106,8 @@ class ProductActionTest extends TestCase
             'active' => true,
         ]);
 
+        $action = $action->fresh();
+
         $this->assertEquals('welcome', $action->parameters['template']);
         $this->assertEquals(60, $action->parameters['delay']);
         $this->assertEquals('Welcome to our service', $action->parameters['subject']);
@@ -255,15 +257,22 @@ class ProductActionTest extends TestCase
             'product_id' => $product->id,
             'event' => 'purchased',
             'action_type' => 'App\\Actions\\TestAction',
-            'parameters' => ['key' => 'old_value'],
+            'parameters' => [
+                'key' => 'old_value'
+            ],
             'active' => true,
         ]);
 
         $action->update([
-            'parameters' => ['key' => 'new_value', 'another_key' => 'another_value'],
+            'parameters' => [
+                'key' => 'new_value',
+                'another_key' => 'another_value'
+            ],
         ]);
 
         $fresh = $action->fresh();
+
+        $this->assertNotEquals('old_value', $fresh->parameters['key']);
         $this->assertEquals('new_value', $fresh->parameters['key']);
         $this->assertEquals('another_value', $fresh->parameters['another_key']);
     }
