@@ -68,4 +68,25 @@ class ProductFactory extends Factory
     {
         return $this->state(['featured' => true]);
     }
+
+    public function withPrices(int $count = 1): static
+    {
+        return $this->afterCreating(function (Product $product) use ($count) {
+            $prices = \Blax\Shop\Models\ProductPrice::factory()
+                ->count($count)
+                ->create([
+                    'purchasable_type' => get_class($product),
+                    'purchasable_id' => $product->id,
+                    'unit_amount' => $this->faker->randomFloat(2, 10, 1000),
+                    'currency' => 'EUR',
+                ]);
+
+            // Set the first price as default
+            if ($prices->isNotEmpty()) {
+                $defaultPrice = $prices->first();
+                $defaultPrice->is_default = true;
+                $defaultPrice->save();
+            }
+        });
+    }
 }

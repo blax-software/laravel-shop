@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Models;
 
+use Blax\Shop\Contracts\Cartable;
 use Blax\Workkit\Traits\HasExpiration;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -108,5 +109,31 @@ class Cart extends Model
         static::deleting(function ($cart) {
             $cart->items()->delete();
         });
+    }
+
+    public function addToCart(
+        Model $cartable, 
+        $quantity = 1,
+        $parameters = []
+    ) : CartItem {
+
+        // $cartable must implement Cartable
+        if (! $cartable instanceof Cartable) {
+            throw new \Exception("Item must implement the Cartable interface.");
+        }
+
+        $cartItem = $this->items()->create([
+            'purchasable_id' => $cartable->getKey(),
+            'purchasable_type' => get_class($cartable),
+            'quantity' => $quantity,
+            'price' => ($cartable?->sale_unit_amount ?? $cartable?->unit_amount ?? 0),
+            'regular_price' => $cartable?->unit_amount,
+            'subtotal' => ($cartable?->sale_unit_amount ?? $cartable?->unit_amount ?? 0) * $quantity,
+            'parameters' => $parameters,
+        ]);
+
+        $cartItem = $cartItem->fresh();
+
+        return $cartItem;
     }
 }

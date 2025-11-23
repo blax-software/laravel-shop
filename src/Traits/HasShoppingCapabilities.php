@@ -2,31 +2,43 @@
 
 namespace Blax\Shop\Traits;
 
+use Blax\Shop\Exceptions\NotEnoughStockException;
+use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;
 
 trait HasShoppingCapabilities
 {
+    public function cart(): MorphMany
+    {
+        return $this->morphMany(
+            config('shop.models.cart', \Blax\Shop\Models\Cart::class),
+            'customer'
+        );
+    }
+
     /**
      * Get all purchases made by this entity
      */
     public function purchases(): MorphMany
     {
+        // This morph represents the purchaser (e.g. User), not the product.
         return $this->morphMany(
             config('shop.models.product_purchase', ProductPurchase::class),
-            'purchasable'
+            'purchaser'
         );
     }
 
     /**
      * Get cart items (purchases with status 'cart')
      */
-    public function cartItems(): MorphMany
+    public function cartItems(): HasMany
     {
-        return $this->purchases()->where('status', 'cart');
+        return $this->cart()->latest()->firstOrCreate()->items();
     }
 
     /**
@@ -50,16 +62,21 @@ trait HasShoppingCapabilities
         ProductPrice|string $productPrice,
         int $quantity = 1,
     ): ProductPurchase {
-        if ($productPrice instanceof ProductPrice) {
-        } else {
-            $productPrice = ProductPrice::findOrFail($productPrice);
-        }
 
-        if (!$productPrice?->product?->id) {
+        $productPrice = ($productPrice instanceof ProductPrice)
+            ? $productPrice
+            : ProductPrice::findOrFail($productPrice);
+
+        if (!$productPrice?->purchasable?->id) {
             throw new \Exception("Price does not belong to the specified product");
         }
 
-        $product = $productPrice->product;
+        $product = $productPrice->purchasable;
+        
+        // product must have interface Purchasable
+        if (!in_array('Blax\Shop\Contracts\Purchasable', class_implements($product))) {
+            throw new \Exception("The product is not purchasable");
+        }
 
         // Validate stock availability
         if ($product->manage_stock) {
@@ -81,7 +98,10 @@ trait HasShoppingCapabilities
 
         // Create purchase record
         $purchase = $this->purchases()->create([
-            'product_id' => $product->id,
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'purchaser_id' => $this->getKey(),
+            'purchaser_type' => get_class($this),
             'quantity' => $quantity,
             'status' => 'unpaid',
             'meta' => array_merge([
@@ -96,64 +116,48 @@ trait HasShoppingCapabilities
             'purchaser' => $this,
         ]);
 
+        $purchase->fresh();
+
+        if (!$purchase) {
+            throw new \Exception("Unable to create purchase record");
+        }
+
+        if (!$purchase->purchasable || $purchase->purchasable->id !== $product->id) {
+            throw new \Exception("Purchase record does not match the product");
+        }
+
         return $purchase;
     }
 
     /**
      * Add product to cart
      *
-     * @param Product $product
+     * @param Product|ProductPrice $price
      * @param int $quantity
      * @param array $options
-     * @return ProductPurchase
+     * @return CartItem
      * @throws \Exception
      */
-    public function addToCart(Product $product, int $quantity = 1, array $options = []): ProductPurchase
-    {
-        // Check if product already in cart
-        $existingItem = $this->cartItems()
-            ->where('product_id', $product->id)
-            ->first();
-
-        if ($existingItem) {
-            return $this->updateCartQuantity($existingItem, $existingItem->quantity + $quantity);
-        }
-
-        // Validate stock
-        if ($product->manage_stock && $product->getAvailableStock() < $quantity) {
-            throw new \Exception("Insufficient stock available");
-        }
-
-        $priceId = $options['price_id'] ?? null;
-        $price = $this->determinePurchasePrice($product, $priceId);
-
-        return $this->purchases()->create([
-            'product_id' => $product->id,
-            'quantity' => $quantity,
-            'status' => 'cart',
-            'meta' => array_merge([
-                'price_id' => $priceId,
-                'price' => $price,
-                'amount' => $price * $quantity,
-            ], $options['meta'] ?? []),
-        ]);
+    public function addToCart(Product|ProductPrice $price, int $quantity = 1, array $parameters = []): CartItem
+    {       
+        return $this->cart()->latest()->firstOrCreate()->addToCart(
+            $price,
+            $quantity,
+            $parameters
+        );
     }
 
     /**
      * Update cart item quantity
      *
-     * @param ProductPurchase $cartItem
+     * @param CartItem $cartItem
      * @param int $quantity
-     * @return ProductPurchase
+     * @return CartItem
      * @throws \Exception
      */
-    public function updateCartQuantity(ProductPurchase $cartItem, int $quantity): ProductPurchase
+    public function updateCartQuantity(CartItem $cartItem, int $quantity): CartItem
     {
-        if ($cartItem->status !== 'cart') {
-            throw new \Exception("Cannot update non-cart item");
-        }
-
-        $product = $cartItem->product;
+        $product = $cartItem->purchasable;
 
         // Validate stock
         if ($product->manage_stock && $product->getAvailableStock() < $quantity) {
@@ -161,15 +165,9 @@ trait HasShoppingCapabilities
         }
 
         $meta = (array) $cartItem->meta;
-        $priceId = $meta['price_id'] ?? null;
-        $price = $this->determinePurchasePrice($product, $priceId);
 
         $cartItem->update([
             'quantity' => $quantity,
-            'meta' => array_merge($meta, [
-                'price' => $price,
-                'amount' => $price * $quantity,
-            ]),
         ]);
 
         return $cartItem->fresh();
@@ -178,17 +176,13 @@ trait HasShoppingCapabilities
     /**
      * Remove item from cart
      *
-     * @param ProductPurchase $cartItem
+     * @param CartItem $cartItem
      * @return bool
      * @throws \Exception
      */
-    public function removeFromCart(ProductPurchase $cartItem): bool
+    public function removeFromCart(CartItem $cartItem): bool
     {
-        if ($cartItem->status !== 'cart') {
-            throw new \Exception("Cannot remove non-cart item");
-        }
-
-        return $cartItem->delete();
+        return $cartItem->forceDelete();
     }
 
     /**
@@ -237,56 +231,19 @@ trait HasShoppingCapabilities
      */
     public function checkout(?string $cartId = null, array $options = []): Collection
     {
-        $items = $this->cartItems()->with('product')->get();
+        $items = $this->cartItems()
+            ->with('purchasable')
+            ->get();
 
         if ($items->isEmpty()) {
             throw new \Exception("Cart is empty");
         }
 
-        // Validate stock for all items
-        foreach ($items as $item) {
-            $product = $item->product;
-            if ($product->manage_stock && $product->getAvailableStock() < $item->quantity) {
-                throw new \Exception("Insufficient stock for: {$product->getLocalized('name')}");
-            }
-        }
+        $purchases = collect();
 
-        // Process each item
-        $completedPurchases = collect();
-        foreach ($items as $item) {
-            $product = $item->product;
+        // 
 
-            // Decrease stock
-            if (!$product->decreaseStock($item->quantity)) {
-                // Rollback previous purchases
-                foreach ($completedPurchases as $purchase) {
-                    $purchase->product->increaseStock($purchase->quantity);
-                    $purchase->delete();
-                }
-                throw new \Exception("Unable to process checkout");
-            }
-
-            // Update status and store charge info in meta
-            $meta = array_merge((array) $item->meta, [
-                'charge_id' => $options['charge_id'] ?? null,
-                'completed_at' => now()->toISOString(),
-            ]);
-
-            $item->update([
-                'status' => 'completed',
-                'meta' => $meta,
-            ]);
-
-            // Trigger actions
-            $product->callActions('purchased', $item, [
-                'purchaser' => $this,
-                ...$options,
-            ]);
-
-            $completedPurchases->push($item);
-        }
-
-        return $completedPurchases;
+        return $purchases;
     }
 
     /**

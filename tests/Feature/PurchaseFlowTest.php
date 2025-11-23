@@ -2,9 +2,12 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPurchase;
+use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Models\Cart;
+use Blax\Shop\Models\CartItem;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
@@ -18,17 +21,23 @@ class PurchaseFlowTest extends TestCase
     {
         $user = User::factory()->create();
         $product = Product::factory()->create([
-            'price' => 99.99,
             'manage_stock' => false,
         ]);
 
-        $purchase = $user->purchase($product, quantity: 1);
+        $price = ProductPrice::create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'amount' => 4999, // in cents
+            'currency' => 'USD',
+        ]);
+        
+        $purchase = $user->purchase($price, quantity: 1);
 
         $this->assertInstanceOf(ProductPurchase::class, $purchase);
-        $this->assertEquals($product->id, $purchase->product_id);
-        $this->assertEquals($user->id, $purchase->user_id);
+        $this->assertEquals($product->id, $purchase->purchasable_id);
+        $this->assertEquals($user->id, $purchase->purchaser_id);
         $this->assertEquals(1, $purchase->quantity);
-        $this->assertEquals('completed', $purchase->status);
+        $this->assertEquals('unpaid', $purchase->status);
     }
 
     /** @test */
@@ -36,27 +45,36 @@ class PurchaseFlowTest extends TestCase
     {
         $user = User::factory()->create();
         $product = Product::factory()->create([
-            'price' => 49.99,
             'manage_stock' => false,
         ]);
 
-        $cartItem = $user->addToCart($product, quantity: 2);
+        $price = ProductPrice::create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'amount' => 2999, // in cents
+            'currency' => 'USD',
+            'is_default' => true,
+        ]);
 
-        $this->assertInstanceOf(ProductPurchase::class, $cartItem);
-        $this->assertEquals('cart', $cartItem->status);
+        $cartItem = $user->addToCart($price, quantity: 2);
+
+        $this->assertInstanceOf(CartItem::class, $cartItem);
         $this->assertEquals(2, $cartItem->quantity);
-        $this->assertEquals($product->id, $cartItem->product_id);
+        $this->assertEquals($price->id, $cartItem->purchasable_id);
     }
 
     /** @test */
     public function user_can_get_cart_items()
     {
         $user = User::factory()->create();
-        $product1 = Product::factory()->create(['price' => 20.00]);
-        $product2 = Product::factory()->create(['price' => 30.00]);
+        $product1 = Product::factory()->withPrices()->create();
+        $product2 = Product::factory()->withPrices(2)->create();
 
-        $user->addToCart($product1, quantity: 1);
-        $user->addToCart($product2, quantity: 2);
+        $this->assertCount(1, $product1->prices);
+        $this->assertCount(2, $product2->prices);
+
+        $user->addToCart($product1->prices()->first(), quantity: 1);
+        $user->addToCart($product2->prices()->first(), quantity: 2);
 
         $cartItems = $user->cartItems;
 
@@ -67,12 +85,9 @@ class PurchaseFlowTest extends TestCase
     public function user_can_update_cart_item_quantity()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->create([
-            'price' => 50.00,
-            'manage_stock' => false,
-        ]);
+        $product = Product::factory()->withPrices()->create();
 
-        $cartItem = $user->addToCart($product, quantity: 1);
+        $cartItem = $user->addToCart($product->prices()->first(), quantity: 1);
 
         $user->updateCartQuantity($cartItem, quantity: 5);
 
@@ -83,31 +98,31 @@ class PurchaseFlowTest extends TestCase
     public function user_can_remove_item_from_cart()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->create();
+        $product = Product::factory()->withPrices()->create();
 
-        $cartItem = $user->addToCart($product, quantity: 1);
-        $this->assertCount(1, $user->fresh()->cartItems);
+        $cartItem = $user->addToCart($product->prices()->first(), quantity: 1);
+
+        $this->assertCount(1, $user->cartItems);
 
         $user->removeFromCart($cartItem);
 
-        $this->assertCount(0, $user->fresh()->cartItems);
+        $this->assertCount(0, $user->refresh()->cartItems);
     }
 
     /** @test */
     public function user_can_checkout_cart()
     {
         $user = User::factory()->create();
-        $product1 = Product::factory()->create([
-            'price' => 25.00,
-            'manage_stock' => false,
-        ]);
-        $product2 = Product::factory()->create([
-            'price' => 35.00,
-            'manage_stock' => false,
-        ]);
+        $product1 = Product::factory()->withPrices()->create();
+        $product2 = Product::factory()->withPrices()->create();
 
         $user->addToCart($product1, quantity: 2);
         $user->addToCart($product2, quantity: 1);
+
+        $this->assertThrows(fn() => $user->checkout(), NotEnoughStockException::class);
+
+        $product1->update(['manage_stock' => false]);
+        $product2->increaseStock(5);
 
         $purchases = $user->checkout();
 

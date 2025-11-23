@@ -3,19 +3,22 @@
 namespace Blax\Shop\Models;
 
 use App\Services\StripeService;
+use Blax\Shop\Contracts\Cartable;
 use Blax\Workkit\Traits\HasMetaTranslation;
 use Blax\Shop\Events\ProductCreated;
 use Blax\Shop\Events\ProductUpdated;
 use Blax\Shop\Contracts\Purchasable;
+use Blax\Shop\Exceptions\NotEnoughStockException;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
-class Product extends Model implements Purchasable
+class Product extends Model implements Purchasable, Cartable
 {
     use HasFactory, HasUuids, HasMetaTranslation;
 
@@ -49,7 +52,6 @@ class Product extends Model implements Purchasable
 
     protected $casts = [
         'manage_stock' => 'boolean',
-        'in_stock' => 'boolean',
         'virtual' => 'boolean',
         'downloadable' => 'boolean',
         'meta' => 'object',
@@ -61,8 +63,6 @@ class Product extends Model implements Purchasable
         'low_stock_threshold' => 'integer',
         'sort_order' => 'integer',
     ];
-
-    // Remove - causes issues with casting
 
     protected $dispatchesEvents = [
         'created' => ProductCreated::class,
@@ -125,9 +125,12 @@ class Product extends Model implements Purchasable
         });
     }
 
-    public function prices(): HasMany
+    public function prices(): MorphMany
     {
-        return $this->hasMany(config('shop.models.product_price', ProductPrice::class));
+        return $this->morphMany(
+            config('shop.models.product_price', ProductPrice::class),
+            'purchasable'
+        );
     }
 
     public function parent()
@@ -163,9 +166,17 @@ class Product extends Model implements Purchasable
         return $this->hasMany(config('shop.models.product_action', ProductAction::class));
     }
 
-    public function activeStocks(): HasMany
+    public function getAvailableStocksAttribute(): int
     {
-        return $this->stocks()->pending();
+        return $this->stocks()->available()->sum('quantity') ?? 0;
+    }
+
+    public function purchases(): MorphMany
+    {
+        return $this->morphMany(
+            config('shop.models.product_purchase', ProductPurchase::class),
+            'purchasable'
+        );
     }
 
     public function scopePublished($query)
@@ -180,10 +191,6 @@ class Product extends Model implements Purchasable
 
     public function isOnSale(): bool
     {
-        if (!$this->sale_price) {
-            return false;
-        }
-
         $now = now();
 
         if ($this->sale_start && $now->lt($this->sale_start)) {
@@ -207,30 +214,55 @@ class Product extends Model implements Purchasable
         return $defaultPrice ? $defaultPrice->price : $this->regular_price;
     }
 
+    public function isInStock(): bool
+    {
+        if (!$this->manage_stock) {
+            return true;
+        }
+
+        return $this->getAvailableStock() > 0;
+    }
+
     public function decreaseStock(int $quantity = 1): bool
     {
         if (!$this->manage_stock) {
             return true;
         }
 
-        if (config('shop.stock.log_changes', true)) {
-            $this->logStockChange(-$quantity, 'decrease');
+        if ($this->AvailableStocks < $quantity) {
+            return throw new NotEnoughStockException("Not enough stock available for product ID {$this->id}");
         }
+
+        $this->stocks()->create([
+            'quantity' => -$quantity,
+            'type' => 'decrease',
+            'status' => 'completed',
+        ]);
+
+        $this->logStockChange(-$quantity, 'decrease');
 
         $this->save();
 
         return true;
     }
 
-    public function increaseStock(int $quantity = 1): void
+    public function increaseStock(int $quantity = 1): bool
     {
         if (!$this->manage_stock) {
-            return;
+            return false;
         }
+
+        $this->stocks()->create([
+            'quantity' => $quantity,
+            'type' => 'increase',
+            'status' => 'completed',
+        ]);
 
         $this->logStockChange($quantity, 'increase');
 
         $this->save();
+
+        return true;
     }
 
     public function reserveStock(
@@ -257,7 +289,7 @@ class Product extends Model implements Purchasable
             return PHP_INT_MAX;
         }
 
-        return max(0, $this->stock_quantity);
+        return max(0, $this->AvailableStocks);
     }
 
     public function getReservedStock(): int
@@ -313,6 +345,17 @@ class Product extends Model implements Purchasable
     public function crossSells(): BelongsToMany
     {
         return $this->relatedProducts()->wherePivot('type', 'cross-sell');
+    }
+
+    public function scopeInStock($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('manage_stock', false)
+                ->orWhere(function ($q2) {
+                    $q2->where('manage_stock', true)
+                        ->whereRaw("(SELECT SUM(quantity) FROM " . config('shop.tables.product_stocks', 'product_stocks') . " WHERE product_id = " . config('shop.tables.products', 'products') . ".id) > 0");
+                });
+        });
     }
 
     public function scopeVisible($query)
@@ -399,9 +442,6 @@ class Product extends Model implements Purchasable
             'regular_price' => $this->regular_price,
             'sale_price' => $this->sale_price,
             'is_on_sale' => $this->isOnSale(),
-            'in_stock' => $this->in_stock,
-            'stock_quantity' => $this->manage_stock ? $this->stock_quantity : null,
-            'stock_status' => $this->stock_status,
             'low_stock' => $this->isLowStock(),
             'featured' => $this->featured,
             'virtual' => $this->virtual,
@@ -455,5 +495,10 @@ class Product extends Model implements Purchasable
         }
 
         return parent::newInstance($attributes, $exists);
+    }
+
+    public function defaultPrice()
+    {
+        return $this->prices()->where('is_default', true);
     }
 }

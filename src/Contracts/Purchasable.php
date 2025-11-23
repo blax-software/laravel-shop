@@ -10,5 +10,7 @@ interface Purchasable
 
     public function decreaseStock(int $quantity = 1): bool;
 
-    public function increaseStock(int $quantity = 1): void;
+    public function increaseStock(int $quantity = 1): bool;
+
+    public function purchases();
 }

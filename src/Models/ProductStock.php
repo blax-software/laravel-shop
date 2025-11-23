@@ -3,6 +3,7 @@
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Models\Product;
+use Blax\Workkit\Traits\HasExpiration;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 
 class ProductStock extends Model
 {
-    use HasUuids;
+    use HasUuids, HasExpiration;
 
     protected $fillable = [
         'product_id',
@@ -68,16 +69,6 @@ class ProductStock extends Model
     public function scopeReleased($query)
     {
         return $query->where('status', 'completed');
-    }
-
-    public function scopeExpired($query)
-    {
-        return $query->where('status', 'expired')
-            ->orWhere(function ($q) {
-                $q->where('status', 'pending')
-                    ->whereNotNull('expires_at')
-                    ->where('expires_at', '<=', now());
-            });
     }
 
     public function scopeTemporary($query)
@@ -215,5 +206,10 @@ class ProductStock extends Model
         }
 
         return $count;
+    }
+
+    public static function scopeAvailable($query)
+    {
+        return $query->where('status', 'completed');
     }
 }

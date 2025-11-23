@@ -1,5 +1,5 @@
 {
-    "editor.formatOnSave": true,
+    "editor.formatOnSave": false,
     "[php]": {
         "editor.defaultFormatter": "bmewburn.vscode-intelephense-client"
     },

@@ -13,8 +13,10 @@ class ProductPurchase extends Model
         'status',
         'cart_id',
         'price_id',
-        'purchasable',
-        'purchaser',
+        'purchasable_id',
+        'purchasable_type',
+        'purchaser_id',
+        'purchaser_type',
         'quantity',
         'amount',
         'amount_paid',
@@ -37,12 +39,12 @@ class ProductPurchase extends Model
 
     public function purchasable()
     {
-        return $this->morphTo();
+        return $this->morphTo('purchasable');
     }
 
     public function purchaser()
     {
-        return $this->morphTo();
+        return $this->morphTo('purchaser');
     }
 
     public function product()

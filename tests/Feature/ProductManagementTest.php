@@ -46,11 +46,11 @@ class ProductManagementTest extends TestCase
             'manage_stock' => true,
         ]);
 
-        $this->assertTrue($product->increaseStock(10));
-        $this->assertEquals(60, $product->fresh()->stock_quantity);
+        $this->assertTrue($product->increaseStock(60));
+        $this->assertEquals(60, $product->AvailableStocks);
 
         $this->assertTrue($product->decreaseStock(5));
-        $this->assertEquals(55, $product->fresh()->stock_quantity);
+        $this->assertEquals(55, $product->AvailableStocks);
     }
 
     /** @test */
@@ -58,11 +58,11 @@ class ProductManagementTest extends TestCase
     {
         $product = Product::factory()->create([
             'manage_stock' => true,
-            'stock_quantity' => 5,
         ]);
 
-        $this->assertFalse($product->decreaseStock(10));
-        $this->assertEquals(5, $product->fresh()->stock_quantity);
+        $this->assertThrows(function () use ($product) {
+            $product->decreaseStock(10);
+        }, \Blax\Shop\Exceptions\NotEnoughStockException::class);
     }
 
     /** @test */
@@ -70,10 +70,11 @@ class ProductManagementTest extends TestCase
     {
         $product = Product::factory()->create([
             'manage_stock' => true,
-            'stock_quantity' => 100,
         ]);
 
-        $this->assertEquals(100, $product->getAvailableStock());
+        $this->assertEquals(0, $product->getAvailableStock());
+        $product->increaseStock(20);
+        $this->assertEquals(20, $product->getAvailableStock());
     }
 
     /** @test */
@@ -81,14 +82,11 @@ class ProductManagementTest extends TestCase
     {
         $productInStock = Product::factory()->create([
             'manage_stock' => true,
-            'stock_quantity' => 10,
-            'in_stock' => true,
         ]);
+        $productInStock->increaseStock(10);
 
         $productOutOfStock = Product::factory()->create([
             'manage_stock' => true,
-            'stock_quantity' => 0,
-            'in_stock' => false,
         ]);
 
         $this->assertTrue($productInStock->isInStock());
@@ -128,7 +126,8 @@ class ProductManagementTest extends TestCase
         $product = Product::factory()->create();
 
         ProductPrice::create([
-            'product_id' => $product->id,
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
             'type' => 'one-time',
             'price' => 9999,
             'currency' => 'USD',
@@ -136,7 +135,8 @@ class ProductManagementTest extends TestCase
         ]);
 
         ProductPrice::create([
-            'product_id' => $product->id,
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
             'type' => 'recurring',
             'price' => 1999,
             'currency' => 'USD',
@@ -144,7 +144,7 @@ class ProductManagementTest extends TestCase
             'active' => true,
         ]);
 
-        $this->assertCount(2, $product->fresh()->prices);
+        $this->assertCount(2, $product->prices);
     }
 
     /** @test */
@@ -202,21 +202,20 @@ class ProductManagementTest extends TestCase
     public function it_can_scope_in_stock_products()
     {
         Product::factory()->create([
-            'in_stock' => true,
-            'manage_stock' => true,
-            'stock_quantity' => 10,
+            'manage_stock' => false,
         ]);
 
-        Product::factory()->create([
-            'in_stock' => false,
+        $productInStock = Product::factory()->create([
             'manage_stock' => true,
-            'stock_quantity' => 0,
         ]);
+        $productInStock->increaseStock(10);
 
         $inStock = Product::inStock()->get();
 
-        $this->assertCount(1, $inStock);
-        $this->assertTrue($inStock->first()->in_stock);
+        $this->assertCount(2, $inStock);
+        $this->assertTrue((bool) ($inStock->first()->isInStock()));
+        $this->assertNotEquals($inStock->reverse()->first()->id, $inStock->first()->id);
+        $this->assertTrue((bool) ($inStock->reverse()->first()->isInStock()));
     }
 
     /** @test */

@@ -116,13 +116,13 @@ return new class extends Migration
         if (!Schema::hasTable(config('shop.tables.product_prices', 'product_prices'))) {
             Schema::create(config('shop.tables.product_prices', 'product_prices'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
-                $table->uuid('product_id');
+                $table->uuidMorphs('purchasable');
                 $table->string('stripe_price_id')->nullable();
                 $table->string('name')->nullable();
                 $table->string('type')->default('one_time'); // one_time, recurring
-                $table->string('currency', 3)->default('USD');
-                $table->integer('price')->default(0); // Store as smallest currency unit (cents)
-                $table->integer('sale_price')->nullable();
+                $table->string('currency', 3)->default('EUR');
+                $table->integer('unit_amount')->default(0); // Store as smallest currency unit (cents)
+                $table->integer('sale_unit_amount')->nullable();
                 $table->boolean('is_default')->default(false);
                 $table->boolean('active')->default(true);
                 $table->string('billing_scheme')->nullable(); // per_unit, tiered
@@ -132,10 +132,7 @@ return new class extends Migration
                 $table->json('meta')->nullable();
                 $table->timestamps();
 
-                $table->index(['product_id', 'currency']);
-                $table->index(['product_id', 'is_default']);
-                $table->index(['active', 'type']);
-                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+                $table->index('currency');
             });
         }
 
@@ -271,18 +268,17 @@ return new class extends Migration
             Schema::create(config('shop.tables.cart_items', 'cart_items'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
                 $table->uuid('cart_id');
-                $table->uuid('product_id');
+                $table->uuidMorphs('purchasable');
                 $table->integer('quantity')->default(1);
-                $table->decimal('price', 10, 2);
+                $table->decimal('price', 10, 2)->default(0);
                 $table->decimal('regular_price', 10, 2)->nullable();
                 $table->decimal('subtotal', 10, 2);
-                $table->json('attributes')->nullable();
+                $table->json('parameters')->nullable();
                 $table->json('meta')->nullable();
                 $table->timestamps();
 
                 $table->index(['cart_id', 'product_id']);
                 $table->foreign('cart_id')->references('id')->on(config('shop.tables.carts', 'carts'))->onDelete('cascade');
-                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
             });
         }
 

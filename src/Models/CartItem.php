@@ -2,22 +2,24 @@
 
 namespace Blax\Shop\Models;
 
+use Blax\Workkit\Traits\HasMeta;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CartItem extends Model
 {
-    use HasUuids;
+    use HasUuids, HasMeta;
 
     protected $fillable = [
         'cart_id',
-        'product_id',
+        'purchasable_id',
+        'purchasable_type',
         'quantity',
         'price',
         'regular_price',
         'subtotal',
-        'attributes',
+        'parameters',
         'meta',
     ];
 
@@ -26,7 +28,7 @@ class CartItem extends Model
         'price' => 'decimal:2',
         'regular_price' => 'decimal:2',
         'subtotal' => 'decimal:2',
-        'attributes' => 'array',
+        'parameters' => 'array',
         'meta' => 'array',
     ];
 
@@ -59,9 +61,18 @@ class CartItem extends Model
         return $this->belongsTo(config('shop.models.cart'), 'cart_id');
     }
 
-    public function product(): BelongsTo
+    public function purchasable()
     {
-        return $this->belongsTo(config('shop.models.product'), 'product_id');
+        return $this->morphTo('purchasable');
+    }
+
+    public function product(): BelongsTo|null
+    {
+        if ($this->purchasable_type === config('shop.models.product', Product::class)) {
+            return $this->belongsTo(config('shop.models.product'), 'purchasable_id');
+        }
+
+        return null;
     }
 
     public function getSubtotal(): float
