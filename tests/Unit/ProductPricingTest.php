@@ -13,23 +13,25 @@ class ProductPricingTest extends TestCase
     /** @test */
     public function it_returns_regular_price_when_not_on_sale()
     {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => null,
-        ]);
+        $product = Product::factory()->withPrices(2, 100)->create();
 
+        $this->assertEquals(2, $product->prices()->count());
+        $this->assertFalse($product->isOnSale());
+        $this->assertNotNull($product->defaultPrice()->first());
         $this->assertEquals(100, $product->getCurrentPrice());
     }
 
     /** @test */
     public function it_returns_sale_price_when_on_sale()
     {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => 80,
-            'sale_start' => now()->subDay(),
-            'sale_end' => now()->addDay(),
-        ]);
+        $product = Product::factory()
+            ->withPrices(2, 100)
+            ->onSale(
+                sale_price: 80,
+                sale_start: now()->subDay(),
+                sale_end: now()->addDay(),
+            )
+            ->create();
 
         $this->assertEquals(80, $product->getCurrentPrice());
     }

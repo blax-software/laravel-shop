@@ -31,18 +31,6 @@ class ProductFactory extends Factory
         ];
     }
 
-    public function onSale(): static
-    {
-        return $this->state(function (array $attributes) {
-            $regularPrice = $attributes['regular_price'];
-            return [
-                'sale_price' => $regularPrice * 0.8,
-                'sale_start' => now()->subDay(),
-                'sale_end' => now()->addWeek(),
-            ];
-        });
-    }
-
     public function outOfStock(): static
     {
         return $this->state([

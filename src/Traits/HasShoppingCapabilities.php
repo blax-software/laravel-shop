@@ -205,7 +205,8 @@ trait HasShoppingCapabilities
     public function getCartTotal(?string $cartId = null): float
     {
         return $this->cartItems()->get()->sum(function ($item) {
-            return $item->purchasable->getCurrentPrice() * $item->quantity;
+            dump('getCurrentPrice',get_class($item->purchasable),$item->purchasable->getCurrentPrice());
+            return ($item->purchasable->getCurrentPrice() ?? 0) * $item->quantity;
         });
     }
 

@@ -138,6 +138,9 @@ class PurchaseFlowTest extends TestCase
         $product1 = Product::factory()->withPrices(unit_amount:40)->create();
         $product2 = Product::factory()->withPrices(unit_amount:60)->create();
 
+        $this->assertNotNull($product1->getCurrentPrice());
+        $this->assertNotNull($product2->getCurrentPrice());
+
         $user->addToCart($product1, quantity: 2);
         $user->addToCart($product2, quantity: 1);
 

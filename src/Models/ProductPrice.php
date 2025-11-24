@@ -50,4 +50,13 @@ class ProductPrice extends Model implements Cartable
     {
         return $query->where('active', true);
     }
+
+    public function getCurrentPrice(): float
+    {
+        if ($this->sale_unit_amount && $this->sale_unit_amount < $this->unit_amount) {
+            return $this->sale_unit_amount;
+        }
+
+        return $this->unit_amount;
+    }
 }

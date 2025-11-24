@@ -191,9 +191,13 @@ class Product extends Model implements Purchasable, Cartable
 
     public function isOnSale(): bool
     {
+        if (!$this->sale_start) {
+            return false;
+        }
+
         $now = now();
 
-        if ($this->sale_start && $now->lt($this->sale_start)) {
+        if ($now->lt($this->sale_start)) {
             return false;
         }
 
@@ -210,8 +214,7 @@ class Product extends Model implements Purchasable, Cartable
             return $this->sale_price;
         }
 
-        $defaultPrice = $this->defaultPrice()->first();
-        return $defaultPrice ? $defaultPrice->price : $this->regular_price;
+        return $this->defaultPrice()->first()?->getCurrentPrice();
     }
 
     public function isInStock(): bool
