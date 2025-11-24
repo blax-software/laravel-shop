@@ -501,4 +501,9 @@ class Product extends Model implements Purchasable, Cartable
     {
         return $this->prices()->where('is_default', true);
     }
+
+    public function getPriceAttribute(): ?float
+    {
+        return $this->getCurrentPrice();
+    }
 }

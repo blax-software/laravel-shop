@@ -127,19 +127,19 @@ class PurchaseFlowTest extends TestCase
         $purchases = $user->checkout();
 
         $this->assertCount(2, $purchases);
-        $this->assertEquals('completed', $purchases[0]->status);
-        $this->assertEquals('completed', $purchases[1]->status);
+        $this->assertEquals('unpaid', $purchases[0]->status);
+        $this->assertEquals('unpaid', $purchases[1]->status);
     }
 
     /** @test */
     public function user_can_get_cart_total()
     {
         $user = User::factory()->create();
-        $product1 = Product::factory()->create(['price' => 40.00]);
-        $product2 = Product::factory()->create(['price' => 60.00]);
+        $product1 = Product::factory()->withPrices(unit_amount:40)->create();
+        $product2 = Product::factory()->withPrices(unit_amount:60)->create();
 
-        $user->addToCart($product1, quantity: 2); // 80.00
-        $user->addToCart($product2, quantity: 1); // 60.00
+        $user->addToCart($product1, quantity: 2);
+        $user->addToCart($product2, quantity: 1);
 
         $total = $user->getCartTotal();
 

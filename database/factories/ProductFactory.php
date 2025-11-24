@@ -22,8 +22,6 @@ class ProductFactory extends Factory
             'status' => 'published',
             'is_visible' => true,
             'featured' => false,
-            'price' => $this->faker->randomFloat(2, 10, 1000),
-            'regular_price' => $this->faker->randomFloat(2, 10, 1000),
             'manage_stock' => true,
             'stock_quantity' => $this->faker->numberBetween(0, 100),
             'in_stock' => true,
@@ -69,15 +67,15 @@ class ProductFactory extends Factory
         return $this->state(['featured' => true]);
     }
 
-    public function withPrices(int $count = 1): static
+    public function withPrices(int $count = 1, null|float $unit_amount = null): static
     {
-        return $this->afterCreating(function (Product $product) use ($count) {
+        return $this->afterCreating(function (Product $product) use ($count, $unit_amount) {
             $prices = \Blax\Shop\Models\ProductPrice::factory()
                 ->count($count)
                 ->create([
                     'purchasable_type' => get_class($product),
                     'purchasable_id' => $product->id,
-                    'unit_amount' => $this->faker->randomFloat(2, 10, 1000),
+                    'unit_amount' => $unit_amount ?? $this->faker->randomFloat(2, 10, 1000),
                     'currency' => 'EUR',
                 ]);
 

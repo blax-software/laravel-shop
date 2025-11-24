@@ -16,18 +16,20 @@ class ProductManagementTest extends TestCase
     /** @test */
     public function it_can_create_a_product()
     {
-        $product = Product::factory()->create([
-            'slug' => 'test-product',
-            'type' => 'simple',
-            'price' => 99.99,
-            'regular_price' => 99.99,
-        ]);
+        $product = Product::factory()
+            ->withPrices(1, 99.99)
+            ->create([
+                'slug' => 'test-product',
+                'type' => 'simple',
+            ]);
 
         $this->assertDatabaseHas('products', [
             'id' => $product->id,
             'slug' => 'test-product',
-            'price' => 99.99,
         ]);
+
+        $this->assertCount(1, $product->prices);
+        $this->assertEquals(99.99, $product->prices->first()->unit_amount);
     }
 
     /** @test */

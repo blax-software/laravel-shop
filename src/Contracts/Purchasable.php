@@ -5,6 +5,8 @@ namespace Blax\Shop\Contracts;
 interface Purchasable
 {
     public function getCurrentPrice(): ?float;
+    
+    public function getPriceAttribute(): ?float;
 
     public function isOnSale(): bool;
 
@@ -13,4 +15,5 @@ interface Purchasable
     public function increaseStock(int $quantity = 1): bool;
 
     public function purchases();
+
 }

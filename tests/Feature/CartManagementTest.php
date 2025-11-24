@@ -70,7 +70,7 @@ class CartManagementTest extends TestCase
     public function it_can_update_cart_item_quantity()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create(['price' => 50.00]);
+        $product = Product::factory()->create();
         $price = ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
             'purchasable_type' => get_class($product),
@@ -238,7 +238,7 @@ class CartManagementTest extends TestCase
     public function cart_items_have_correct_relationships()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create(['price' => 45.00]);
+        $product = Product::factory()->create();
 
         $productPrice = ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
@@ -256,7 +256,7 @@ class CartManagementTest extends TestCase
     public function it_calculates_cart_item_subtotal()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create(['price' => 25.00]);
+        $product = Product::factory()->create();
 
         $productPrice = ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
@@ -298,7 +298,7 @@ class CartManagementTest extends TestCase
     public function it_can_have_multiple_items_of_same_product_with_different_attributes()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create(['price' => 30.00]);
+        $product = Product::factory()->create();
 
         $productPrice = ProductPrice::factory()->create([
             'purchasable_id' => $product->id,

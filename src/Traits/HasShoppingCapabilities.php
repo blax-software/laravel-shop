@@ -82,7 +82,7 @@ trait HasShoppingCapabilities
         if ($product->manage_stock) {
             $available = $product->getAvailableStock();
             if ($available < $quantity) {
-                throw new \Exception("Insufficient stock. Available: {$available}, Requested: {$quantity}");
+                throw new NotEnoughStockException("Insufficient stock. Available: {$available}, Requested: {$quantity}");
             }
         }
 
@@ -205,8 +205,7 @@ trait HasShoppingCapabilities
     public function getCartTotal(?string $cartId = null): float
     {
         return $this->cartItems()->get()->sum(function ($item) {
-            $meta = (array) $item->meta;
-            return $meta['amount'] ?? 0;
+            return $item->purchasable->getCurrentPrice() * $item->quantity;
         });
     }
 
@@ -241,7 +240,21 @@ trait HasShoppingCapabilities
 
         $purchases = collect();
 
-        // 
+        // Create ProductPurchase for each cart item
+        foreach ($items as $item) {
+            $product = $item->purchasable;
+            $quantity = $item->quantity;
+            
+            $purchase = $this->purchase(
+                $product->prices()->first(),
+                $quantity
+            );
+
+            $purchases->push($purchase);
+
+            // Remove item from cart
+            $item->delete();
+        }
 
         return $purchases;
     }
