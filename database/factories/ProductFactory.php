@@ -75,4 +75,11 @@ class ProductFactory extends Factory
             }
         });
     }
+
+    public function withStocks(int $quantity = 10) : static
+    {
+        return $this->afterCreating(function (Product $product) use ($quantity) {
+            $product->increaseStock($quantity);
+        });
+    }
 }

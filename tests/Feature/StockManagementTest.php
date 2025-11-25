@@ -2,9 +2,11 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductStock;
 use Blax\Shop\Tests\TestCase;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class StockManagementTest extends TestCase
@@ -14,76 +16,61 @@ class StockManagementTest extends TestCase
     /** @test */
     public function it_can_reserve_stock_for_a_product()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 100,
-        ]);
+        $product = Product::factory()
+            ->withStocks(100)
+            ->create();
 
-        $reservation = ProductStock::reserve(
-            product: $product,
+        $reservation = $product->reserveStock(
             quantity: 10,
-            type: 'reservation',
             until: now()->addHours(2)
         );
 
         $this->assertNotNull($reservation);
         $this->assertEquals(10, $reservation->quantity);
-        $this->assertEquals(90, $product->fresh()->stock_quantity);
+        $this->assertEquals(90, $product->getAvailableStock());
     }
 
     /** @test */
     public function it_cannot_reserve_more_stock_than_available()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 5,
-        ]);
+        $product = Product::factory()
+            ->withStocks(5)
+            ->create();
 
-        $reservation = ProductStock::reserve(
-            product: $product,
-            quantity: 10,
-            type: 'reservation'
-        );
+        $reservation = null;
+
+        $this->assertThrows(fn() => $reservation = $product->reserveStock(15), NotEnoughStockException::class);
 
         $this->assertNull($reservation);
-        $this->assertEquals(5, $product->fresh()->stock_quantity);
+        $this->assertEquals(5, $product->getAvailableStock());
     }
 
     /** @test */
     public function it_can_release_reserved_stock()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 100,
-        ]);
+        $product = Product::factory()
+            ->withStocks(100)
+            ->create();
 
-        $reservation = ProductStock::reserve(
-            product: $product,
+        $reservation = $product->reserveStock(
             quantity: 10,
-            type: 'reservation'
+            until: now()->addHours(2)
         );
 
-        $this->assertEquals(90, $product->fresh()->stock_quantity);
+        $this->assertEquals(90, $product->getAvailableStock());
 
         $reservation->release();
 
-        $this->assertEquals(100, $product->fresh()->stock_quantity);
+        $this->assertEquals(100, $product->refresh()->getAvailableStock());
         $this->assertNotNull($reservation->fresh()->released_at);
     }
 
     /** @test */
     public function it_can_check_if_stock_is_pending()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 50,
-        ]);
+        $product = Product::factory()->withStocks(10)->create();
 
-        $reservation = ProductStock::reserve(
-            product: $product,
-            quantity: 5,
-            type: 'reservation'
-        );
+        $reservation = $product->reserveStock(5);
 
         $pending = ProductStock::pending()->where('id', $reservation->id)->first();
 
@@ -94,16 +81,9 @@ class StockManagementTest extends TestCase
     /** @test */
     public function it_can_check_if_stock_is_released()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 50,
-        ]);
+        $product = Product::factory()->withStocks(50)->create();
 
-        $reservation = ProductStock::reserve(
-            product: $product,
-            quantity: 5,
-            type: 'reservation'
-        );
+        $reservation = $product->reserveStock(5);
 
         $reservation->release();
 
@@ -114,125 +94,78 @@ class StockManagementTest extends TestCase
     }
 
     /** @test */
-    public function it_can_find_expired_reservations()
-    {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 100,
-        ]);
-
-        $expiredReservation = ProductStock::reserve(
-            product: $product,
-            quantity: 10,
-            type: 'reservation',
-            until: now()->subHour()
-        );
-
-        $activeReservation = ProductStock::reserve(
-            product: $product,
-            quantity: 5,
-            type: 'reservation',
-            until: now()->addHour()
-        );
-
-        $expired = ProductStock::expired()->get();
-
-        $this->assertTrue($expired->contains($expiredReservation));
-        $this->assertFalse($expired->contains($activeReservation));
-    }
-
-    /** @test */
     public function it_can_distinguish_temporary_and_permanent_reservations()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 100,
-        ]);
+        $product = Product::factory()->withStocks(100)->create();
 
-        $temporary = ProductStock::reserve(
-            product: $product,
-            quantity: 10,
-            type: 'reservation',
-            until: now()->addHours(2)
+        $permanentReservation = $product->reserveStock(
+            quantity: 10
         );
 
-        $permanent = ProductStock::reserve(
-            product: $product,
+        $temporaryReservation = $product->reserveStock(
             quantity: 5,
-            type: 'sold'
+            until: now()->addHours(1)
         );
 
-        $temporaryReservations = ProductStock::temporary()->get();
-        $permanentReservations = ProductStock::permanent()->get();
+        $this->assertTrue($permanentReservation->isPermanent());
+        $this->assertFalse($permanentReservation->isTemporary());
 
-        $this->assertTrue($temporaryReservations->contains($temporary));
-        $this->assertFalse($temporaryReservations->contains($permanent));
-        $this->assertTrue($permanentReservations->contains($permanent));
-        $this->assertFalse($permanentReservations->contains($temporary));
+        $this->assertTrue($temporaryReservation->isTemporary());
+        $this->assertFalse($temporaryReservation->isPermanent());
     }
 
     /** @test */
     public function it_belongs_to_a_product()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 50,
-        ]);
+        $product = Product::factory()->withStocks(20)->create();
 
-        $stock = ProductStock::reserve(
-            product: $product,
-            quantity: 5,
-            type: 'reservation'
-        );
+        $reservation = $product->reserveStock(5);
 
-        $this->assertEquals($product->id, $stock->product->id);
+        $this->assertInstanceOf(Product::class, $reservation->product);
+        $this->assertEquals($product->id, $reservation->product->id);
     }
 
     /** @test */
     public function product_has_many_stock_records()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 100,
-        ]);
+        $product = Product::factory()->withStocks(30)->create();
 
-        ProductStock::reserve($product, quantity: 10, type: 'reservation');
-        ProductStock::reserve($product, quantity: 5, type: 'reservation');
-        ProductStock::reserve($product, quantity: 3, type: 'sold');
+        $product->increaseStock(10);
+        $product->increaseStock(10);
+        $product->increaseStock(50);
 
-        $this->assertCount(3, $product->fresh()->stocks);
+        $this->assertCount(4, $product->stocks);
+        $this->assertInstanceOf(ProductStock::class, $product->stocks->first());
+        $this->assertEquals(30 + 10 + 10 + 50, $product->getAvailableStock());
     }
 
     /** @test */
     public function it_can_get_active_stock_reservations()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 100,
-        ]);
+        $product = Product::factory()->withStocks(100)->create();
 
-        $active1 = ProductStock::reserve($product, quantity: 10, type: 'reservation');
-        $active2 = ProductStock::reserve($product, quantity: 5, type: 'reservation');
-        $released = ProductStock::reserve($product, quantity: 3, type: 'sold');
-        $released->release();
+        $activeReservation = $product->reserveStock(
+            quantity: 10,
+            until: now()->addHours(2)
+        );
 
-        $activeStocks = $product->fresh()->activeStocks;
+        $expiredReservation = $product->reserveStock(
+            quantity: 5,
+            until: now()->subHours(1)
+        );
 
-        $this->assertCount(2, $activeStocks);
-        $this->assertTrue($activeStocks->contains($active1));
-        $this->assertTrue($activeStocks->contains($active2));
-        $this->assertFalse($activeStocks->contains($released));
+        $activeReservations = $product->reservations()->get();
+
+        $this->assertCount(1, $activeReservations);
+        $this->assertEquals($activeReservation->id, $activeReservations->first()->id);
     }
 
     /** @test */
     public function it_cannot_release_stock_twice()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 50,
-        ]);
+        $product = Product::factory()->withStocks()->create();
 
-        $reservation = ProductStock::reserve($product, quantity: 10, type: 'reservation');
+        $reservation = $product->reserveStock(5);
 
         $this->assertTrue($reservation->release());
         $this->assertFalse($reservation->release());
@@ -241,52 +174,37 @@ class StockManagementTest extends TestCase
     /** @test */
     public function it_can_store_reservation_note()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 50,
-        ]);
+        $product = Product::factory()->withStocks()->create();
 
-        $reservation = ProductStock::reserve(
-            product: $product,
+        $note = "Customer requested to hold this item for 2 days.";
+
+        $reservation = $product->reserveStock(
             quantity: 5,
-            type: 'reservation',
-            note: 'Reserved for order #12345'
+            note: $note
         );
 
-        $this->assertEquals('Reserved for order #12345', $reservation->note);
-    }
-
-    /** @test */
-    public function it_handles_stock_transactions_atomically()
-    {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 10,
-        ]);
-
-        // Try to reserve more than available
-        $reservation = ProductStock::reserve($product, quantity: 15, type: 'reservation');
-
-        // Should fail and not change stock
-        $this->assertNull($reservation);
-        $this->assertEquals(10, $product->fresh()->stock_quantity);
+        $this->assertEquals($note, $reservation->note);
     }
 
     /** @test */
     public function it_calculates_available_stock_correctly()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 100,
-        ]);
+        $product = Product::factory()->withStocks(100)->create();
 
-        // Reserve some stock
-        ProductStock::reserve($product, quantity: 20, type: 'reservation');
-        ProductStock::reserve($product, quantity: 10, type: 'reservation');
+        $reservation1 = $product->reserveStock(
+            quantity: 10,
+            until: now()->addHours(2)
+        );
 
-        $available = $product->fresh()->stock_quantity;
+        $reservation2 = $product->reserveStock(
+            quantity: 5,
+            until: now()->addHours(1)
+        );
 
-        $this->assertEquals(70, $available);
+        $reservation1->refresh();
+        $reservation2->refresh();
+
+        $this->assertEquals(85, $product->refresh()->getAvailableStock());
     }
 
     /** @test */

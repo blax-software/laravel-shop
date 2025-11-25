@@ -168,7 +168,13 @@ class Product extends Model implements Purchasable, Cartable
 
     public function getAvailableStocksAttribute(): int
     {
-        return $this->stocks()->available()->sum('quantity') ?? 0;
+        return $this->stocks()
+            ->available()
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
+            ->sum('quantity') ?? 0;
     }
 
     public function purchases(): MorphMany
@@ -274,12 +280,16 @@ class Product extends Model implements Purchasable, Cartable
         ?\DateTimeInterface $until = null,
         ?string $note = null
     ): ?\Blax\Shop\Models\ProductStock {
+
+        if (!$this->manage_stock) {
+            return null;
+        }
+
         $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
 
         return $stockModel::reserve(
             $this,
             $quantity,
-            'reservation',
             $reference,
             $until,
             $note
@@ -508,5 +518,17 @@ class Product extends Model implements Purchasable, Cartable
     public function getPriceAttribute(): ?float
     {
         return $this->getCurrentPrice();
+    }
+
+    public function reservations()
+    {
+        $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
+
+        return $stockModel::reservations()
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
+            ->where('product_id', $this->id);
     }
 }

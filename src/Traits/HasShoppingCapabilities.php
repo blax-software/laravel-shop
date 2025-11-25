@@ -2,7 +2,9 @@
 
 namespace Blax\Shop\Traits;
 
+use Blax\Shop\Exceptions\MultiplePurchaseOptions;
 use Blax\Shop\Exceptions\NotEnoughStockException;
+use Blax\Shop\Exceptions\NotPurchasable;
 use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Models\Product;
@@ -52,26 +54,43 @@ trait HasShoppingCapabilities
     /**
      * Purchase a product
      *
-     * @param Product $product
+     * @param Product|Product $product_or_price
      * @param int $quantity
      * 
      * @return ProductPurchase
      * @throws \Exception
      */
     public function purchase(
-        ProductPrice|string $productPrice,
+        ProductPrice|Product $product_or_price,
         int $quantity = 1,
+        array|object|null $meta = null
     ): ProductPurchase {
 
-        $productPrice = ($productPrice instanceof ProductPrice)
-            ? $productPrice
-            : ProductPrice::findOrFail($productPrice);
+        if ($product_or_price instanceof Product) {
+            $default_prices = $product_or_price->defaultPrice()->count();
 
-        if (!$productPrice?->purchasable?->id) {
+            if ($default_prices === 0) {
+                throw new NotPurchasable("Product has no default price");
+            }
+
+            if ($default_prices > 1) {
+                throw new MultiplePurchaseOptions("Product has multiple default prices, please specify a price to purchase");
+            }
+
+            $price = $product_or_price->defaultPrice()->first();
+        }
+
+        if (!@$price) {
+            $price = ($product_or_price instanceof ProductPrice)
+                ? $product_or_price
+                : throw new NotPurchasable;
+        }
+
+        if (!$price?->purchasable?->id) {
             throw new \Exception("Price does not belong to the specified product");
         }
 
-        $product = $productPrice->purchasable;
+        $product = $price->purchasable;
         
         // product must have interface Purchasable
         if (!in_array('Blax\Shop\Contracts\Purchasable', class_implements($product))) {
@@ -104,11 +123,8 @@ trait HasShoppingCapabilities
             'purchaser_type' => get_class($this),
             'quantity' => $quantity,
             'status' => 'unpaid',
-            'meta' => array_merge([
-                'price_id' => $productPrice->id,
-                'price' => $productPrice->price,
-                'amount' => $productPrice->price * $quantity,
-            ]),
+            'meta' => $meta,
+            'amount' => $price->unit_amount * $quantity,
         ]);
 
         // Trigger product actions
@@ -130,18 +146,54 @@ trait HasShoppingCapabilities
     }
 
     /**
+     * Get or create the current cart for the entity
+     * 
+     * @return Cart
+     */    
+    public function currentCart()
+    {
+        return $this->cart()
+            ->whereNull('converted_at')
+            ->latest()
+            ->firstOrCreate();
+    }
+
+    /**
      * Add product to cart
      *
-     * @param Product|ProductPrice $price
+     * @param Product|ProductPrice $product_or_price
      * @param int $quantity
      * @param array $options
      * @return CartItem
      * @throws \Exception
      */
-    public function addToCart(Product|ProductPrice $price, int $quantity = 1, array $parameters = []): CartItem
-    {       
-        return $this->cart()->latest()->firstOrCreate()->addToCart(
-            $price,
+    public function addToCart(Product|ProductPrice $product_or_price, int $quantity = 1, array $parameters = []): CartItem
+    {   
+        if ($product_or_price instanceof ProductPrice){
+            $product = $product_or_price->purchasable;
+
+            if ($product instanceof Product) {
+                $product->reserveStock($quantity);
+            }
+        }
+
+        if ($product_or_price instanceof Product) {
+            $product_or_price->reserveStock($quantity);
+
+            $default_prices = $product_or_price->defaultPrice()->count();
+
+            if ($default_prices === 0) {
+                throw new NotPurchasable("Product has no default price");
+            }
+
+            if ($default_prices > 1) {
+                throw new MultiplePurchaseOptions("Product has multiple default prices, please specify a price to add to cart");
+            }
+        }
+
+        
+        return $this->currentCart()->addToCart(
+            $product_or_price,
             $quantity,
             $parameters
         );
@@ -205,7 +257,6 @@ trait HasShoppingCapabilities
     public function getCartTotal(?string $cartId = null): float
     {
         return $this->cartItems()->get()->sum(function ($item) {
-            dump('getCurrentPrice',get_class($item->purchasable),$item->purchasable->getCurrentPrice());
             return ($item->purchasable->getCurrentPrice() ?? 0) * $item->quantity;
         });
     }
@@ -257,21 +308,24 @@ trait HasShoppingCapabilities
             $item->delete();
         }
 
+        $cart = $this->currentCart();
+        $cart->update([
+            'converted_at' => now(),
+        ]);
+
         return $purchases;
     }
 
     /**
      * Check if entity has purchased a product
      *
-     * @param Product|int $product
+     * @param Purchasable|int $product
      * @return bool
      */
-    public function hasPurchased($product): bool
+    public function hasPurchased($purchasable): bool
     {
-        $productId = $product instanceof Product ? $product->id : $product;
-
         return $this->completedPurchases()
-            ->where('product_id', $productId)
+            ->where('purchasable_id', $purchasable->id)
             ->exists();
     }
 

@@ -95,12 +95,11 @@ class ProductStock extends Model
     public static function reserve(
         Product $product,
         int $quantity,
-        ?string $type = 'reservation',
         $reference = null,
         ?\DateTimeInterface $until = null,
         ?string $note = null
     ): ?self {
-        return DB::transaction(function () use ($product, $quantity, $type, $reference, $until, $note) {
+        return DB::transaction(function () use ($product, $quantity, $reference, $until, $note) {
             if (!$product->decreaseStock($quantity)) {
                 return null;
             }
@@ -108,7 +107,7 @@ class ProductStock extends Model
             return self::create([
                 'product_id' => $product->id,
                 'quantity' => $quantity,
-                'type' => $type,
+                'type' => 'reservation',
                 'status' => 'pending',
                 'reference_type' => $reference ? get_class($reference) : null,
                 'reference_id' => $reference?->id,
@@ -125,8 +124,6 @@ class ProductStock extends Model
         }
 
         return DB::transaction(function () {
-            $this->product->increaseStock($this->quantity);
-
             $this->status = 'completed';
             $this->save();
 
@@ -211,5 +208,15 @@ class ProductStock extends Model
     public static function scopeAvailable($query)
     {
         return $query->where('status', 'completed');
+    }
+
+    public static function scopeAvailableReservations($query)
+    {
+        return $query->where('type', 'reservation')->where('status', 'pending');
+    }
+
+    public static function reservations()
+    {
+        return self::availableReservations();
     }
 }
