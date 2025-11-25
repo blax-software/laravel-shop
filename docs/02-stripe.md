@@ -38,14 +38,14 @@ Update `config/shop.php`:
 ### Sync Individual Product
 
 ```php
-use Blax\Shop\Services\ShopStripeService;
+use Blax\Shop\Services\StripeService;
 use Stripe\Product as StripeProduct;
 
 // Get Stripe product
 $stripeProduct = StripeProduct::retrieve('prod_xxxxx');
 
 // Sync to local database
-$product = ShopStripeService::syncProductDown($stripeProduct);
+$product = StripeService::syncProductDown($stripeProduct);
 
 // This creates/updates a Product with:
 // - stripe_product_id
@@ -61,7 +61,7 @@ $product = ShopStripeService::syncProductDown($stripeProduct);
 
 ```php
 // Sync all prices for a product
-ShopStripeService::syncProductPricesDown($product);
+StripeService::syncProductPricesDown($product);
 
 // This creates/updates ProductPrice records with:
 // - stripe_price_id
@@ -464,7 +464,7 @@ class StripeWebhookController extends Controller
 
     protected function handleProductUpdate($stripeProduct)
     {
-        ShopStripeService::syncProductDown($stripeProduct);
+        StripeService::syncProductDown($stripeProduct);
     }
 
     protected function handlePriceUpdate($stripePrice)
@@ -505,7 +505,7 @@ use Stripe\Product as StripeProduct;
 Stripe::setApiKey(config('services.stripe.secret'));
 
 Product::whereNotNull('stripe_product_id')->each(function ($product) {
-    ShopStripeService::syncProductPricesDown($product);
+    StripeService::syncProductPricesDown($product);
 });
 ```
 

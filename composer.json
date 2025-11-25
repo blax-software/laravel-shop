@@ -21,7 +21,8 @@
         "php": ">=8.0",
         "illuminate/support": "^10.0|^11.0|^12.0",
         "illuminate/database": "^10.0|^11.0|^12.0",
-        "blax-software/laravel-workkit": "dev-master|*"
+        "blax-software/laravel-workkit": "dev-master|*",
+        "stripe/stripe-php": "^19.0"
     },
     "require-dev": {
         "orchestra/testbench": "^8.0|^9.0",

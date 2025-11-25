@@ -62,12 +62,6 @@ return [
         'prefix' => 'shop:',
     ],
 
-    // Pagination
-    'pagination' => [
-        'per_page' => 20,
-        'max_per_page' => 100,
-    ],
-
     // Cart configuration
     'cart' => [
         'expire_after_days' => 30,
@@ -81,4 +75,5 @@ return [
         'wrap_response' => true,
         'response_key' => 'data',
     ],
+
 ];
