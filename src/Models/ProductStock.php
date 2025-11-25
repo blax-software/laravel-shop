@@ -23,13 +23,11 @@ class ProductStock extends Model
         'reference_id',
         'expires_at',
         'note',
-        'meta',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
         'expires_at' => 'datetime',
-        'meta' => 'object',
     ];
 
     public function __construct(array $attributes = [])

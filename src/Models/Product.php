@@ -23,10 +23,8 @@ class Product extends Model implements Purchasable, Cartable
     use HasFactory, HasUuids, HasMetaTranslation;
 
     protected $fillable = [
-        'name',
         'slug',
-        'short_description',
-        'description',
+        'sku',
         'type',
         'stripe_product_id',
         'sale_start',
@@ -45,7 +43,6 @@ class Product extends Model implements Purchasable, Cartable
         'status',
         'published_at',
         'meta',
-        'sku',
         'tax_class',
         'sort_order',
     ];

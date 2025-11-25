@@ -16,12 +16,10 @@ class ProductAttribute extends Model
         'key',
         'value',
         'sort_order',
-        'meta',
     ];
 
     protected $casts = [
         'sort_order' => 'integer',
-        'meta' => 'object',
     ];
 
     protected $hidden = [

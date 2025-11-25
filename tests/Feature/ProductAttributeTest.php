@@ -103,18 +103,21 @@ class ProductAttributeTest extends TestCase
     {
         $product = Product::factory()->create();
 
-        $attribute = ProductAttribute::create([
+        // Attributes now store structured data in value or as separate attributes
+        $dimensionAttr = ProductAttribute::create([
             'product_id' => $product->id,
             'key' => 'Dimensions',
             'value' => '10x20x30',
-            'meta' => [
-                'unit' => 'cm',
-                'display_format' => 'length x width x height',
-            ],
         ]);
 
-        $this->assertEquals('cm', $attribute->meta->unit);
-        $this->assertEquals('length x width x height', $attribute->meta->display_format);
+        $unitAttr = ProductAttribute::create([
+            'product_id' => $product->id,
+            'key' => 'Dimension Unit',
+            'value' => 'cm',
+        ]);
+
+        $this->assertEquals('10x20x30', $dimensionAttr->value);
+        $this->assertEquals('cm', $unitAttr->value);
     }
 
     /** @test */

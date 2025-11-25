@@ -1,17 +1,27 @@
 # Stripe Integration
 
+## Overview
+
+The Laravel Shop package includes Stripe integration for:
+- Syncing products from Stripe to your database
+- Syncing prices from Stripe
+- Associating products with Stripe product IDs
+- Automatic price synchronization
+
 ## Configuration
 
-### Enable Stripe
+### Environment Setup
 
 Add to your `.env`:
 
 ```env
 SHOP_STRIPE_ENABLED=true
 SHOP_STRIPE_SYNC_PRICES=true
-STRIPE_KEY=your_stripe_key
-STRIPE_SECRET=your_stripe_secret
+STRIPE_KEY=pk_test_...
+STRIPE_SECRET=sk_test_...
 ```
+
+### Config File
 
 Update `config/shop.php`:
 
@@ -23,88 +33,284 @@ Update `config/shop.php`:
 ],
 ```
 
-## Creating Products in Stripe
+## Syncing Products from Stripe
 
-### Manual Stripe Product Creation
+### Sync Individual Product
 
 ```php
-use App\Services\StripeService;
+use Blax\Shop\Services\ShopStripeService;
+use Stripe\Product as StripeProduct;
 
+// Get Stripe product
+$stripeProduct = StripeProduct::retrieve('prod_xxxxx');
+
+// Sync to local database
+$product = ShopStripeService::syncProductDown($stripeProduct);
+
+// This creates/updates a Product with:
+// - stripe_product_id
+// - slug (generated from name)
+// - type
+// - virtual flag
+// - status (based on Stripe active status)
+// - name (localized)
+// - features (if available)
+```
+
+### Sync Product Prices
+
+```php
+// Sync all prices for a product
+ShopStripeService::syncProductPricesDown($product);
+
+// This creates/updates ProductPrice records with:
+// - stripe_price_id
+// - name (from Stripe nickname)
+// - type (one_time or recurring)
+// - unit_amount (price in cents)
+// - currency
+// - billing_scheme
+// - interval (for recurring)
+// - interval_count (for recurring)
+// - trial_period_days (for recurring)
+```
+
+## Manual Product Creation with Stripe
+
+### Create Product and Sync to Stripe
+
+```php
+use Blax\Shop\Models\Product;
+use Stripe\Stripe;
+use Stripe\Product as StripeProduct;
+use Stripe\Price;
+
+Stripe::setApiKey(config('services.stripe.secret'));
+
+// Create local product first
 $product = Product::create([
     'slug' => 'premium-plan',
-    'price' => 29.99,
     'status' => 'published',
 ]);
 
-// Create in Stripe
-$stripeProduct = StripeService::createProduct($product);
+$product->setLocalized('name', 'Premium Plan', 'en');
+$product->setLocalized('description', 'Access to all premium features', 'en');
 
-// Store Stripe product ID
+// Create in Stripe
+$stripeProduct = StripeProduct::create([
+    'name' => $product->getLocalized('name'),
+    'description' => $product->getLocalized('description'),
+    'metadata' => [
+        'product_id' => $product->id,
+    ],
+]);
+
+// Save Stripe product ID
 $product->update([
     'stripe_product_id' => $stripeProduct->id,
 ]);
+
+// Create price in Stripe
+$stripePrice = Price::create([
+    'product' => $stripeProduct->id,
+    'unit_amount' => 2999, // $29.99
+    'currency' => 'usd',
+    'recurring' => [
+        'interval' => 'month',
+    ],
+]);
+
+// Create local price
+ProductPrice::create([
+    'purchasable_type' => Product::class,
+    'purchasable_id' => $product->id,
+    'stripe_price_id' => $stripePrice->id,
+    'currency' => 'usd',
+    'unit_amount' => 2999,
+    'type' => 'recurring',
+    'interval' => 'month',
+    'interval_count' => 1,
+    'is_default' => true,
+    'active' => true,
+]);
 ```
 
-### Automatic Sync
+## Automatic Syncing with Events
 
-If you have event listeners set up, products can be automatically synced to Stripe:
+You can set up event listeners to automatically sync products to Stripe when they're created or updated.
+
+### Create Event Listener
 
 ```php
+// app/Listeners/SyncProductToStripe.php
+namespace App\Listeners;
+
 use Blax\Shop\Events\ProductCreated;
-use App\Listeners\SyncProductToStripe;
+use Stripe\Stripe;
+use Stripe\Product as StripeProduct;
 
-// In EventServiceProvider
-protected $listen = [
-    ProductCreated::class => [
-        SyncProductToStripe::class,
-    ],
-];
-
-// Listener implementation
 class SyncProductToStripe
 {
     public function handle(ProductCreated $event)
     {
-        if (config('shop.stripe.enabled')) {
-            $stripeProduct = StripeService::createProduct($event->product);
-            
-            $event->product->update([
-                'stripe_product_id' => $stripeProduct->id,
-            ]);
+        if (!config('shop.stripe.enabled')) {
+            return;
         }
+
+        $product = $event->product;
+
+        // Skip if already has Stripe ID
+        if ($product->stripe_product_id) {
+            return;
+        }
+
+        Stripe::setApiKey(config('services.stripe.secret'));
+
+        $stripeProduct = StripeProduct::create([
+            'name' => $product->getLocalized('name') ?? $product->slug,
+            'description' => $product->getLocalized('description'),
+            'metadata' => [
+                'product_id' => $product->id,
+                'sku' => $product->sku,
+            ],
+        ]);
+
+        $product->update([
+            'stripe_product_id' => $stripeProduct->id,
+        ]);
     }
 }
 ```
 
-## Syncing Prices to Stripe
-
-### Create Stripe Prices
+### Register Event Listener
 
 ```php
-use App\Services\StripeService;
-use Blax\Shop\Models\ProductPrice;
+// app/Providers/EventServiceProvider.php
+use Blax\Shop\Events\ProductCreated;
+use Blax\Shop\Events\ProductUpdated;
+use App\Listeners\SyncProductToStripe;
+use App\Listeners\UpdateStripeProduct;
 
-// Sync default price
-StripeService::syncProductPricesDown($product);
+protected $listen = [
+    ProductCreated::class => [
+        SyncProductToStripe::class,
+    ],
+    ProductUpdated::class => [
+        UpdateStripeProduct::class,
+    ],
+];
+```
 
-// Create additional currency prices
-$eurPrice = ProductPrice::create([
-    'product_id' => $product->id,
-    'currency' => 'EUR',
-    'price' => 24.99,
+## Working with Stripe Prices
+
+### One-Time Prices
+
+```php
+use Stripe\Stripe;
+use Stripe\Price;
+
+Stripe::setApiKey(config('services.stripe.secret'));
+
+// Create one-time price in Stripe
+$stripePrice = Price::create([
+    'product' => $product->stripe_product_id,
+    'unit_amount' => 4999, // $49.99
+    'currency' => 'usd',
 ]);
 
-// Create corresponding Stripe price
-$stripePrice = StripeService::createPrice($product, $eurPrice);
-
-$eurPrice->update([
+// Create local price
+ProductPrice::create([
+    'purchasable_type' => Product::class,
+    'purchasable_id' => $product->id,
     'stripe_price_id' => $stripePrice->id,
+    'currency' => 'usd',
+    'unit_amount' => 4999,
+    'type' => 'one_time',
+    'is_default' => true,
+    'active' => true,
 ]);
 ```
 
-## Creating Checkout Sessions
+### Recurring Prices
 
-### One-time Payment
+```php
+// Monthly subscription
+$stripePrice = Price::create([
+    'product' => $product->stripe_product_id,
+    'unit_amount' => 999, // $9.99/month
+    'currency' => 'usd',
+    'recurring' => [
+        'interval' => 'month',
+        'interval_count' => 1,
+        'trial_period_days' => 7,
+    ],
+]);
+
+// Create local price
+ProductPrice::create([
+    'purchasable_type' => Product::class,
+    'purchasable_id' => $product->id,
+    'stripe_price_id' => $stripePrice->id,
+    'currency' => 'usd',
+    'unit_amount' => 999,
+    'type' => 'recurring',
+    'interval' => 'month',
+    'interval_count' => 1,
+    'trial_period_days' => 7,
+    'is_default' => true,
+    'active' => true,
+]);
+```
+
+### Multiple Currency Prices
+
+```php
+// USD price
+$usdPrice = Price::create([
+    'product' => $product->stripe_product_id,
+    'unit_amount' => 2999,
+    'currency' => 'usd',
+    'recurring' => ['interval' => 'month'],
+]);
+
+ProductPrice::create([
+    'purchasable_type' => Product::class,
+    'purchasable_id' => $product->id,
+    'stripe_price_id' => $usdPrice->id,
+    'currency' => 'usd',
+    'unit_amount' => 2999,
+    'type' => 'recurring',
+    'interval' => 'month',
+    'interval_count' => 1,
+    'is_default' => true,
+    'active' => true,
+]);
+
+// EUR price
+$eurPrice = Price::create([
+    'product' => $product->stripe_product_id,
+    'unit_amount' => 2499,
+    'currency' => 'eur',
+    'recurring' => ['interval' => 'month'],
+]);
+
+ProductPrice::create([
+    'purchasable_type' => Product::class,
+    'purchasable_id' => $product->id,
+    'stripe_price_id' => $eurPrice->id,
+    'currency' => 'eur',
+    'unit_amount' => 2499,
+    'type' => 'recurring',
+    'interval' => 'month',
+    'interval_count' => 1,
+    'is_default' => false,
+    'active' => true,
+]);
+```
+
+## Stripe Checkout Integration
+
+### Create Checkout Session
 
 ```php
 use Stripe\Stripe;
@@ -112,244 +318,224 @@ use Stripe\Checkout\Session;
 
 Stripe::setApiKey(config('services.stripe.secret'));
 
-$product = Product::find($productId);
+Route::post('/checkout', function () {
+    $user = auth()->user();
+    $cartItems = $user->cartItems()->with('purchasable.prices')->get();
 
-$session = Session::create([
-    'payment_method_types' => ['card'],
-    'line_items' => [[
-        'price_data' => [
-            'currency' => 'usd',
-            'product_data' => [
-                'name' => $product->getLocalized('name'),
-                'description' => $product->getLocalized('short_description'),
-            ],
-            'unit_amount' => $product->getCurrentPrice() * 100, // Convert to cents
+    // Build line items from cart
+    $lineItems = $cartItems->map(function ($item) {
+        $price = $item->purchasable->defaultPrice()->first();
+        
+        return [
+            'price' => $price->stripe_price_id,
+            'quantity' => $item->quantity,
+        ];
+    })->toArray();
+
+    // Create checkout session
+    $session = Session::create([
+        'payment_method_types' => ['card'],
+        'line_items' => $lineItems,
+        'mode' => 'payment', // or 'subscription' for recurring
+        'success_url' => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
+        'cancel_url' => route('checkout.cancel'),
+        'customer_email' => $user->email,
+        'metadata' => [
+            'user_id' => $user->id,
+            'cart_id' => $user->currentCart()->id,
         ],
-        'quantity' => 1,
-    ]],
-    'mode' => 'payment',
-    'success_url' => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
-    'cancel_url' => route('checkout.cancel'),
-    'metadata' => [
-        'product_id' => $product->id,
-    ],
-]);
+    ]);
 
-return redirect($session->url);
+    return redirect($session->url);
+});
 ```
 
-### Using Stripe Price IDs
+### Handle Successful Payment
 
 ```php
-// If you have synced prices
-$priceId = $product->prices()
-    ->where('currency', 'USD')
-    ->where('is_default', true)
-    ->first()
-    ->stripe_price_id;
+Route::get('/checkout/success', function (Request $request) {
+    $sessionId = $request->get('session_id');
+    
+    Stripe::setApiKey(config('services.stripe.secret'));
+    $session = Session::retrieve($sessionId);
 
-$session = Session::create([
-    'payment_method_types' => ['card'],
-    'line_items' => [[
-        'price' => $priceId,
-        'quantity' => 1,
-    ]],
-    'mode' => 'payment',
-    'success_url' => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
-    'cancel_url' => route('checkout.cancel'),
-]);
+    // Verify payment succeeded
+    if ($session->payment_status === 'paid') {
+        $user = auth()->user();
+        
+        // Convert cart to purchases
+        $purchases = $user->checkout();
+        
+        // Store charge ID
+        foreach ($purchases as $purchase) {
+            $purchase->update([
+                'status' => 'completed',
+                'charge_id' => $session->payment_intent,
+                'amount_paid' => $session->amount_total / 100,
+            ]);
+        }
+
+        return view('checkout.success', compact('purchases'));
+    }
+
+    return redirect()->route('cart.index')
+        ->with('error', 'Payment was not successful');
+});
 ```
 
-## Handling Webhooks
+## Webhook Handling
 
 ### Register Webhook Endpoint
 
 ```php
-// routes/api.php
-use App\Http\Controllers\StripeWebhookController;
-
-Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle']);
+// routes/web.php
+Route::post(
+    '/stripe/webhook',
+    [StripeWebhookController::class, 'handleWebhook']
+)->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
 ```
 
-### Webhook Controller
+### Handle Webhooks
 
 ```php
-<?php
-
+// app/Http/Controllers/StripeWebhookController.php
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use Stripe\Stripe;
 use Stripe\Webhook;
-use Blax\Shop\Models\Product;
+use Illuminate\Http\Request;
 
 class StripeWebhookController extends Controller
 {
-    public function handle(Request $request)
+    public function handleWebhook(Request $request)
     {
+        Stripe::setApiKey(config('services.stripe.secret'));
+
         $payload = $request->getContent();
         $sigHeader = $request->header('Stripe-Signature');
         $webhookSecret = config('services.stripe.webhook_secret');
 
         try {
-            $event = Webhook::constructEvent($payload, $sigHeader, $webhookSecret);
+            $event = Webhook::constructEvent(
+                $payload,
+                $sigHeader,
+                $webhookSecret
+            );
         } catch (\Exception $e) {
             return response()->json(['error' => 'Invalid signature'], 400);
         }
 
+        // Handle the event
         switch ($event->type) {
             case 'checkout.session.completed':
-                $this->handleCheckoutCompleted($event->data->object);
+                $this->handleCheckoutComplete($event->data->object);
                 break;
-                
-            case 'payment_intent.succeeded':
-                $this->handlePaymentSucceeded($event->data->object);
-                break;
-                
-            case 'charge.refunded':
-                $this->handleRefund($event->data->object);
-                break;
-        }
-
-        return response()->json(['status' => 'success']);
-    }
-
-    protected function handleCheckoutCompleted($session)
-    {
-        $productId = $session->metadata->product_id ?? null;
-        
-        if (!$productId) {
-            return;
-        }
-
-        $product = Product::find($productId);
-        
-        if (!$product) {
-            return;
-        }
-
-        // Decrease stock
-        $quantity = $session->metadata->quantity ?? 1;
-        $product->decreaseStock($quantity);
-
-        // Create purchase record
-        $purchase = $product->purchases()->create([
-            'purchasable_type' => get_class(auth()->user()),
-            'purchasable_id' => $session->customer ?? $session->client_reference_id,
-            'quantity' => $quantity,
-            'status' => 'completed',
-            'meta' => [
-                'stripe_session_id' => $session->id,
-                'stripe_payment_intent' => $session->payment_intent,
-            ],
-        ]);
-
-        // Trigger product actions
-        $product->callActions('purchased', $purchase, [
-            'stripe_session' => $session,
-        ]);
-    }
-
-    protected function handlePaymentSucceeded($paymentIntent)
-    {
-        // Handle successful payment
-    }
-
-    protected function handleRefund($charge)
-    {
-        // Handle refund
-        $metadata = $charge->metadata;
-        $productId = $metadata->product_id ?? null;
-
-        if ($productId) {
-            $product = Product::find($productId);
-            $quantity = $metadata->quantity ?? 1;
             
-            $product->increaseStock($quantity);
+            case 'product.created':
+            case 'product.updated':
+                $this->handleProductUpdate($event->data->object);
+                break;
             
-            // Trigger refund actions
-            $product->callActions('refunded', null, [
-                'stripe_charge' => $charge,
+            case 'price.created':
+            case 'price.updated':
+                $this->handlePriceUpdate($event->data->object);
+                break;
+        }
+
+        return response()->json(['success' => true]);
+    }
+
+    protected function handleCheckoutComplete($session)
+    {
+        // Find purchase by session metadata
+        $userId = $session->metadata->user_id ?? null;
+        $cartId = $session->metadata->cart_id ?? null;
+
+        if ($userId && $cartId) {
+            // Mark purchases as completed
+            ProductPurchase::where('cart_id', $cartId)
+                ->update([
+                    'status' => 'completed',
+                    'charge_id' => $session->payment_intent,
+                    'amount_paid' => $session->amount_total / 100,
+                ]);
+        }
+    }
+
+    protected function handleProductUpdate($stripeProduct)
+    {
+        ShopStripeService::syncProductDown($stripeProduct);
+    }
+
+    protected function handlePriceUpdate($stripePrice)
+    {
+        // Update local price
+        $price = ProductPrice::where('stripe_price_id', $stripePrice->id)->first();
+        
+        if ($price) {
+            $price->update([
+                'active' => $stripePrice->active,
+                'unit_amount' => $stripePrice->unit_amount,
             ]);
         }
     }
 }
 ```
 
-### Configure Webhook Secret
+## Best Practices
 
-Add to `.env`:
+### 1. Always Use Stripe Price IDs
 
-```env
-STRIPE_WEBHOOK_SECRET=whsec_...
-```
-
-Get your webhook secret from Stripe Dashboard → Developers → Webhooks.
-
-## Multi-Currency Support
-
-### Create Prices for Multiple Currencies
+When integrating with Stripe Checkout or subscriptions, always use Stripe Price IDs:
 
 ```php
-$product = Product::create([
-    'slug' => 'premium-plan',
-    'price' => 29.99, // USD base price
-]);
-
-// USD (default)
-ProductPrice::create([
-    'product_id' => $product->id,
-    'currency' => 'USD',
-    'price' => 29.99,
-    'is_default' => true,
-]);
-
-// EUR
-ProductPrice::create([
-    'product_id' => $product->id,
-    'currency' => 'EUR',
-    'price' => 24.99,
-]);
-
-// GBP
-ProductPrice::create([
-    'product_id' => $product->id,
-    'currency' => 'GBP',
-    'price' => 21.99,
-]);
-
-// Sync all to Stripe
-StripeService::syncProductPricesDown($product);
+$price = $product->defaultPrice()->first();
+$stripePriceId = $price->stripe_price_id;
 ```
 
-### Checkout with Currency Selection
+### 2. Keep Prices in Sync
+
+Use webhooks or scheduled commands to keep prices synchronized:
 
 ```php
-$currency = $request->input('currency', 'USD');
+// app/Console/Commands/SyncStripePrices.php
+use Stripe\Stripe;
+use Stripe\Product as StripeProduct;
 
-$price = $product->prices()
-    ->where('currency', $currency)
-    ->first();
+Stripe::setApiKey(config('services.stripe.secret'));
 
-$session = Session::create([
-    'payment_method_types' => ['card'],
-    'line_items' => [[
-        'price' => $price->stripe_price_id,
-        'quantity' => 1,
-    ]],
-    'mode' => 'payment',
-    'success_url' => route('checkout.success'),
-    'cancel_url' => route('checkout.cancel'),
+Product::whereNotNull('stripe_product_id')->each(function ($product) {
+    ShopStripeService::syncProductPricesDown($product);
+});
+```
+
+### 3. Store Stripe References
+
+Always store Stripe IDs for traceability:
+
+```php
+$product->update([
+    'stripe_product_id' => $stripeProduct->id,
+]);
+
+$price->update([
+    'stripe_price_id' => $stripePrice->id,
+]);
+
+$purchase->update([
+    'charge_id' => $paymentIntent->id,
 ]);
 ```
 
-## Testing
+### 4. Handle Errors Gracefully
 
-### Use Stripe Test Mode
-
-```env
-STRIPE_KEY=pk_test_...
-STRIPE_SECRET=sk_test_...
+```php
+try {
+    $stripeProduct = StripeProduct::create([
+        'name' => $product->getLocalized('name'),
+    ]);
+} catch (\Stripe\Exception\ApiErrorException $e) {
+    \Log::error('Stripe API error: ' . $e->getMessage());
+    // Handle error appropriately
+}
 ```
-
-### Test Card Numbers
-

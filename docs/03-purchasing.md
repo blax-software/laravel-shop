@@ -1,8 +1,8 @@
-# Purchasing Products
+# Purchasing & Shopping Cart
 
 ## Setup
 
-First, add the `HasShoppingCapabilities` trait to your User model (or any model that should purchase products):
+Add the `HasShoppingCapabilities` trait to your User model (or any model that should be able to purchase products):
 
 ```php
 use Blax\Shop\Traits\HasShoppingCapabilities;
@@ -13,21 +13,29 @@ class User extends Authenticatable
 }
 ```
 
+This trait provides methods for:
+- Direct product purchases
+- Shopping cart management
+- Purchase history
+- Cart checkout
+
 ## Direct Purchase
 
-### Simple Purchase
+### Purchase a Product
 
 ```php
 $user = auth()->user();
 $product = Product::find($productId);
 
+// Product must have a default price
 try {
-    $purchase = $user->purchase($product, quantity: 1);
+    $purchase = $user->purchase($product);
     
     // Purchase successful
     return response()->json([
         'success' => true,
         'purchase_id' => $purchase->id,
+        'amount' => $purchase->amount,
     ]);
 } catch (\Exception $e) {
     return response()->json([
@@ -36,31 +44,39 @@ try {
 }
 ```
 
-### Purchase with Options
+### Purchase with Specific Price
 
 ```php
-$purchase = $user->purchase($product, quantity: 2, options: [
-    'price_id' => $priceId,        // Use specific price
-    'charge_id' => $paymentId,     // Associate with payment
-    'cart_id' => $cartId,          // Associate with cart
-    'status' => 'pending',         // Custom status
-]);
+$price = ProductPrice::find($priceId);
+
+$purchase = $user->purchase(
+    $price,
+    quantity: 2
+);
 ```
 
-### Check Purchase History
+### Purchase with Metadata
 
 ```php
-// Check if user has purchased a product
-if ($user->hasPurchased($product)) {
-    // User has purchased this product
-}
-
-// Get purchase history for a product
-$history = $user->getPurchaseHistory($product);
-
-// Get all completed purchases
-$purchases = $user->completedPurchases()->get();
+$purchase = $user->purchase(
+    $product,
+    quantity: 1,
+    meta: [
+        'gift' => true,
+        'message' => 'Happy Birthday!',
+        'gift_recipient' => 'john@example.com',
+    ]
+);
 ```
+
+### Important Notes
+
+- Product must have at least one default price
+- Product must not have multiple default prices (will throw `MultiplePurchaseOptions` exception)
+- If stock management is enabled, sufficient stock must be available
+- Product must be visible (published, visible flag, and published_at date)
+- Purchase automatically decreases stock if `manage_stock` is enabled
+- Product actions are automatically triggered on purchase
 
 ## Shopping Cart
 
@@ -84,13 +100,39 @@ try {
 }
 ```
 
-### Update Cart Quantity
+### Add with Parameters
 
 ```php
-$cartItem = ProductPurchase::find($cartItemId);
+$cartItem = $user->addToCart(
+    $product,
+    quantity: 2,
+    parameters: [
+        'color' => 'blue',
+        'size' => 'large',
+    ]
+);
+```
+
+### Get Cart Items
+
+```php
+$cartItems = $user->cartItems()->get();
+
+foreach ($cartItems as $item) {
+    echo $item->purchasable->getLocalized('name');
+    echo $item->quantity;
+    echo $item->price;
+    echo $item->subtotal;
+}
+```
+
+### Update Cart Item Quantity
+
+```php
+$cartItem = CartItem::find($cartItemId);
 
 try {
-    $user->updateCartQuantity($cartItem, quantity: 3);
+    $updatedItem = $user->updateCartQuantity($cartItem, quantity: 3);
     
     return response()->json([
         'success' => true,
@@ -104,479 +146,369 @@ try {
 ### Remove from Cart
 
 ```php
-$cartItem = ProductPurchase::find($cartItemId);
+$cartItem = CartItem::find($cartItemId);
 
 $user->removeFromCart($cartItem);
+
+return response()->json([
+    'success' => true,
+    'cart_total' => $user->getCartTotal(),
+    'cart_count' => $user->getCartItemsCount(),
+]);
 ```
 
-### Get Cart Information
+### Clear Cart
 
 ```php
-// Get all cart items
-$cartItems = $user->cartItems()->with('product')->get();
+$count = $user->clearCart();
 
+return response()->json([
+    'success' => true,
+    'removed_items' => $count,
+]);
+```
+
+### Get Cart Totals
+
+```php
 // Get cart total
 $total = $user->getCartTotal();
 
-// Get items count
+// Get cart items count
 $count = $user->getCartItemsCount();
 
-// Clear cart
-$user->clearCart();
+// Get cart stats
+$stats = [
+    'total' => $user->getCartTotal(),
+    'count' => $user->getCartItemsCount(),
+    'items' => $user->cartItems()->with('purchasable')->get(),
+];
 ```
 
-### Checkout
+## Cart Checkout
+
+### Convert Cart to Purchases
 
 ```php
 try {
-    $completedPurchases = $user->checkout(options: [
-        'charge_id' => $paymentIntent->id,
-    ]);
+    $purchases = $user->checkout();
+    
+    // Checkout successful
+    // Cart items are now converted to completed purchases
+    // Cart is marked as converted
     
     return response()->json([
         'success' => true,
-        'purchases' => $completedPurchases,
-        'total' => $completedPurchases->sum('amount'),
+        'purchases' => $purchases,
+        'total_items' => $purchases->count(),
     ]);
 } catch (\Exception $e) {
-    return response()->json(['error' => $e->getMessage()], 400);
+    return response()->json([
+        'error' => $e->getMessage()
+    ], 400);
 }
 ```
 
-## Refunds
+### Important Notes
+
+- Checkout validates stock availability for all items
+- Creates `ProductPurchase` records for each cart item
+- Decreases stock for each item
+- Triggers product actions
+- Marks cart as converted (`converted_at` timestamp)
+- Removes cart items after successful checkout
+
+## Purchase History
+
+### Check if User Purchased Product
 
 ```php
-$purchase = ProductPurchase::find($purchaseId);
-$user = $purchase->purchasable;
+$product = Product::find($productId);
 
-try {
-    $user->refundPurchase($purchase, options: [
-        'refund_id' => $refundId,
-        'reason' => 'Customer request',
-    ]);
-    
-    return response()->json(['success' => true]);
-} catch (\Exception $e) {
-    return response()->json(['error' => $e->getMessage()], 400);
+if ($user->hasPurchased($product)) {
+    // User has purchased this product
+    echo "You own this product!";
 }
 ```
 
-## Purchase Statistics
+### Get All Purchases
+
+```php
+// Get all purchases (any status)
+$allPurchases = $user->purchases()->get();
+
+// Get only completed purchases
+$completedPurchases = $user->completedPurchases()->get();
+
+// Get purchases for specific product
+$productPurchases = $user->purchases()
+    ->where('purchasable_id', $product->id)
+    ->where('purchasable_type', Product::class)
+    ->get();
+```
+
+### Purchase Statistics
 
 ```php
 $stats = $user->getPurchaseStats();
 
 // Returns:
 // [
-//     'total_purchases' => 10,
-//     'total_spent' => 299.90,
-//     'total_items' => 15,
+//     'total_purchases' => 15,
+//     'total_spent' => 450.00,
+//     'total_items' => 23,
 //     'cart_items' => 2,
-//     'cart_total' => 49.98,
+//     'cart_total' => 89.99,
 // ]
 ```
 
-## Basic Purchase Flow
+## Refunds
 
-### 1. Check Product Availability
+### Refund a Purchase
 
 ```php
-use Blax\Shop\Models\Product;
+$purchase = ProductPurchase::find($purchaseId);
 
-$product = Product::find($productId);
-$quantity = 1;
-
-// Check if product is available
-if (!$product->isVisible()) {
-    return response()->json(['error' => 'Product not available'], 404);
-}
-
-// Check stock
-if ($product->manage_stock) {
-    $available = $product->getAvailableStock();
+try {
+    $success = $user->refundPurchase($purchase);
     
-    if ($available < $quantity) {
-        return response()->json([
-            'error' => 'Insufficient stock',
-            'available' => $available
-        ], 400);
-    }
-}
-```
-
-### 2. Reserve Stock (Optional)
-
-Reserve stock during checkout process:
-
-```php
-// Reserve for 15 minutes
-$reservation = $product->reserveStock(
-    quantity: $quantity,
-    reference: auth()->user(),
-    until: now()->addMinutes(15),
-    note: 'Checkout reservation'
-);
-
-if (!$reservation) {
-    return response()->json(['error' => 'Unable to reserve stock'], 400);
-}
-
-// Store reservation ID in session
-session(['stock_reservation_id' => $reservation->id]);
-```
-
-### 3. Process Payment
-
-```php
-// Your payment processing logic
-$payment = PaymentService::process([
-    'amount' => $product->getCurrentPrice() * $quantity,
-    'currency' => 'USD',
-    'product_id' => $product->id,
-]);
-
-if ($payment->failed()) {
-    // Release reservation
-    $reservation->update(['status' => 'cancelled']);
-    return response()->json(['error' => 'Payment failed'], 400);
-}
-```
-
-### 4. Complete Purchase
-
-```php
-use Blax\Shop\Models\ProductPurchase;
-
-// Decrease stock
-$product->decreaseStock($quantity);
-
-// Create purchase record
-$purchase = ProductPurchase::create([
-    'product_id' => $product->id,
-    'purchasable_type' => get_class(auth()->user()),
-    'purchasable_id' => auth()->id(),
-    'quantity' => $quantity,
-    'status' => 'completed',
-    'meta' => [
-        'payment_id' => $payment->id,
-        'price_paid' => $product->getCurrentPrice(),
-        'currency' => 'USD',
-    ],
-]);
-
-// Complete reservation
-if ($reservation) {
-    $reservation->update(['status' => 'completed']);
-}
-
-// Trigger product actions
-$product->callActions('purchased', $purchase, [
-    'user' => auth()->user(),
-    'payment' => $payment,
-]);
-
-return response()->json([
-    'success' => true,
-    'purchase_id' => $purchase->id,
-]);
-```
-
-## Shopping Cart Implementation
-
-### Cart Item Model
-
-```php
-// app/Models/CartItem.php
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Model;
-use Blax\Shop\Models\Product;
-
-class CartItem extends Model
-{
-    protected $fillable = [
-        'cart_id',
-        'product_id',
-        'quantity',
-        'price',
-    ];
-
-    protected $casts = [
-        'price' => 'decimal:2',
-    ];
-
-    public function product()
-    {
-        return $this->belongsTo(Product::class);
-    }
-
-    public function getSubtotal()
-    {
-        return $this->price * $this->quantity;
-    }
-}
-```
-
-### Cart Service
-
-```php
-// app/Services/CartService.php
-namespace App\Services;
-
-use App\Models\CartItem;
-use Blax\Shop\Models\Product;
-
-class CartService
-{
-    public function add(Product $product, int $quantity = 1)
-    {
-        $cart = $this->getCart();
-
-        // Check stock
-        if ($product->manage_stock && $product->getAvailableStock() < $quantity) {
-            throw new \Exception('Insufficient stock');
-        }
-
-        // Check if item already in cart
-        $cartItem = $cart->items()->where('product_id', $product->id)->first();
-
-        if ($cartItem) {
-            $newQuantity = $cartItem->quantity + $quantity;
-            
-            // Check stock for new quantity
-            if ($product->manage_stock && $product->getAvailableStock() < $newQuantity) {
-                throw new \Exception('Insufficient stock for requested quantity');
-            }
-            
-            $cartItem->update(['quantity' => $newQuantity]);
-        } else {
-            $cartItem = $cart->items()->create([
-                'product_id' => $product->id,
-                'quantity' => $quantity,
-                'price' => $product->getCurrentPrice(),
-            ]);
-        }
-
-        return $cartItem;
-    }
-
-    public function update(CartItem $cartItem, int $quantity)
-    {
-        $product = $cartItem->product;
-
-        // Check stock
-        if ($product->manage_stock && $product->getAvailableStock() < $quantity) {
-            throw new \Exception('Insufficient stock');
-        }
-
-        $cartItem->update(['quantity' => $quantity]);
-
-        return $cartItem;
-    }
-
-    public function remove(CartItem $cartItem)
-    {
-        $cartItem->delete();
-    }
-
-    public function clear()
-    {
-        $cart = $this->getCart();
-        $cart->items()->delete();
-    }
-
-    public function getTotal()
-    {
-        $cart = $this->getCart();
-        return $cart->items->sum(fn($item) => $item->getSubtotal());
-    }
-
-    public function checkout()
-    {
-        $cart = $this->getCart();
-        $items = $cart->items()->with('product')->get();
-
-        // Reserve stock for all items
-        $reservations = [];
-        foreach ($items as $item) {
-            $reservation = $item->product->reserveStock(
-                $item->quantity,
-                $cart,
-                now()->addMinutes(15)
-            );
-
-            if (!$reservation) {
-                // Rollback previous reservations
-                foreach ($reservations as $res) {
-                    $res->update(['status' => 'cancelled']);
-                }
-                throw new \Exception('Unable to reserve stock for: ' . $item->product->getLocalized('name'));
-            }
-
-            $reservations[] = $reservation;
-        }
-
-        return [
-            'items' => $items,
-            'reservations' => $reservations,
-            'total' => $this->getTotal(),
-        ];
-    }
-
-    protected function getCart()
-    {
-        // Implementation depends on your cart system
-        // Could be session-based or user-based
-        return auth()->user()->cart ?? session()->get('cart');
-    }
-}
-```
-
-### Cart Controller
-
-```php
-// app/Http/Controllers/CartController.php
-namespace App\Http\Controllers;
-
-use App\Services\CartService;
-use Blax\Shop\Models\Product;
-use Illuminate\Http\Request;
-
-class CartController extends Controller
-{
-    public function __construct(
-        protected CartService $cartService
-    ) {}
-
-    public function add(Request $request, Product $product)
-    {
-        $validated = $request->validate([
-            'quantity' => 'required|integer|min:1',
-        ]);
-
-        try {
-            $cartItem = $this->cartService->add($product, $validated['quantity']);
-
-            return response()->json([
-                'success' => true,
-                'cart_item' => $cartItem,
-                'cart_total' => $this->cartService->getTotal(),
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage()
-            ], 400);
-        }
-    }
-
-    public function update(Request $request, $cartItemId)
-    {
-        $validated = $request->validate([
-            'quantity' => 'required|integer|min:1',
-        ]);
-
-        $cartItem = CartItem::findOrFail($cartItemId);
-
-        try {
-            $this->cartService->update($cartItem, $validated['quantity']);
-
-            return response()->json([
-                'success' => true,
-                'cart_total' => $this->cartService->getTotal(),
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage()
-            ], 400);
-        }
-    }
-
-    public function remove($cartItemId)
-    {
-        $cartItem = CartItem::findOrFail($cartItemId);
-        $this->cartService->remove($cartItem);
-
+    if ($success) {
+        // Refund successful
+        // Stock has been returned
+        // Purchase status changed to 'refunded'
+        // Product 'refunded' actions triggered
+        
         return response()->json([
             'success' => true,
-            'cart_total' => $this->cartService->getTotal(),
+            'message' => 'Purchase refunded successfully',
         ]);
     }
-
-    public function checkout()
-    {
-        try {
-            $checkoutData = $this->cartService->checkout();
-
-            return response()->json([
-                'success' => true,
-                'checkout' => $checkoutData,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage()
-            ], 400);
-        }
-    }
+} catch (\Exception $e) {
+    return response()->json([
+        'error' => $e->getMessage()
+    ], 400);
 }
 ```
 
-## Handling Refunds
+### Important Notes
+
+- Only completed purchases can be refunded
+- Stock is automatically returned to inventory
+- Product actions with event 'refunded' are triggered
+
+## Cart Model
+
+### Get Current Cart
 
 ```php
-public function refund($purchaseId)
-{
-    $purchase = ProductPurchase::findOrFail($purchaseId);
-    $product = $purchase->product;
+// Get or create current active cart
+$cart = $user->currentCart();
 
-    // Process refund with payment processor
-    $refund = PaymentService::refund($purchase->meta['payment_id']);
+// Cart properties
+$cart->session_id;      // Session ID for guest carts
+$cart->customer_id;     // User ID
+$cart->customer_type;   // User model class
+$cart->currency;        // Cart currency (default: USD)
+$cart->status;          // active, abandoned, converted, expired
+$cart->converted_at;    // When cart was checked out
+$cart->expires_at;      // Cart expiration date
+$cart->last_activity_at; // Last activity timestamp
+```
 
-    if ($refund->success) {
-        // Return stock
-        $product->increaseStock($purchase->quantity);
+### Cart Relationships
 
-        // Update purchase status
-        $purchase->update([
-            'status' => 'refunded',
-            'meta' => array_merge($purchase->meta, [
-                'refund_id' => $refund->id,
-                'refunded_at' => now(),
-            ]),
-        ]);
+```php
+// Get cart items
+$items = $cart->items()->get();
 
-        // Trigger refund actions
-        $product->callActions('refunded', $purchase, [
-            'refund' => $refund,
-        ]);
+// Get cart purchases (if converted)
+$purchases = $cart->purchases()->get();
 
-        return response()->json(['success' => true]);
-    }
+// Get cart customer (user)
+$customer = $cart->customer;
+```
 
-    return response()->json(['error' => 'Refund failed'], 400);
+### Cart Methods
+
+```php
+// Get cart total
+$total = $cart->getTotal();
+
+// Get total items
+$itemCount = $cart->getTotalItems();
+
+// Check if cart is expired
+if ($cart->isExpired()) {
+    // Cart has expired
+}
+
+// Check if cart is converted
+if ($cart->isConverted()) {
+    // Cart has been checked out
 }
 ```
 
-## Product Actions on Purchase
-
-Product actions allow you to execute custom logic when products are purchased:
+### Add Items to Cart Directly
 
 ```php
-use Blax\Shop\Models\ProductAction;
+use Blax\Shop\Models\Cart;
 
-// Create action to grant access to a course
-ProductAction::create([
-    'product_id' => $product->id,
-    'action_type' => 'grant_access',
-    'event' => 'purchased',
-    'config' => [
-        'resource_type' => 'course',
-        'resource_id' => 123,
-    ],
-    'active' => true,
-]);
+$cart = Cart::find($cartId);
 
-// Action is automatically triggered when product is purchased
-// Implement the action handler in your application
+$cartItem = $cart->addToCart(
+    $product, // or $productPrice
+    quantity: 2,
+    parameters: ['size' => 'L']
+);
 ```
 
-See [Product Actions documentation](docs/07-product-actions.md) for more details.
+## Product Purchase Model
+
+### Purchase Properties
+
+```php
+$purchase = ProductPurchase::find($purchaseId);
+
+$purchase->status;           // cart, pending, unpaid, completed, refunded
+$purchase->cart_id;          // Associated cart ID
+$purchase->price_id;         // Associated price ID
+$purchase->purchasable_id;   // Product ID
+$purchase->purchasable_type; // Product class
+$purchase->purchaser_id;     // User ID
+$purchase->purchaser_type;   // User class
+$purchase->quantity;         // Quantity purchased
+$purchase->amount;           // Total amount
+$purchase->amount_paid;      // Amount paid
+$purchase->charge_id;        // Payment charge ID
+$purchase->meta;             // Additional metadata
+```
+
+### Purchase Relationships
+
+```php
+// Get purchased product
+$product = $purchase->purchasable;
+
+// Get purchaser (user)
+$user = $purchase->purchaser;
+```
+
+### Purchase Scopes
+
+```php
+// Get purchases in cart
+$cartPurchases = ProductPurchase::inCart()->get();
+
+// Get completed purchases
+$completed = ProductPurchase::completed()->get();
+
+// Get purchases from specific cart
+$cartPurchases = ProductPurchase::fromCart($cartId)->get();
+```
+
+## Stock Reservations
+
+When adding products to cart, stock is automatically reserved:
+
+```php
+// Stock is reserved when adding to cart
+$cartItem = $user->addToCart($product, quantity: 2);
+
+// Reservation is created automatically
+// It expires after configured time (default: 15 minutes)
+// Stock is released back when:
+// - Reservation expires
+// - Cart item is removed
+// - Cart is abandoned
+```
+
+## Error Handling
+
+### Common Exceptions
+
+```php
+use Blax\Shop\Exceptions\NotPurchasable;
+use Blax\Shop\Exceptions\MultiplePurchaseOptions;
+use Blax\Shop\Exceptions\NotEnoughStockException;
+
+try {
+    $purchase = $user->purchase($product);
+} catch (NotPurchasable $e) {
+    // Product has no default price
+} catch (MultiplePurchaseOptions $e) {
+    // Product has multiple default prices - need to specify which one
+    $price = $product->prices()->where('currency', 'USD')->first();
+    $purchase = $user->purchase($price);
+} catch (NotEnoughStockException $e) {
+    // Insufficient stock available
+    $available = $product->getAvailableStock();
+    echo "Only {$available} items available";
+} catch (\Exception $e) {
+    // General error
+    echo $e->getMessage();
+}
+```
+
+## Complete Example
+
+```php
+// Product listing
+Route::get('/products', function () {
+    $products = Product::visible()
+        ->inStock()
+        ->with(['prices' => fn($q) => $q->where('is_default', true)])
+        ->get();
+    
+    return view('products.index', compact('products'));
+});
+
+// Add to cart
+Route::post('/cart/add/{product}', function (Product $product) {
+    $user = auth()->user();
+    
+    try {
+        $cartItem = $user->addToCart($product, quantity: 1);
+        
+        return redirect()->back()->with('success', 'Product added to cart!');
+    } catch (\Exception $e) {
+        return redirect()->back()->with('error', $e->getMessage());
+    }
+});
+
+// View cart
+Route::get('/cart', function () {
+    $user = auth()->user();
+    
+    $cartItems = $user->cartItems()->with('purchasable')->get();
+    $cartTotal = $user->getCartTotal();
+    $cartCount = $user->getCartItemsCount();
+    
+    return view('cart.index', compact('cartItems', 'cartTotal', 'cartCount'));
+});
+
+// Checkout
+Route::post('/checkout', function () {
+    $user = auth()->user();
+    
+    try {
+        $purchases = $user->checkout();
+        
+        return redirect()->route('orders.success')
+            ->with('success', 'Order placed successfully!');
+    } catch (\Exception $e) {
+        return redirect()->back()->with('error', $e->getMessage());
+    }
+});
+
+// Order history
+Route::get('/orders', function () {
+    $user = auth()->user();
+    
+    $purchases = $user->completedPurchases()
+        ->with('purchasable')
+        ->orderBy('created_at', 'desc')
+        ->get();
+    
+    return view('orders.index', compact('purchases'));
+});
+```
