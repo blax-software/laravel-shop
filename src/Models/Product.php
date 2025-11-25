@@ -122,6 +122,7 @@ class Product extends Model implements Purchasable, Cartable
 
         static::deleted(function ($model) {
             $model->actions()->delete();
+            $model->attributes()->delete();
         });
     }
 
@@ -389,7 +390,7 @@ class Product extends Model implements Purchasable, Cartable
         return $query->where(function ($q) use ($search) {
             $q->where('slug', 'like', "%{$search}%")
                 ->orWhere('sku', 'like', "%{$search}%")
-                ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(meta, '$.name')) LIKE ?", ["%{$search}%"]);
+                ->orWhere('name', 'like', "%{$search}%");
         });
     }
 
@@ -411,8 +412,12 @@ class Product extends Model implements Purchasable, Cartable
 
     public function scopeLowStock($query)
     {
+        $stockTable = config('shop.tables.product_stocks', 'product_stocks');
+        $productTable = config('shop.tables.products', 'products');
+        
         return $query->where('manage_stock', true)
-            ->whereColumn('stock_quantity', '<=', 'low_stock_threshold');
+            ->whereNotNull('low_stock_threshold')
+            ->whereRaw("(\n                SELECT COALESCE(SUM(quantity), 0)\n                FROM {$stockTable}\n                WHERE {$stockTable}.product_id = {$productTable}.id\n                AND {$stockTable}.status IN ('completed', 'pending')\n                AND ({$stockTable}.expires_at IS NULL OR {$stockTable}.expires_at > ?)\n            ) <= {$productTable}.low_stock_threshold", [now()]);
     }
 
     public function isLowStock(): bool

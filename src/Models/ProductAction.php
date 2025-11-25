@@ -114,4 +114,9 @@ class ProductAction extends Model
 
         dispatch(new $action_job(...$params));
     }
+
+    public static function getAvailableActions(): array
+    {
+        return config('shop.actions.available', []);
+    }
 }
