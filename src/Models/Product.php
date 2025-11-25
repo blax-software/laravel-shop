@@ -216,11 +216,7 @@ class Product extends Model implements Purchasable, Cartable
 
     public function getCurrentPrice(): ?float
     {
-        if ($this->isOnSale()) {
-            return $this->sale_price;
-        }
-
-        return $this->defaultPrice()->first()?->getCurrentPrice();
+        return $this->defaultPrice()->first()?->getCurrentPrice($this->isOnSale());
     }
 
     public function isInStock(): bool
@@ -425,7 +421,7 @@ class Product extends Model implements Purchasable, Cartable
             return false;
         }
 
-        return $this->stock_quantity <= $this->low_stock_threshold;
+        return $this->getAvailableStock() <= $this->low_stock_threshold;
     }
 
     public function isVisible(): bool
@@ -452,7 +448,6 @@ class Product extends Model implements Purchasable, Cartable
             'short_description' => $this->getLocalized('short_description'),
             'type' => $this->type,
             'price' => $this->getCurrentPrice(),
-            'regular_price' => $this->regular_price,
             'sale_price' => $this->sale_price,
             'is_on_sale' => $this->isOnSale(),
             'low_stock' => $this->isLowStock(),

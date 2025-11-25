@@ -25,9 +25,7 @@ class StockManagementTest extends TestCase
     /** @test */
     public function it_detects_sufficient_stock()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 50,
+        $product = Product::factory()->withStocks(50)->create([
             'low_stock_threshold' => 10,
         ]);
 

@@ -134,7 +134,6 @@ class ShopAddExampleProducts extends Command
             'is_visible' => true,
             'featured' => $this->faker->boolean(20), // 20% featured
             'price' => $onSale ? $regularPrice * 0.8 : $regularPrice,
-            'regular_price' => $regularPrice,
             'sale_price' => $onSale ? $regularPrice * $this->faker->randomFloat(2, 0.6, 0.9) : null,
             'sale_start' => $onSale ? now()->subDays($this->faker->numberBetween(1, 30)) : null,
             'sale_end' => $onSale ? now()->addDays($this->faker->numberBetween(7, 60)) : null,
@@ -361,7 +360,6 @@ class ShopAddExampleProducts extends Command
                 'status' => 'published',
                 'is_visible' => false, // Variations are not directly visible
                 'price' => $product->price + ($index * 5), // Slight price increase per size
-                'regular_price' => $product->regular_price + ($index * 5),
                 'manage_stock' => true,
                 'stock_quantity' => $this->faker->numberBetween(5, 50),
                 'in_stock' => true,

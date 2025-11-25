@@ -210,11 +210,11 @@ class StockManagementTest extends TestCase
     /** @test */
     public function product_tracks_low_stock_threshold()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 15,
-            'low_stock_threshold' => 10,
-        ]);
+        $product = Product::factory()
+            ->withStocks(12)
+            ->create([
+                'low_stock_threshold' => 10,
+            ]);
 
         $this->assertFalse($product->isLowStock());
 
@@ -226,14 +226,12 @@ class StockManagementTest extends TestCase
     /** @test */
     public function it_updates_in_stock_status_automatically()
     {
-        $product = Product::factory()->create([
-            'manage_stock' => true,
-            'stock_quantity' => 5,
-            'in_stock' => true,
-        ]);
+        $product = Product::factory()
+            ->withStocks(10)
+            ->create();
 
-        $product->decreaseStock(5);
+        $product->decreaseStock(10);
 
-        $this->assertFalse($product->fresh()->in_stock);
+        $this->assertFalse($product->fresh()->isInStock());
     }
 }

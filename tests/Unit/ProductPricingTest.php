@@ -25,13 +25,16 @@ class ProductPricingTest extends TestCase
     public function it_returns_sale_price_when_on_sale()
     {
         $product = Product::factory()
-            ->withPrices(2, 100)
-            ->onSale(
-                sale_price: 80,
-                sale_start: now()->subDay(),
-                sale_end: now()->addDay(),
-            )
-            ->create();
+            ->withPrices(1, 100)
+            ->create([
+                'sale_start' => now()->subDay(),
+                'sale_end' => now()->addDay(),
+            ]);
+
+        $price = $product->prices()->first();
+        $price->sale_unit_amount = 80;
+
+        $price->save();
 
         $this->assertEquals(80, $product->getCurrentPrice());
     }
@@ -39,11 +42,19 @@ class ProductPricingTest extends TestCase
     /** @test */
     public function it_returns_regular_price_when_sale_has_ended()
     {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => 80,
-            'sale_start' => now()->subDays(7),
-            'sale_end' => now()->subDay(),
+        $product = Product::factory()->withPrices(1, 100)->create([
+            'sale_start' => now()->subWeek(),
+            'sale_end' => now()->addHour(),
+        ]);
+
+        $price = $product->prices()->first();
+        $price->sale_unit_amount = 80;        
+        $price->save();
+
+        $this->assertEquals(80, $product->getCurrentPrice());
+
+        $product->update([
+            'sale_end' => now()->subHour(),
         ]);
 
         $this->assertEquals(100, $product->getCurrentPrice());
@@ -52,26 +63,21 @@ class ProductPricingTest extends TestCase
     /** @test */
     public function it_returns_regular_price_when_sale_hasnt_started()
     {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => 80,
+        $product = Product::factory()->withPrices(1, 100)->create([
             'sale_start' => now()->addDay(),
             'sale_end' => now()->addWeek(),
         ]);
 
-        $this->assertEquals(100, $product->getCurrentPrice());
-    }
+        $price = $product->prices()->first();
+        $price->sale_unit_amount = 80;        
+        $price->save();
 
-    /** @test */
-    public function it_calculates_discount_percentage()
-    {
-        $product = Product::factory()->create([
-            'regular_price' => 100,
-            'sale_price' => 75,
+        $this->assertEquals(100, $product->getCurrentPrice());
+
+        $product->update([
+            'sale_start' => now()->subHour(),
         ]);
 
-        $discount = (($product->regular_price - $product->sale_price) / $product->regular_price) * 100;
-
-        $this->assertEquals(25, $discount);
+        $this->assertEquals(80, $product->getCurrentPrice());
     }
 }
