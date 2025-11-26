@@ -11,6 +11,8 @@ return [
         'product_stocks' => 'product_stocks',
         'carts' => 'carts',
         'cart_items' => 'cart_items',
+        'payment_provider_identities' => 'payment_provider_identities',
+        'payment_methods' => 'payment_methods',
     ],
 
     // Model classes (allow overriding in main instance)
@@ -23,6 +25,8 @@ return [
         'product_purchase' => \Blax\Shop\Models\ProductPurchase::class,
         'cart' => \Blax\Shop\Models\Cart::class,
         'cart_item' => \Blax\Shop\Models\CartItem::class,
+        'payment_provider_identity' => \Blax\Shop\Models\PaymentProviderIdentity::class,
+        'payment_method' => \Blax\Shop\Models\PaymentMethod::class,
     ],
 
     // API Routes configuration

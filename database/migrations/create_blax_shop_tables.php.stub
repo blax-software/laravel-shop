@@ -295,6 +295,46 @@ return new class extends Migration
                 $table->foreign('cart_id')->references('id')->on(config('shop.tables.carts', 'carts'))->onDelete('cascade');
             });
         }
+
+        // Payment provider identities table
+        if (!Schema::hasTable(config('shop.tables.payment_provider_identities', 'payment_provider_identities'))) {
+            Schema::create(config('shop.tables.payment_provider_identities', 'payment_provider_identities'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->nullableMorphs('customer');
+                $table->string('provider_name'); // stripe, paypal, etc.
+                $table->string('customer_identification_id'); // The provider's customer ID
+                $table->json('meta')->nullable();
+                $table->timestamps();
+
+                $table->index(['customer_type', 'customer_id', 'provider_name']);
+                $table->unique(['customer_type', 'customer_id', 'provider_name'], 'payment_provider_identity_unique');
+            });
+        }
+
+        // Payment methods table
+        if (!Schema::hasTable(config('shop.tables.payment_methods', 'payment_methods'))) {
+            Schema::create(config('shop.tables.payment_methods', 'payment_methods'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('payment_provider_identity_id');
+                $table->string('provider_payment_method_id'); // The provider's payment method ID
+                $table->string('type')->nullable(); // card, bank_account, etc.
+                $table->string('name')->nullable(); // Custom name given by user
+                $table->string('last_digits')->nullable(); // Last 4 digits of card/account
+                $table->string('brand')->nullable(); // visa, mastercard, etc.
+                $table->integer('exp_month')->nullable();
+                $table->integer('exp_year')->nullable();
+                $table->boolean('is_default')->default(false);
+                $table->boolean('is_active')->default(true);
+                $table->json('meta')->nullable();
+                $table->timestamps();
+
+                $table->index(['payment_provider_identity_id', 'is_active']);
+                $table->foreign('payment_provider_identity_id', 'payment_methods_provider_identity_foreign')
+                    ->references('id')
+                    ->on(config('shop.tables.payment_provider_identities', 'payment_provider_identities'))
+                    ->onDelete('cascade');
+            });
+        }
     }
 
     /**
@@ -302,6 +342,8 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists(config('shop.tables.payment_methods', 'payment_methods'));
+        Schema::dropIfExists(config('shop.tables.payment_provider_identities', 'payment_provider_identities'));
         Schema::dropIfExists(config('shop.tables.cart_discounts', 'cart_discounts'));
         Schema::dropIfExists(config('shop.tables.cart_items', 'cart_items'));
         Schema::dropIfExists(config('shop.tables.carts', 'carts'));
