@@ -93,7 +93,7 @@ $purchase = $user->purchase($product, quantity: 2, options: [
 $cartItem = $user->addToCart($product, quantity: 1);
 
 // Checkout cart
-$completedPurchases = $user->checkout();
+$completedPurchases = $user->checkoutCart();
 
 // Check if user has purchased
 if ($user->hasPurchased($product)) {

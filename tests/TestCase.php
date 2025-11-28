@@ -57,5 +57,8 @@ abstract class TestCase extends Orchestra
         // Run package migrations
         $migration = include __DIR__ . '/../database/migrations/create_blax_shop_tables.php.stub';
         $migration->up();
+
+        $migration = include __DIR__ . '/../database/migrations/add_stripe_to_users_table.php.stub';
+        $migration->up();
     }
 }

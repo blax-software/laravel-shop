@@ -44,23 +44,15 @@ class PurchaseFlowTest extends TestCase
     public function user_can_add_product_to_cart()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->create([
+        $product = Product::factory()->withPrices(1, 2999)->create([
             'manage_stock' => false,
         ]);
 
-        $price = ProductPrice::create([
-            'purchasable_id' => $product->id,
-            'purchasable_type' => get_class($product),
-            'amount' => 2999, // in cents
-            'currency' => 'USD',
-            'is_default' => true,
-        ]);
-
-        $cartItem = $user->addToCart($price, quantity: 2);
+        $cartItem = $user->addToCart($product, quantity: 2);
 
         $this->assertInstanceOf(CartItem::class, $cartItem);
         $this->assertEquals(2, $cartItem->quantity);
-        $this->assertEquals($price->id, $cartItem->purchasable_id);
+        $this->assertEquals($product->id, $cartItem->purchasable_id);
     }
 
     /** @test */
@@ -122,12 +114,13 @@ class PurchaseFlowTest extends TestCase
         $product1->update(['manage_stock' => true]);
         $product2->update(['manage_stock' => true]);
 
-        $this->assertThrows(fn() => $user->checkout(), NotEnoughStockException::class);
+        $this->assertThrows(fn() => $user->checkoutCart(), NotEnoughStockException::class);
 
         $product1->update(['manage_stock' => false]);
         $product2->increaseStock(5);
 
-        $purchases = $user->checkout();
+        $cart = $user->checkoutCart();
+        $purchases = $cart->purchases;
 
         $this->assertCount(2, $purchases);
         $this->assertEquals('unpaid', $purchases[0]->status);
@@ -267,7 +260,7 @@ class PurchaseFlowTest extends TestCase
     {
         $user = User::factory()->create();
         $cart = Cart::create(['user_id' => $user->id]);
-        $product = Product::factory()->create(['manage_stock' => false]);
+        $product = Product::factory()->create();
 
         $purchase = ProductPurchase::create([
             'user_id' => $user->id,
@@ -296,7 +289,7 @@ class PurchaseFlowTest extends TestCase
         if ($cart) {
             $this->assertNull($cart->converted_at);
 
-            $user->checkout();
+            $cart = $user->checkoutCart();
 
             $this->assertNotNull($cart->fresh()->converted_at);
         }
@@ -330,5 +323,20 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals(2, $purchase->quantity);
         $this->assertEquals(0, $purchase->amount_paid);
         $this->assertGreaterThan(0, $purchase->amount);
+    }
+
+    /** @test */
+    public function cart_total_is_correct_after_checkout()
+    {
+        $user = User::factory()->create();
+        $product1 = Product::factory()->withStocks()->withPrices(1,unit_amount:30)->create();
+        $product2 = Product::factory()->withStocks()->withPrices(1,unit_amount:70)->create();
+
+        $user->addToCart($product1, quantity: 1);
+        $user->addToCart($product2, quantity: 2);
+
+        $cart = $user->checkoutCart();
+
+        $this->assertEquals(170.00, $cart->getTotal());
     }
 }

@@ -34,7 +34,7 @@ trait HasCart
      * 
      * @return Cart
      */    
-    public function currentCart()
+    public function currentCart() : \Blax\Shop\Models\Cart
     {
         return $this->cart()
             ->whereNull('converted_at')

@@ -364,7 +364,7 @@ Route::get('/checkout/success', function (Request $request) {
         $user = auth()->user();
         
         // Convert cart to purchases
-        $purchases = $user->checkout();
+        $purchases = $user->checkoutCart();
         
         // Store charge ID
         foreach ($purchases as $purchase) {

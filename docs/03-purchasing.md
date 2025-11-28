@@ -191,7 +191,7 @@ $stats = [
 
 ```php
 try {
-    $purchases = $user->checkout();
+    $purchases = $user->checkoutCart();
     
     // Checkout successful
     // Cart items are now converted to completed purchases
@@ -491,7 +491,7 @@ Route::post('/checkout', function () {
     $user = auth()->user();
     
     try {
-        $purchases = $user->checkout();
+        $purchases = $user->checkoutCart();
         
         return redirect()->route('orders.success')
             ->with('success', 'Order placed successfully!');

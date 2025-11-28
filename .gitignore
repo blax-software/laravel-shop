@@ -6,3 +6,6 @@ composer.lock
 workbench
 .phpunit.result.cache
 .phpunit.cache
+.env
+phpunit.xml
+*dist*

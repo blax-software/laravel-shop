@@ -29,5 +29,7 @@
         <env name="SESSION_DRIVER" value="array"/>
         <env name="QUEUE_DRIVER" value="sync"/>
         <env name="SHOP_CACHE_ENABLED" value="false"/>
+        <env name="STRIPE_KEY" value="your_stripe_test_key_here"/>
+        <env name="STRIPE_SECRET" value="your_stripe_test_secret_here"/>
     </php>
 </phpunit>

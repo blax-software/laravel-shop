@@ -5,6 +5,7 @@ namespace Blax\Shop\Traits;
 use Blax\Shop\Exceptions\MultiplePurchaseOptions;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Exceptions\NotPurchasable;
+use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Models\Product;
@@ -136,10 +137,10 @@ trait HasShoppingCapabilities
      *
      * @param string|null $cartId (deprecated - not used)
      * @param array $options
-     * @return Collection
+     * @return Cart
      * @throws \Exception
      */
-    public function checkout(?string $cartId = null, array $options = []): Collection
+    public function checkoutCart(?string $cartId = null, array $options = []): Cart
     {
         $items = $this->cartItems()
             ->with('purchasable')
@@ -161,10 +162,14 @@ trait HasShoppingCapabilities
                 $quantity
             );
 
-            $purchases->push($purchase);
+            $purchase->update([
+                'cart_id' => $item->cart_id,
+            ]);
 
             // Remove item from cart
-            $item->delete();
+            $item->update([
+                'purchase_id' => $purchase->id,
+            ]);
         }
 
         $cart = $this->currentCart();
@@ -172,7 +177,7 @@ trait HasShoppingCapabilities
             'converted_at' => now(),
         ]);
 
-        return $purchases;
+        return $cart;
     }
 
     /**

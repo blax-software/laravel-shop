@@ -20,6 +20,7 @@ class CartItem extends Model
         'regular_price',
         'subtotal',
         'parameters',
+        'purchase_id',
         'meta',
     ];
 
@@ -64,6 +65,15 @@ class CartItem extends Model
     public function purchasable()
     {
         return $this->morphTo('purchasable');
+    }
+
+    public function purchase()
+    {
+        return $this->hasOne(
+            config('shop.models.product_purchase', ProductPurchase::class),
+            'id',
+            'purchase_id'
+        );
     }
 
     public function product(): BelongsTo|null

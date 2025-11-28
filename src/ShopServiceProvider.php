@@ -25,6 +25,7 @@ class ShopServiceProvider extends ServiceProvider
         // Publish migrations
         $this->publishes([
             __DIR__ . '/../database/migrations/create_blax_shop_tables.php.stub' => $this->getMigrationFileName('create_blax_shop_tables.php'),
+            __DIR__ . '/../database/migrations/add_stripe_to_users_table.php.stub' => $this->getMigrationFileName('add_stripe_to_users_table.php'),
         ], 'shop-migrations');
 
         // Load routes if enabled (API only)

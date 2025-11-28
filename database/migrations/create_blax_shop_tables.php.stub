@@ -266,6 +266,7 @@ return new class extends Migration
                 $table->uuid('id')->primary();
                 $table->uuid('cart_id');
                 $table->uuidMorphs('purchasable');
+                $table->foreignUuid('purchase_id')->nullable()->constrained(config('shop.tables.product_purchases', 'product_purchases'))->nullOnDelete();
                 $table->integer('quantity')->default(1);
                 $table->decimal('price', 10, 2)->default(0);
                 $table->decimal('regular_price', 10, 2)->nullable();

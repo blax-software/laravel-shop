@@ -212,9 +212,9 @@ class Product extends Model implements Purchasable, Cartable
         return true;
     }
 
-    public function getCurrentPrice(): ?float
+    public function getCurrentPrice(bool|null $sales_price = null): ?float
     {
-        return $this->defaultPrice()->first()?->getCurrentPrice($this->isOnSale());
+        return $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
     }
 
     public function isInStock(): bool

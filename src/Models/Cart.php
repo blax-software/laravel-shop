@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Cart extends Model
@@ -63,7 +64,7 @@ class Cart extends Model
     public function getTotal(): float
     {
         return $this->items->sum(function ($item) {
-            return $item->quantity * $item->price;
+            return $item->subtotal;
         });
     }
 
@@ -126,9 +127,9 @@ class Cart extends Model
             'purchasable_id' => $cartable->getKey(),
             'purchasable_type' => get_class($cartable),
             'quantity' => $quantity,
-            'price' => ($cartable?->sale_unit_amount ?? $cartable?->unit_amount ?? 0),
-            'regular_price' => $cartable?->unit_amount,
-            'subtotal' => ($cartable?->sale_unit_amount ?? $cartable?->unit_amount ?? 0) * $quantity,
+            'price' => $cartable?->getCurrentPrice(),
+            'regular_price' => $cartable?->getCurrentPrice(false) ?? $cartable?->unit_amount,
+            'subtotal' => ($cartable?->getCurrentPrice()) * $quantity,
             'parameters' => $parameters,
         ]);
 
