@@ -24,10 +24,18 @@ class StripeChargeFlowTest extends TestCase
     {
         parent::setUp();
         
+        $key = env('STRIPE_KEY', 'your_stripe_test_key_here');
+        $secret = env('STRIPE_SECRET', 'your_stripe_test_secret_here');
+
+        if (strpos($key, 'your_stripe_test_key_here') >= 0 ||
+            strpos($secret, 'your_stripe_test_secret_here') >= 0) {
+            $this->markTestSkipped('Stripe test keys are not set in environment variables.');
+        } 
+
         // Set Stripe test keys
         config([
-            'cashier.key' => env('STRIPE_KEY', 'sk_test_fake'),
-            'cashier.secret' => env('STRIPE_SECRET', 'sk_test_fake'),
+            'cashier.key' => $key,
+            'cashier.secret' => $secret,
         ]);
 
         Stripe::setApiKey(config('cashier.secret'));

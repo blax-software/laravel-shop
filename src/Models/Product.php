@@ -528,4 +528,9 @@ class Product extends Model implements Purchasable, Cartable
             })
             ->where('product_id', $this->id);
     }
+
+    public function hasPrice() : bool
+    {
+        return $this->prices()->exists();
+    }
 }

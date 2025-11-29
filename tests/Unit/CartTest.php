@@ -52,18 +52,31 @@ class CartTest extends TestCase
     public function cart_respects_sale_prices()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create();
+        $product = Product::factory()->withPrices(1,50)->create([
+            'sale_start' => now()->subDay(), 
+            'sale_end' => now()->addDay(),
+        ]);
+
+        $product->prices()->first()->update([
+            'is_default' => false,
+        ]);
+
         $price = ProductPrice::create([
             'purchasable_id' => $product->id,
             'purchasable_type' => get_class($product),
             'unit_amount' => 100.00,
             'sale_unit_amount' => 80.00,
             'currency' => 'USD',
+            'is_default' => true,
         ]);
 
-        $cartItem = $cart->addToCart($price, quantity: 1);
+        // Assert product has price
+        $this->assertTrue($product->hasPrice());
+        $this->assertEquals(2, $product->prices()->count());
 
-        $this->assertEquals(80.00, $cartItem->price);
+        $cartItem = $cart->addToCart($product, quantity: 1);
+
+        $this->assertEquals(80.00, $cartItem->getSubtotal());
         $this->assertEquals(100.00, $cartItem->regular_price);
     }
 
