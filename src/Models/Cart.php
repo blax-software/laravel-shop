@@ -5,15 +5,14 @@ namespace Blax\Shop\Models;
 use Blax\Shop\Contracts\Cartable;
 use Blax\Workkit\Traits\HasExpiration;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Cart extends Model
 {
-    use HasUuids, HasExpiration;
+    use HasUuids, HasExpiration, HasFactory;
 
     protected $fillable = [
         'session_id',
@@ -73,6 +72,22 @@ class Cart extends Model
         return $this->items->sum('quantity');
     }
 
+    public function getUnpaidAmount(): float
+    {
+        $paidAmount = $this->purchases()
+            ->whereColumn('total_amount', '!=', 'amount_paid')
+            ->sum('total_amount');
+
+        return max(0, $this->getTotal() - $paidAmount);
+    }
+
+    public function getPaidAmount(): float
+    {
+        return $this->purchases()
+            ->whereColumn('total_amount', '!=', 'amount_paid')
+            ->sum('total_amount');
+    }
+
     public function isExpired(): bool
     {
         return $this->expires_at && $this->expires_at->isPast();
@@ -105,6 +120,13 @@ class Cart extends Model
             ->where('customer_type', $userModel);
     }
 
+    public static function scopeUnpaid($query)
+    {
+        return $query->whereDoesntHave('purchases', function ($q) {
+            $q->whereColumn('total_amount', '!=', 'amount_paid');
+        });
+    }
+
     protected static function booted()
     {
         static::deleting(function ($cart) {
@@ -113,10 +135,10 @@ class Cart extends Model
     }
 
     public function addToCart(
-        Model $cartable, 
+        Model $cartable,
         $quantity = 1,
         $parameters = []
-    ) : CartItem {
+    ): CartItem {
 
         // $cartable must implement Cartable
         if (! $cartable instanceof Cartable) {
@@ -136,5 +158,42 @@ class Cart extends Model
         $cartItem = $cartItem->fresh();
 
         return $cartItem;
+    }
+
+    public function checkout(): static
+    {
+        $items = $this->items()
+            ->with('purchasable')
+            ->get();
+
+        if ($items->isEmpty()) {
+            throw new \Exception("Cart is empty");
+        }
+
+        // Create ProductPurchase for each cart item
+        foreach ($items as $item) {
+            $product = $item->purchasable;
+            $quantity = $item->quantity;
+
+            $purchase = $this->customer->purchase(
+                $product->prices()->first(),
+                $quantity
+            );
+
+            $purchase->update([
+                'cart_id' => $item->cart_id,
+            ]);
+
+            // Remove item from cart
+            $item->update([
+                'purchase_id' => $purchase->id,
+            ]);
+        }
+
+        $this->update([
+            'converted_at' => now(),
+        ]);
+
+        return $this;
     }
 }

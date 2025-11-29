@@ -3,6 +3,7 @@
 namespace Blax\Shop\Database\Factories;
 
 use Blax\Shop\Models\Product;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -55,15 +56,19 @@ class ProductFactory extends Factory
         return $this->state(['featured' => true]);
     }
 
-    public function withPrices(int $count = 1, null|float $unit_amount = null): static
-    {
-        return $this->afterCreating(function (Product $product) use ($count, $unit_amount) {
+    public function withPrices(
+        int $count = 1,
+        null|float $unit_amount = null,
+        null|float $sale_unit_amount = null
+    ): static {
+        return $this->afterCreating(function (Product $product) use ($count, $unit_amount, $sale_unit_amount) {
             $prices = \Blax\Shop\Models\ProductPrice::factory()
                 ->count($count)
                 ->create([
                     'purchasable_type' => get_class($product),
                     'purchasable_id' => $product->id,
                     'unit_amount' => $unit_amount ?? $this->faker->randomFloat(2, 10, 1000),
+                    'sale_unit_amount' => $sale_unit_amount,
                     'currency' => 'EUR',
                 ]);
 
@@ -76,10 +81,18 @@ class ProductFactory extends Factory
         });
     }
 
-    public function withStocks(int $quantity = 10) : static
+    public function withStocks(int $quantity = 10): static
     {
         return $this->afterCreating(function (Product $product) use ($quantity) {
             $product->increaseStock($quantity);
         });
+    }
+
+    public function onSale(Carbon|null $sale_start, Carbon|null $sale_end = null)
+    {
+        return $this->state([
+            'sale_start' => $sale_start,
+            'sale_end' => $sale_end,
+        ]);
     }
 }

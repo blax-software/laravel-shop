@@ -78,7 +78,7 @@ trait HasShoppingCapabilities
         }
 
         $product = $price->purchasable;
-        
+
         // product must have interface Purchasable
         if (!in_array('Blax\Shop\Contracts\Purchasable', class_implements($product))) {
             throw new \Exception("The product is not purchasable");
@@ -140,44 +140,16 @@ trait HasShoppingCapabilities
      * @return Cart
      * @throws \Exception
      */
-    public function checkoutCart(?string $cartId = null, array $options = []): Cart
+    public function checkoutCart(?string $cartId = null): Cart
     {
-        $items = $this->cartItems()
-            ->with('purchasable')
-            ->get();
+        $cart = Cart::where('id', $cartId)
+            ->where('customer_id', $this->getKey())
+            ->where('customer_type', get_class($this))
+            ->first();
 
-        if ($items->isEmpty()) {
-            throw new \Exception("Cart is empty");
-        }
+        $cart ??= $this->currentCart();
 
-        $purchases = collect();
-
-        // Create ProductPurchase for each cart item
-        foreach ($items as $item) {
-            $product = $item->purchasable;
-            $quantity = $item->quantity;
-            
-            $purchase = $this->purchase(
-                $product->prices()->first(),
-                $quantity
-            );
-
-            $purchase->update([
-                'cart_id' => $item->cart_id,
-            ]);
-
-            // Remove item from cart
-            $item->update([
-                'purchase_id' => $purchase->id,
-            ]);
-        }
-
-        $cart = $this->currentCart();
-        $cart->update([
-            'converted_at' => now(),
-        ]);
-
-        return $cart;
+        return $cart->checkout();
     }
 
     /**

@@ -19,9 +19,11 @@ class PaymentMethod extends Model
         'type',
         'name',
         'last_digits',
+        'last_alphanumeric',
         'brand',
         'exp_month',
         'exp_year',
+        'expires_at',
         'is_default',
         'is_active',
         'meta',
@@ -30,6 +32,7 @@ class PaymentMethod extends Model
     protected $casts = [
         'exp_month' => 'integer',
         'exp_year' => 'integer',
+        'expires_at' => 'datetime',
         'is_default' => 'boolean',
         'is_active' => 'boolean',
         'meta' => 'object',
@@ -62,14 +65,20 @@ class PaymentMethod extends Model
      */
     public function isExpired(): bool
     {
-        if (!$this->exp_month || !$this->exp_year) {
-            return false;
+        $now = now();
+
+        // Prefer explicit timestamp if provided (for non-card methods like crypto wallets)
+        if ($this->expires_at) {
+            return $now->isAfter($this->expires_at);
         }
 
-        $now = now();
-        $expirationDate = now()->setYear($this->exp_year)->setMonth($this->exp_month)->endOfMonth();
+        // Fallback to month/year for card-like methods
+        if ($this->exp_month && $this->exp_year) {
+            $expirationDate = now()->setYear($this->exp_year)->setMonth($this->exp_month)->endOfMonth();
+            return $now->isAfter($expirationDate);
+        }
 
-        return $now->isAfter($expirationDate);
+        return false;
     }
 
     /**

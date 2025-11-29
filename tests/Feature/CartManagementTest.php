@@ -50,9 +50,9 @@ class CartManagementTest extends TestCase
             'purchasable_id' => $product->id,
             'purchasable_type' => get_class($product),
         ]);
-        
+
         $cart = Cart::create();
-        
+
         $cartItem = CartItem::create([
             'cart_id' => $cart->id,
             'purchasable_id' => $price->id,
@@ -282,7 +282,7 @@ class CartManagementTest extends TestCase
         ]);
 
         $cartItem = $cart->addToCart(
-            $productPrice, 
+            $productPrice,
             quantity: 1,
             parameters: [
                 'color' => 'blue',
@@ -307,13 +307,13 @@ class CartManagementTest extends TestCase
         ]);
 
         $cart->addToCart(
-            $productPrice, 
+            $productPrice,
             quantity: 1,
             parameters: ['size' => 'small']
         );
 
         $cart->addToCart(
-            $productPrice, 
+            $productPrice,
             quantity: 2,
             parameters: ['size' => 'large']
         );
@@ -334,7 +334,7 @@ class CartManagementTest extends TestCase
         ]);
 
         $cartItem = $cart->addToCart(
-            $productPrice, 
+            $productPrice,
             quantity: 1,
         );
 
@@ -343,5 +343,56 @@ class CartManagementTest extends TestCase
         $cart->forceDelete();
 
         $this->assertDatabaseMissing('cart_items', ['id' => $cartItemId]);
+    }
+
+    /** @test */
+    public function it_calculats_unpaid_and_paid_and_can_scope()
+    {
+        $user = User::factory()->create();
+        $cart = $user->currentCart();
+        $product1 = Product::factory()->withStocks()->withPrices(1, 782)->create();
+        $product2 = Product::factory()->withStocks()->withPrices(1, 402)->create();
+        $product3 = Product::factory()->withStocks()->withPrices(1, 855)->create();
+
+        $cart->addToCart($product1);
+        $cart->addToCart($product2);
+        $cart->addToCart($product3);
+
+        $this->assertEquals(2039, $cart->getUnpaidAmount(), 'Unpaid amount should equal total cart amount initially.');
+        $this->assertEquals(0, $cart->getPaidAmount(), 'Paid amount should be zero initially.');
+        $this->assertEquals(2039, $cart->getTotal(), 'Total amount should equal sum of paid and unpaid amounts.');
+        $this->assertEquals($user->currentCart()->id, Cart::unpaid()->first()->id, 'Unpaid cart scope should return the current cart.');
+    }
+
+    /** @test */
+    public function it_can_create_cart_with_factory()
+    {
+        $cart = Cart::factory()->create();
+
+        $this->assertNotNull($cart);
+        $this->assertDatabaseHas('carts', [
+            'id' => $cart->id,
+        ]);
+
+        $cartWithProduct = Cart::factory()
+            ->withNewProductInCart(
+                quantity: 2,
+                unit_amount: 150.00,
+                sale_unit_amount: 120.00,
+                stocks: 10
+            )
+            ->withNewProductInCart(
+                quantity: 2,
+                unit_amount: 150.00,
+                sale_unit_amount: 120.00,
+                stocks: 10,
+                sale_start: now()->subDay(),
+                sale_end: now()->addDay()
+            )
+            ->create();
+
+        $this->assertCount(2, $cartWithProduct->items);
+        $this->assertEquals(4, $cartWithProduct->getTotalItems());
+        $this->assertEquals((150.00 * 2) + (120 * 2), $cartWithProduct->getTotal());
     }
 }

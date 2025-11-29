@@ -4,6 +4,7 @@ namespace Blax\Shop\Traits;
 
 use Blax\Shop\Exceptions\MultiplePurchaseOptions;
 use Blax\Shop\Exceptions\NotPurchasable;
+use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
@@ -15,7 +16,7 @@ trait HasCart
     public function cart(): MorphMany
     {
         return $this->morphMany(
-            config('shop.models.cart', \Blax\Shop\Models\Cart::class),
+            config('shop.models.cart', Cart::class),
             'customer'
         );
     }
@@ -33,8 +34,8 @@ trait HasCart
      * Get or create the current cart for the entity
      * 
      * @return Cart
-     */    
-    public function currentCart() : \Blax\Shop\Models\Cart
+     */
+    public function currentCart(): Cart
     {
         return $this->cart()
             ->whereNull('converted_at')
@@ -52,8 +53,8 @@ trait HasCart
      * @throws \Exception
      */
     public function addToCart(Product|ProductPrice $product_or_price, int $quantity = 1, array $parameters = []): CartItem
-    {   
-        if ($product_or_price instanceof ProductPrice){
+    {
+        if ($product_or_price instanceof ProductPrice) {
             $product = $product_or_price->purchasable;
 
             if ($product instanceof Product) {

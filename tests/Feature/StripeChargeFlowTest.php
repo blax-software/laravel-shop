@@ -8,6 +8,8 @@ use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\CartItem;
+use Blax\Shop\Models\PaymentProviderIdentity;
+use Blax\Shop\Models\PaymentMethod as ShopPaymentMethod;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
@@ -23,14 +25,16 @@ class StripeChargeFlowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         $key = env('STRIPE_KEY', 'your_stripe_test_key_here');
         $secret = env('STRIPE_SECRET', 'your_stripe_test_secret_here');
 
-        if (strpos($key, 'your_stripe_test_key_here') >= 0 ||
-            strpos($secret, 'your_stripe_test_secret_here') >= 0) {
+        if (
+            $key === 'your_stripe_test_key_here' ||
+            $secret === 'your_stripe_test_secret_here'
+        ) {
             $this->markTestSkipped('Stripe test keys are not set in environment variables.');
-        } 
+        }
 
         // Set Stripe test keys
         config([
@@ -53,7 +57,7 @@ class StripeChargeFlowTest extends TestCase
             'email' => 'test@example.com',
             'name' => 'Test User',
         ]);
-        
+
         $this->assertInstanceOf(User::class, $user);
     }
 
@@ -140,7 +144,7 @@ class StripeChargeFlowTest extends TestCase
         $user->createOrGetStripeCustomer();
 
         // Attach test payment method
-        $pm = \Stripe\PaymentMethod::create([
+        $pm = PaymentMethod::create([
             'type' => 'card',
             'card' => ['token' => 'tok_visa'],
         ]);
@@ -158,5 +162,116 @@ class StripeChargeFlowTest extends TestCase
         ]);
 
         $this->assertSame('succeeded', $charge->status);
+    }
+
+    /** @test */
+    public function payment_method_model_can_store_stripe_details()
+    {
+        $user = User::factory()->create();
+
+        // Ensure Stripe customer exists
+        $user->createOrGetStripeCustomer();
+
+        // Create a Stripe payment method (test card)
+        $pm = PaymentMethod::create([
+            'type' => 'card',
+            'card' => ['token' => 'tok_visa'],
+        ]);
+
+        // Attach to customer via Cashier to stay compatible
+        $user->addPaymentMethod($pm->id);
+        $user->updateDefaultPaymentMethod($pm->id);
+
+        // Create provider identity for Stripe
+        $identity = PaymentProviderIdentity::findOrCreateForCustomer(
+            $user,
+            'stripe',
+            $user->stripe_id
+        );
+
+        // Retrieve full details from Stripe
+        $spm = PaymentMethod::retrieve($pm->id);
+
+        // Persist our provider-agnostic payment method record
+        $method = ShopPaymentMethod::create([
+            'payment_provider_identity_id' => $identity->id,
+            'provider_payment_method_id' => $spm->id,
+            'type' => $spm->type,
+            'name' => null,
+            'last_digits' => $spm->card->last4 ?? null,
+            'last_alphanumeric' => null,
+            'brand' => $spm->card->brand ?? null,
+            'exp_month' => $spm->card->exp_month ?? null,
+            'exp_year' => $spm->card->exp_year ?? null,
+            'is_default' => true,
+            'is_active' => true,
+            'meta' => [],
+        ]);
+
+        $this->assertNotNull($method->id);
+        $this->assertSame($pm->id, $method->provider_payment_method_id);
+        $this->assertSame('card', $method->type);
+        $this->assertNotEmpty($method->last_digits);
+        $this->assertNotEmpty($method->brand);
+        $this->assertTrue($method->is_default);
+
+        // Ensure default relationship works on identity
+        $default = $identity->defaultPaymentMethod()->first();
+        $this->assertNotNull($default);
+        $this->assertTrue($default->is_default);
+
+        // Clean up: detach and delete Stripe customer
+        $stripeCustomer = Customer::retrieve($user->stripe_id);
+        $stripeCustomer->delete();
+    }
+
+    /** @test */
+    public function can_switch_default_payment_method_for_provider_identity()
+    {
+        // No need to hit Stripe here; use local records
+        $identity = PaymentProviderIdentity::factory()->stripe()->create();
+
+        $first = ShopPaymentMethod::factory()->forProviderIdentity($identity)->create([
+            'provider_payment_method_id' => 'pm_first',
+            'type' => 'card',
+            'is_default' => true,
+        ]);
+
+        $second = ShopPaymentMethod::factory()->forProviderIdentity($identity)->create([
+            'provider_payment_method_id' => 'pm_second',
+            'type' => 'card',
+            'is_default' => false,
+        ]);
+
+        // Switch default to the second method
+        $second->setAsDefault();
+
+        $this->assertTrue($second->fresh()->is_default);
+        $this->assertFalse($first->fresh()->is_default);
+    }
+
+    public function can_buy_and_charge_cart()
+    {
+        $user = User::factory()->create();
+        $product1 = Product::factory()
+            ->withPrices(1, 500)
+            ->withStocks(10)
+            ->create();
+        $product2 = Product::factory()
+            ->withPrices(1, 200)
+            ->withStocks(10)
+            ->create();
+
+        $user->addToCart($product1, 1);
+        $user->addToCart($product2, 1);
+
+        $cart = $user->getCart();
+
+        $this->assertNotNull($cart);
+        $this->assertCount(2, $cart->items);
+        $this->assertEquals(700, $cart->getTotalAmount());
+
+        // Proceed to checkout
+        $cart = $cart->checkout();
     }
 }

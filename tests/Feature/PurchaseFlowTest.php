@@ -30,7 +30,7 @@ class PurchaseFlowTest extends TestCase
             'amount' => 4999, // in cents
             'currency' => 'USD',
         ]);
-        
+
         $purchase = $user->purchase($price, quantity: 1);
 
         $this->assertInstanceOf(ProductPurchase::class, $purchase);
@@ -114,6 +114,9 @@ class PurchaseFlowTest extends TestCase
         $product1->update(['manage_stock' => true]);
         $product2->update(['manage_stock' => true]);
 
+        // Assert cart customer is user
+        $this->assertEquals($user->id, $user->currentCart()?->customer->id);
+
         $this->assertThrows(fn() => $user->checkoutCart(), NotEnoughStockException::class);
 
         $product1->update(['manage_stock' => false]);
@@ -131,8 +134,8 @@ class PurchaseFlowTest extends TestCase
     public function user_can_get_cart_total()
     {
         $user = User::factory()->create();
-        $product1 = Product::factory()->withStocks()->withPrices(unit_amount:40)->create();
-        $product2 = Product::factory()->withStocks()->withPrices(unit_amount:60)->create();
+        $product1 = Product::factory()->withStocks()->withPrices(unit_amount: 40)->create();
+        $product2 = Product::factory()->withStocks()->withPrices(unit_amount: 60)->create();
 
         $this->assertNotNull($product1->getCurrentPrice());
         $this->assertNotNull($product2->getCurrentPrice());
@@ -238,7 +241,7 @@ class PurchaseFlowTest extends TestCase
         $user = User::factory()->create();
         $product = Product::factory()->withPrices(2)->withStocks(3)->create();
 
-        $this->assertThrows(fn() => $user->addToCart($product, quantity: 5), NotEnoughStockException::class); 
+        $this->assertThrows(fn() => $user->addToCart($product, quantity: 5), NotEnoughStockException::class);
     }
 
     /** @test */
@@ -329,8 +332,8 @@ class PurchaseFlowTest extends TestCase
     public function cart_total_is_correct_after_checkout()
     {
         $user = User::factory()->create();
-        $product1 = Product::factory()->withStocks()->withPrices(1,unit_amount:30)->create();
-        $product2 = Product::factory()->withStocks()->withPrices(1,unit_amount:70)->create();
+        $product1 = Product::factory()->withStocks()->withPrices(1, unit_amount: 30)->create();
+        $product2 = Product::factory()->withStocks()->withPrices(1, unit_amount: 70)->create();
 
         $user->addToCart($product1, quantity: 1);
         $user->addToCart($product2, quantity: 2);
