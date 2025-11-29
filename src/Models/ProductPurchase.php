@@ -78,9 +78,45 @@ class ProductPurchase extends Model
     protected static function booted()
     {
         static::created(function ($productPurchase) {
-            if ($productPurchase->status === 'completed' && $product = $productPurchase->product) {
+            $product = ($productPurchase->purchasable instanceof Product)
+                ? $productPurchase->purchasable
+                : null;
+
+            $product ??= ($productPurchase->purchasable instanceof ProductPrice)
+                ? $productPurchase->purchasable?->product
+                : $product;
+
+            if ($productPurchase->status === 'completed' && $product) {
                 $product->callActions('purchased', $productPurchase);
             }
         });
+
+        // updated purchase from unpaid to paid
+        static::updated(function ($productPurchase) {
+            $product = ($productPurchase->purchasable instanceof Product)
+                ? $productPurchase->purchasable
+                : null;
+
+            $product ??= ($productPurchase->purchasable instanceof ProductPrice)
+                ? $productPurchase->purchasable?->product
+                : $product;
+
+
+            if ($productPurchase->status === 'completed' && $product) {
+                $product->callActions('purchased', $productPurchase);
+            }
+        });
+    }
+
+    public function actionRuns()
+    {
+        return $this->hasManyThrough(
+            ProductActionRun::class,
+            ProductAction::class,
+            'product_id', // Foreign key on ProductAction table...
+            'action_id', // Foreign key on ProductActionRun table...
+            'purchasable_id', // Local key on ProductPurchase table...
+            'id' // Local key on ProductAction table...
+        );
     }
 }

@@ -3,16 +3,17 @@
 return [
     // Table names (customizable for multi-tenancy)
     'tables' => [
-        'products' => 'products',
-        'product_prices' => 'product_prices',
-        'product_categories' => 'product_categories',
+        'cart_items' => 'cart_items',
+        'carts' => 'carts',
+        'payment_methods' => 'payment_methods',
+        'payment_provider_identities' => 'payment_provider_identities',
+        'product_action_runs' => 'product_action_runs',
         'product_attributes' => 'product_attributes',
+        'product_categories' => 'product_categories',
+        'product_prices' => 'product_prices',
         'product_purchases' => 'product_purchases',
         'product_stocks' => 'product_stocks',
-        'carts' => 'carts',
-        'cart_items' => 'cart_items',
-        'payment_provider_identities' => 'payment_provider_identities',
-        'payment_methods' => 'payment_methods',
+        'products' => 'products',
     ],
 
     // Model classes (allow overriding in main instance)

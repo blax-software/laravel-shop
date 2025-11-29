@@ -316,22 +316,19 @@ class Product extends Model implements Purchasable, Cartable
         ]);
     }
 
-    public function syncPricesDown()
-    {
-        if (config('shop.stripe.enabled') && config('shop.stripe.sync_prices')) {
-            StripeService::syncProductPricesDown($this);
-        }
-        return $this;
-    }
-
     public static function getAvailableActions(): array
     {
         return ProductAction::getAvailableActions();
     }
 
-    public function callActions(string $event = 'purchased', ?ProductPurchase $productPurchase = null, array $additionalData = []): void
+    public function callActions(string $event = 'purchased', ?ProductPurchase $productPurchase = null, array $additionalData = [])
     {
-        ProductAction::callForProduct($this, $event, $productPurchase, $additionalData);
+        return ProductAction::callForProduct(
+            $this,
+            $event,
+            $productPurchase,
+            $additionalData
+        );
     }
 
     public function relatedProducts(): BelongsToMany
@@ -411,7 +408,7 @@ class Product extends Model implements Purchasable, Cartable
     {
         $stockTable = config('shop.tables.product_stocks', 'product_stocks');
         $productTable = config('shop.tables.products', 'products');
-        
+
         return $query->where('manage_stock', true)
             ->whereNotNull('low_stock_threshold')
             ->whereRaw("(\n                SELECT COALESCE(SUM(quantity), 0)\n                FROM {$stockTable}\n                WHERE {$stockTable}.product_id = {$productTable}.id\n                AND {$stockTable}.status IN ('completed', 'pending')\n                AND ({$stockTable}.expires_at IS NULL OR {$stockTable}.expires_at > ?)\n            ) <= {$productTable}.low_stock_threshold", [now()]);
@@ -529,7 +526,7 @@ class Product extends Model implements Purchasable, Cartable
             ->where('product_id', $this->id);
     }
 
-    public function hasPrice() : bool
+    public function hasPrice(): bool
     {
         return $this->prices()->exists();
     }

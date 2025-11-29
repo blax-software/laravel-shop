@@ -60,11 +60,19 @@ $product = Product::create([
     'slug' => 'amazing-t-shirt',
     'sku' => 'TSH-001',
     'type' => 'simple',
-    'price' => 29.99,
-    'regular_price' => 29.99,
     'manage_stock' => true,
-    'stock_quantity' => 100,
     'status' => 'published',
+]);
+
+$product->prices()->create([
+    'currency' => 'USD',
+    'unit_amount' => 1999, // $19.99
+    'sale_unit_amount' => 1499, // $14.99
+    'is_default' => true,
+]);
+
+$product->stocks()->create([
+    'quantity' => 100,
 ]);
 
 // Add translated name

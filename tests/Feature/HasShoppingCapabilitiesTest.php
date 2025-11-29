@@ -264,8 +264,8 @@ class HasShoppingCapabilitiesTest extends TestCase
 
         // Create a product action
         $product->actions()->create([
-            'event' => 'purchased',
-            'action_type' => 'TestAction',
+            'events' => ['purchased'],
+            'class' => 'TestAction',
             'active' => true,
         ]);
 

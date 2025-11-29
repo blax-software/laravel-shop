@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Traits;
 
+use Blax\Shop\Contracts\Purchasable;
 use Blax\Shop\Exceptions\MultiplePurchaseOptions;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Exceptions\NotPurchasable;

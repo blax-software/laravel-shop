@@ -18,19 +18,18 @@ class ProductActionTest extends TestCase
     {
         $product = Product::factory()->create();
 
-        $action = ProductAction::create([
-            'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\SendWelcomeEmail',
-            'active' => true,
-            'sort_order' => 10,
+        $action = $product->actions()->create([
+            'events' => ['purchased', 'refunded'],
+            'class' => 'App\\Actions\\SendWelcomeEmail',
         ]);
 
         $this->assertDatabaseHas('product_actions', [
             'id' => $action->id,
             'product_id' => $product->id,
-            'event' => 'purchased',
         ]);
+
+        $this->assertContains('purchased', $action->events ?? []);
+        $this->assertContains('refunded', $action->events ?? []);
     }
 
     /** @test */
@@ -40,16 +39,14 @@ class ProductActionTest extends TestCase
 
         ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\SendWelcomeEmail',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\SendWelcomeEmail',
         ]);
 
         ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\GrantAccess',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\GrantAccess',
         ]);
 
         $this->assertCount(2, $product->fresh()->actions);
@@ -62,9 +59,8 @@ class ProductActionTest extends TestCase
 
         $action = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\TestAction',
-            'active' => true,
+            'event' => ['purchased'],
+            'class' => 'App\\Actions\\TestAction',
         ]);
 
         $this->assertEquals($product->id, $action->product->id);
@@ -77,10 +73,11 @@ class ProductActionTest extends TestCase
 
         $action = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\TestAction',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\TestAction',
         ]);
+
+        $action->refresh();
 
         $this->assertTrue($action->active);
 
@@ -96,14 +93,13 @@ class ProductActionTest extends TestCase
 
         $action = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\SendEmail',
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\SendEmail',
             'parameters' => [
                 'template' => 'welcome',
                 'delay' => 60,
                 'subject' => 'Welcome to our service',
             ],
-            'active' => true,
         ]);
 
         $action = $action->fresh();
@@ -120,18 +116,14 @@ class ProductActionTest extends TestCase
 
         $action1 = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\FirstAction',
-            'sort_order' => 1,
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\FirstAction',
         ]);
 
         $action2 = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\SecondAction',
-            'sort_order' => 2,
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\SecondAction',
         ]);
 
         $sorted = ProductAction::where('product_id', $product->id)
@@ -149,20 +141,20 @@ class ProductActionTest extends TestCase
 
         $purchasedAction = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\OnPurchase',
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\OnPurchase',
             'active' => true,
         ]);
 
         $refundedAction = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'refunded',
-            'action_type' => 'App\\Actions\\OnRefund',
+            'events' => ['refunded'],
+            'class' => 'App\\Actions\\OnRefund',
             'active' => true,
         ]);
 
-        $this->assertEquals('purchased', $purchasedAction->event);
-        $this->assertEquals('refunded', $refundedAction->event);
+        $this->assertContains('purchased', $purchasedAction->events);
+        $this->assertContains('refunded', $refundedAction->events);
     }
 
     /** @test */
@@ -172,27 +164,24 @@ class ProductActionTest extends TestCase
 
         ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\OnPurchase',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\OnPurchase',
         ]);
 
         ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\AnotherPurchase',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\OnPurchase',
         ]);
 
         ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'refunded',
-            'action_type' => 'App\\Actions\\OnRefund',
-            'active' => true,
+            'events' => ['refunded'],
+            'class' => 'App\\Actions\\OnPurchase',
         ]);
 
         $purchaseActions = ProductAction::where('product_id', $product->id)
-            ->where('event', 'purchased')
+            ->whereJsonContains('events', 'purchased')
             ->get();
 
         $this->assertCount(2, $purchaseActions);
@@ -205,15 +194,14 @@ class ProductActionTest extends TestCase
 
         ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\EnabledAction',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\EnabledAction',
         ]);
 
         ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\DisabledAction',
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\DisabledAction',
             'active' => false,
         ]);
 
@@ -232,16 +220,14 @@ class ProductActionTest extends TestCase
 
         ProductAction::create([
             'product_id' => $product1->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\CommonAction',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\CommonAction',
         ]);
 
         ProductAction::create([
             'product_id' => $product2->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\CommonAction',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\CommonAction',
         ]);
 
         $this->assertCount(1, $product1->actions);
@@ -255,12 +241,11 @@ class ProductActionTest extends TestCase
 
         $action = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\TestAction',
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\TestAction',
             'parameters' => [
                 'key' => 'old_value'
             ],
-            'active' => true,
         ]);
 
         $action->update([
@@ -284,8 +269,8 @@ class ProductActionTest extends TestCase
 
         $action = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\TestAction',
+            'event' => ['purchased'],
+            'class' => 'App\\Actions\\TestAction',
             'active' => true,
         ]);
 
@@ -303,9 +288,8 @@ class ProductActionTest extends TestCase
 
         $action = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\SimpleAction',
-            'active' => true,
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\SimpleAction',
         ]);
 
         $this->assertNull($action->parameters);
@@ -318,24 +302,24 @@ class ProductActionTest extends TestCase
 
         $high = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\HighPriority',
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\HighPriority',
             'sort_order' => 100,
             'active' => true,
         ]);
 
         $medium = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\MediumPriority',
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\MediumPriority',
             'sort_order' => 50,
             'active' => true,
         ]);
 
         $low = ProductAction::create([
             'product_id' => $product->id,
-            'event' => 'purchased',
-            'action_type' => 'App\\Actions\\LowPriority',
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\LowPriority',
             'sort_order' => 10,
             'active' => true,
         ]);
@@ -347,5 +331,31 @@ class ProductActionTest extends TestCase
         $this->assertEquals($low->id, $ordered[0]->id);
         $this->assertEquals($medium->id, $ordered[1]->id);
         $this->assertEquals($high->id, $ordered[2]->id);
+    }
+
+    /** @test */
+    public function it_can_be_triggered_on_purchase()
+    {
+        $user = User::factory()->create();
+        $product = Product::factory()
+            ->withStocks()
+            ->withPrices(1, 5000)
+            ->create();
+
+        $product->actions()->create([
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\SendThankYouEmail',
+            'defer' => true,
+        ]);
+
+        $product->actions()->create([
+            'events' => ['purchased'],
+            'class' => 'App\\Actions\\SendThankYouEmail',
+            'defer' => false,
+        ]);
+
+        $purchase = $user->purchase($product, 1);
+
+        $this->assertEquals(1, $purchase->actionRuns()->count());
     }
 }

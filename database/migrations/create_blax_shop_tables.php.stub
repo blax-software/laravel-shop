@@ -98,7 +98,7 @@ return new class extends Migration
         // Product category pivot table
         if (!Schema::hasTable(config('shop.tables.product_category_product', 'product_category_product'))) {
             Schema::create(config('shop.tables.product_category_product', 'product_category_product'), function (Blueprint $table) {
-                $table->uuid('product_id');
+                $table->uuid('product_id')->nullable();
                 $table->uuid('product_category_id');
                 $table->integer('sort_order')->default(0);
                 $table->timestamps();
@@ -210,15 +210,20 @@ return new class extends Migration
             Schema::create(config('shop.tables.product_actions', 'product_actions'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
                 $table->uuid('product_id');
-                $table->string('action_type');
-                $table->string('event')->default('purchased'); // purchased, refunded, etc.
+                $table->json('events')->default('[]'); // e.g. ["purchased","paid","refunded","viewed"]
+                $table->string('class'); // e.g. \App\...
+                $table->string('method')->nullable(); // null means __invoke via constructor params
+                $table->boolean('defer')->default(true); // queued when true, sync otherwise
                 $table->json('parameters')->nullable();
                 $table->boolean('active')->default(true);
                 $table->integer('sort_order')->default(0);
                 $table->timestamps();
 
-                $table->index(['product_id', 'event', 'active']);
-                $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
+                $table->index(['product_id', 'active']);
+                $table->foreign('product_id')
+                    ->references('id')
+                    ->on(config('shop.tables.products', 'products'))
+                    ->nullOnDelete();
             });
         }
 
@@ -338,6 +343,18 @@ return new class extends Migration
                     ->onDelete('cascade');
             });
         }
+
+        // ProductActionRuns table
+        if (!Schema::hasTable(config('shop.tables.product_action_runs', 'product_action_runs'))) {
+            Schema::create(config('shop.tables.product_action_runs', 'product_action_runs'), function (Blueprint $table) {
+                $table->id();
+                $table->morphs('action');
+                $table->unsignedBigInteger('product_purchase_id')->nullable();
+                $table->boolean('success')->default(false);
+                $table->timestamps();
+                $table->foreign('product_purchase_id')->references('id')->on(config('shop.tables.product_purchases', 'product_purchases'))->onDelete('set null');
+            });
+        }
     }
 
     /**
@@ -350,6 +367,7 @@ return new class extends Migration
         Schema::dropIfExists(config('shop.tables.cart_discounts', 'cart_discounts'));
         Schema::dropIfExists(config('shop.tables.cart_items', 'cart_items'));
         Schema::dropIfExists(config('shop.tables.carts', 'carts'));
+        Schema::dropIfExists(config('shop.tables.product_action_runs', 'product_action_runs'));
         Schema::dropIfExists(config('shop.tables.product_purchases', 'product_purchases'));
         Schema::dropIfExists(config('shop.tables.product_actions', 'product_actions'));
         Schema::dropIfExists(config('shop.tables.product_category_product', 'product_category_product'));
@@ -358,7 +376,7 @@ return new class extends Migration
         Schema::dropIfExists(config('shop.tables.product_stocks', 'product_stocks'));
         Schema::dropIfExists(config('shop.tables.product_attributes', 'product_attributes'));
         Schema::dropIfExists(config('shop.tables.product_prices', 'product_prices'));
-        Schema::dropIfExists('product_category_product');
+        Schema::dropIfExists(config('shop.tables.product_category_product', 'product_category_product'));
         Schema::dropIfExists(config('shop.tables.product_categories', 'product_categories'));
         Schema::dropIfExists(config('shop.tables.products', 'products'));
     }
