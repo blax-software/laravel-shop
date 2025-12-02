@@ -129,6 +129,7 @@ class ShopAddExampleProducts extends Command
 
         $product = Product::create([
             'slug' => $slug,
+            'name' => $productName,
             'sku' => 'EX-' . strtoupper($this->faker->bothify('??-####')),
             'type' => $type,
             'status' => $this->faker->randomElement(['published', 'published', 'published', 'draft']),
