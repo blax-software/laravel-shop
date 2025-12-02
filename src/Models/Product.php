@@ -45,6 +45,9 @@ class Product extends Model implements Purchasable, Cartable
         'meta',
         'tax_class',
         'sort_order',
+        'name',
+        'description',
+        'short_description',
     ];
 
     protected $casts = [
