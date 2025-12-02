@@ -98,7 +98,7 @@ return new class extends Migration
         // Product category pivot table
         if (!Schema::hasTable(config('shop.tables.product_category_product', 'product_category_product'))) {
             Schema::create(config('shop.tables.product_category_product', 'product_category_product'), function (Blueprint $table) {
-                $table->uuid('product_id')->nullable();
+                $table->uuid('product_id');
                 $table->uuid('product_category_id');
                 $table->integer('sort_order')->default(0);
                 $table->timestamps();
@@ -209,8 +209,8 @@ return new class extends Migration
         if (!Schema::hasTable(config('shop.tables.product_actions', 'product_actions'))) {
             Schema::create(config('shop.tables.product_actions', 'product_actions'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
-                $table->uuid('product_id');
-                $table->json('events')->default('[]'); // e.g. ["purchased","paid","refunded","viewed"]
+                $table->uuid('product_id')->nullable();
+                $table->json('events')->nullable(); // e.g. ["purchased","paid","refunded","viewed"]
                 $table->string('class'); // e.g. \App\...
                 $table->string('method')->nullable(); // null means __invoke via constructor params
                 $table->boolean('defer')->default(true); // queued when true, sync otherwise
@@ -280,7 +280,7 @@ return new class extends Migration
                 $table->json('meta')->nullable();
                 $table->timestamps();
 
-                $table->index(['cart_id', 'product_id']);
+                $table->index(['cart_id', 'purchasable_id']);
                 $table->foreign('cart_id')->references('id')->on(config('shop.tables.carts', 'carts'))->onDelete('cascade');
             });
         }
@@ -312,8 +312,8 @@ return new class extends Migration
                 $table->json('meta')->nullable();
                 $table->timestamps();
 
-                $table->index(['customer_type', 'customer_id', 'provider_name']);
-                $table->unique(['customer_type', 'customer_id', 'provider_name'], 'payment_provider_identity_unique');
+                $table->index(['customer_type', 'customer_id', 'provider_name'], 'ppi_customer_provider_index');
+                $table->unique(['customer_type', 'customer_id', 'provider_name'], 'ppi_customer_provider_unique');
             });
         }
 
@@ -349,7 +349,7 @@ return new class extends Migration
             Schema::create(config('shop.tables.product_action_runs', 'product_action_runs'), function (Blueprint $table) {
                 $table->id();
                 $table->morphs('action');
-                $table->unsignedBigInteger('product_purchase_id')->nullable();
+                $table->uuid('product_purchase_id')->nullable();
                 $table->boolean('success')->default(false);
                 $table->timestamps();
                 $table->foreign('product_purchase_id')->references('id')->on(config('shop.tables.product_purchases', 'product_purchases'))->onDelete('set null');
