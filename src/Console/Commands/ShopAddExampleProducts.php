@@ -6,7 +6,6 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductAction;
 use Blax\Shop\Models\ProductAttribute;
 use Blax\Shop\Models\ProductCategory;
-use Blax\Shop\Models\ProductPrice;
 use Illuminate\Console\Command;
 use Faker\Factory as Faker;
 
@@ -122,26 +121,23 @@ class ShopAddExampleProducts extends Command
         $productName = $this->generateProductName($type);
         $slug = 'example-' . \Illuminate\Support\Str::slug($productName) . '-' . $this->faker->unique()->numberBetween(1000, 9999);
 
-        $regularPrice = $this->faker->randomFloat(2, 10, 500);
+        // Determine pricing and sale window for the product (prices managed via ProductPrice)
+        $baseUnitAmount = $this->faker->numberBetween(1000, 50000); // cents
         $onSale = $this->faker->boolean(30); // 30% chance of being on sale
+        $saleStart = $onSale ? now()->subDays($this->faker->numberBetween(1, 30)) : null;
+        $saleEnd = $onSale ? now()->addDays($this->faker->numberBetween(7, 60)) : null;
 
         $product = Product::create([
-            'name' => $productName,
             'slug' => $slug,
             'sku' => 'EX-' . strtoupper($this->faker->bothify('??-####')),
             'type' => $type,
-            'status' => $this->faker->randomElement(['published', 'published', 'published', 'draft']), // mostly published
+            'status' => $this->faker->randomElement(['published', 'published', 'published', 'draft']),
             'is_visible' => true,
-            'featured' => $this->faker->boolean(20), // 20% featured
-            'price' => $onSale ? $regularPrice * 0.8 : $regularPrice,
-            'sale_price' => $onSale ? $regularPrice * $this->faker->randomFloat(2, 0.6, 0.9) : null,
-            'sale_start' => $onSale ? now()->subDays($this->faker->numberBetween(1, 30)) : null,
-            'sale_end' => $onSale ? now()->addDays($this->faker->numberBetween(7, 60)) : null,
+            'featured' => $this->faker->boolean(20),
+            'sale_start' => $saleStart,
+            'sale_end' => $saleEnd,
             'manage_stock' => $type !== 'external',
-            'stock_quantity' => $type !== 'external' ? $this->faker->numberBetween(0, 100) : 0,
             'low_stock_threshold' => $type !== 'external' ? 5 : null,
-            'in_stock' => true,
-            'stock_status' => 'instock',
             'weight' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 0.1, 50),
             'length' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 5, 100),
             'width' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 5, 100),
@@ -151,11 +147,11 @@ class ShopAddExampleProducts extends Command
             'published_at' => now(),
             'sort_order' => $this->faker->numberBetween(0, 100),
             'tax_class' => $this->faker->randomElement(['standard', 'reduced', 'zero']),
-            'meta' => json_encode((object)[
+            'meta' => [
                 'description' => $this->faker->paragraph(3),
                 'short_description' => $this->faker->sentence(10),
                 'example' => true,
-            ]),
+            ],
         ]);
 
         // Set localized name
@@ -165,12 +161,30 @@ class ShopAddExampleProducts extends Command
         $randomCategories = $this->faker->randomElements($this->categories, $this->faker->numberBetween(1, 3));
         $product->categories()->attach(collect($randomCategories)->pluck('id'));
 
+        // Add localized fields
+        $product->setLocalized('name', $productName, null, true);
+        $product->setLocalized('short_description', $product->meta->short_description ?? '', null, true);
+        $product->setLocalized('description', $product->meta->description ?? '', null, true);
+
+        // Create default price entry (prices are morph-related)
+        $product->prices()->create([
+            'name' => 'Default',
+            'type' => 'one_time',
+            'currency' => 'EUR',
+            'unit_amount' => $baseUnitAmount,
+            'sale_unit_amount' => $onSale ? (int) round($baseUnitAmount * $this->faker->randomFloat(2, 0.6, 0.9)) : null,
+            'is_default' => true,
+            'active' => true,
+            'billing_scheme' => 'per_unit',
+            'meta' => ['example' => true],
+        ]);
+
         // Add attributes
         $this->addAttributes($product, $type);
 
         // Add additional prices (multi-currency or subscription)
         if ($type === 'simple' || $type === 'variable') {
-            $this->addAdditionalPrices($product);
+            $this->addAdditionalPrices($product, $baseUnitAmount);
         }
 
         // Add example actions
@@ -178,7 +192,7 @@ class ShopAddExampleProducts extends Command
 
         // For variable products, add variations
         if ($type === 'variable') {
-            $this->addVariations($product);
+            $this->addVariations($product, $baseUnitAmount);
         }
 
         // For grouped products, add child products
@@ -275,107 +289,118 @@ class ShopAddExampleProducts extends Command
         }
     }
 
-    protected function addAdditionalPrices(Product $product): void
+    protected function addAdditionalPrices(Product $product, int $baseUnitAmount): void
     {
         // Add a subscription price option
         if ($this->faker->boolean(30)) {
-            ProductPrice::create([
-                'product_id' => $product->id,
+            $product->prices()->create([
                 'active' => true,
                 'name' => 'Monthly Subscription',
                 'type' => 'recurring',
-                'price' => (int)($product->price * 100 * 0.3), // 30% of regular price monthly
+                'unit_amount' => (int) round($baseUnitAmount * 0.3), // ~30% monthly
                 'billing_scheme' => 'per_unit',
                 'interval' => 'month',
                 'interval_count' => 1,
                 'trial_period_days' => $this->faker->randomElement([0, 7, 14, 30]),
-                'currency' => 'usd',
+                'currency' => 'EUR',
                 'is_default' => false,
-                'meta' => json_encode((object)['example' => true]),
+                'meta' => ['example' => true],
             ]);
         }
 
-        // Add EUR price
+        // Add USD price variant
         if ($this->faker->boolean(40)) {
-            ProductPrice::create([
-                'product_id' => $product->id,
+            $product->prices()->create([
                 'active' => true,
-                'name' => 'EUR Price',
+                'name' => 'USD Price',
                 'type' => 'one_time',
-                'price' => (int)($product->price * 100 * 0.92), // Convert to cents and EUR rate
+                'unit_amount' => (int) round($baseUnitAmount * 1.08), // approx conversion
                 'billing_scheme' => 'per_unit',
-                'currency' => 'eur',
+                'currency' => 'USD',
                 'is_default' => false,
-                'meta' => json_encode((object)['example' => true]),
+                'meta' => ['example' => true],
             ]);
         }
     }
 
     protected function addExampleActions(Product $product): void
     {
+        $namespace = config('shop.actions.namespace', 'App\\Jobs\\ProductAction');
         $actions = [
             [
-                'event' => 'purchased',
-                'action_type' => 'SendThankYouEmail',
-                'config' => ['template' => 'thank-you', 'delay' => 0],
-                'description' => 'Send thank you email after purchase',
+                'events' => ['purchased'],
+                'class' => $namespace . '\\SendThankYouEmail',
+                'method' => null,
+                'parameters' => ['template' => 'thank-you', 'delay' => 0],
+                'defer' => true,
             ],
             [
-                'event' => 'purchased',
-                'action_type' => 'UpdateCustomerStats',
-                'config' => ['increment' => 'total_purchases'],
-                'description' => 'Update customer purchase statistics',
+                'events' => ['purchased'],
+                'class' => $namespace . '\\UpdateCustomerStats',
+                'method' => null,
+                'parameters' => ['increment' => 'total_purchases'],
+                'defer' => true,
             ],
             [
-                'event' => 'low_stock',
-                'action_type' => 'NotifyAdmin',
-                'config' => ['threshold' => 5],
-                'description' => 'Notify admin when stock is low',
+                'events' => ['low_stock'],
+                'class' => $namespace . '\\NotifyAdmin',
+                'method' => null,
+                'parameters' => ['threshold' => 5],
+                'defer' => true,
             ],
         ];
 
         foreach ($actions as $index => $actionData) {
-            ProductAction::create([
-                'product_id' => $product->id,
-                'event' => $actionData['event'],
-                'action_type' => $actionData['action_type'],
-                'config' => $actionData['config'],
-                'active' => $this->faker->boolean(70), // 70% active
+            $product->actions()->create([
+                'events' => $actionData['events'],
+                'class' => $actionData['class'],
+                'method' => $actionData['method'],
+                'parameters' => $actionData['parameters'],
+                'defer' => $actionData['defer'],
+                'active' => $this->faker->boolean(70),
                 'sort_order' => $index,
             ]);
         }
     }
 
-    protected function addVariations(Product $product): void
+    protected function addVariations(Product $product, int $baseUnitAmount): void
     {
         $variations = ['Small', 'Medium', 'Large'];
 
         foreach ($variations as $index => $variation) {
             $variationProduct = Product::create([
-                'name' => $product->name . ' - ' . $variation,
                 'slug' => $product->slug . '-' . \Illuminate\Support\Str::slug($variation),
                 'sku' => $product->sku . '-' . strtoupper(substr($variation, 0, 1)),
                 'type' => 'simple',
                 'parent_id' => $product->id,
                 'status' => 'published',
-                'is_visible' => false, // Variations are not directly visible
-                'price' => $product->price + ($index * 5), // Slight price increase per size
+                'is_visible' => false,
                 'manage_stock' => true,
-                'stock_quantity' => $this->faker->numberBetween(5, 50),
-                'in_stock' => true,
-                'stock_status' => 'instock',
                 'published_at' => now(),
-                'meta' => json_encode((object)['variation' => $variation, 'example' => true]),
+                'meta' => ['variation' => $variation, 'example' => true],
             ]);
 
-            $variationProduct->setLocalized('name', $product->name . ' - ' . $variation, null, true);
+            $variationProduct->setLocalized('name', ($product->getLocalized('name') ?: 'Product') . ' - ' . $variation, null, true);
+
+            // Create a slightly adjusted default price for the variation
+            $variationAmount = $baseUnitAmount + ($index * 500); // +5.00 per size
+            $variationProduct->prices()->create([
+                'name' => 'Default',
+                'type' => 'one_time',
+                'currency' => 'EUR',
+                'unit_amount' => $variationAmount,
+                'is_default' => true,
+                'active' => true,
+                'billing_scheme' => 'per_unit',
+                'meta' => ['example' => true, 'variation' => $variation],
+            ]);
 
             ProductAttribute::create([
                 'product_id' => $variationProduct->id,
                 'key' => 'Size',
                 'value' => $variation,
                 'sort_order' => 0,
-                'meta' => json_encode((object)[]),
+                'meta' => null,
             ]);
         }
     }
@@ -386,23 +411,31 @@ class ShopAddExampleProducts extends Command
 
         for ($i = 0; $i < $groupSize; $i++) {
             $childProduct = Product::create([
-                'name' => $product->name . ' Item ' . ($i + 1),
                 'slug' => $product->slug . '-item-' . ($i + 1),
                 'sku' => $product->sku . '-' . ($i + 1),
                 'type' => 'simple',
                 'parent_id' => $product->id,
                 'status' => 'published',
                 'is_visible' => false,
-                'price' => $this->faker->randomFloat(2, 10, 100),
                 'manage_stock' => true,
-                'stock_quantity' => $this->faker->numberBetween(10, 50),
-                'in_stock' => true,
-                'stock_status' => 'instock',
                 'published_at' => now(),
-                'meta' => json_encode((object)['grouped_item' => true, 'example' => true]),
+                'meta' => ['grouped_item' => true, 'example' => true],
             ]);
 
             $childProduct->setLocalized('name', $this->faker->words(3, true), null, true);
+
+            // Create a standalone default price for the child item
+            $childAmount = $this->faker->numberBetween(1000, 10000);
+            $childProduct->prices()->create([
+                'name' => 'Default',
+                'type' => 'one_time',
+                'currency' => 'EUR',
+                'unit_amount' => $childAmount,
+                'is_default' => true,
+                'active' => true,
+                'billing_scheme' => 'per_unit',
+                'meta' => ['example' => true, 'grouped_item' => true],
+            ]);
         }
     }
 }
