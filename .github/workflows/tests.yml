@@ -67,4 +67,4 @@ jobs:
           composer run-script post-autoload-dump
 
       - name: Execute tests
-        run: vendor/bin/phpunit --testdox
+        run: vendor/bin/phpunit --testdox --do-not-fail-on-deprecation

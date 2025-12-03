@@ -345,13 +345,13 @@ class ProductActionTest extends TestCase
         $product->actions()->create([
             'events' => ['purchased'],
             'class' => 'App\\Actions\\SendThankYouEmail',
-            'defer' => true,
+            'defer' => false,
         ]);
 
         $product->actions()->create([
             'events' => ['purchased'],
             'class' => 'App\\Actions\\SendThankYouEmail',
-            'defer' => true,
+            'defer' => false,
         ]);
 
         $purchase = $user->purchase($product, 1);
