@@ -79,6 +79,30 @@ trait HasStocks
         return true;
     }
 
+    public function adjustStock(
+        StockType $type,
+        int $quantity,
+        \DateTimeInterface|null $until = null,
+        ?StockStatus $status = null,
+    ) {
+        if (!$this->manage_stock) {
+            return false;
+        }
+
+        $this->stocks()->create([
+            'quantity' => $type === StockType::INCREASE ? $quantity : -$quantity,
+            'type' => $type,
+            'status' => $status ?? StockStatus::COMPLETED,
+            'expires_at' => $until,
+        ]);
+
+        $this->logStockChange($type === StockType::INCREASE ? $quantity : -$quantity, 'adjust');
+
+        $this->save();
+
+        return true;
+    }
+
     public function reserveStock(
         int $quantity,
         $reference = null,

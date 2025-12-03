@@ -193,7 +193,7 @@ class ProductStockTest extends TestCase
 
         // Expired reservations should be counted in available stock
         $available = $product->reservations()->get();
-        
+
         $this->assertEquals(0, $available->count());
     }
 
@@ -274,5 +274,42 @@ class ProductStockTest extends TestCase
 
         $this->assertCount(1, $reservations);
         $this->assertEquals($active->id, $reservations->first()->id);
+    }
+
+    /** @test */
+    public function can_adjust_stock()
+    {
+        $product = Product::factory()->create(['manage_stock' => true]);
+
+        $product->increaseStock(20);
+        $this->assertEquals(20, $product->getAvailableStock());
+
+        $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::DECREASE,
+            quantity: 5
+        );
+        $this->assertEquals(15, $product->getAvailableStock());
+
+        $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::INCREASE,
+            quantity: 10
+        );
+        $this->assertEquals(25, $product->getAvailableStock());
+
+        // Also with until
+        $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::DECREASE,
+            quantity: 5,
+            until: now()->addDay()
+        );
+        $this->assertEquals(20, $product->getAvailableStock());
+
+        $this->travel(23)->hours();
+
+        $this->assertEquals(20, $product->getAvailableStock());
+
+        $this->travel(2)->days();
+
+        $this->assertEquals(25, $product->getAvailableStock());
     }
 }
