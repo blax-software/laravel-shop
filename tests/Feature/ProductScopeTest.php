@@ -59,15 +59,83 @@ class ProductScopeTest extends TestCase
     /** @test */
     public function it_can_filter_by_price_range()
     {
-        Product::factory()->create(['meta' => json_encode(['price' => 50])]);
-        Product::factory()->create(['meta' => json_encode(['price' => 100])]);
-        Product::factory()->create(['meta' => json_encode(['price' => 150])]);
+        $product1 = Product::factory()->withPrices(1, 50)->create();
+        $product2 = Product::factory()->withPrices(1, 100)->create();
+        $product3 = Product::factory()->withPrices(1, 150)->create();
 
-        // Note: This test assumes the scope uses a 'price' column
-        // which may need adjustment based on actual implementation
-        $products = Product::all();
+        $inRange = Product::priceRange(75, 125)->get();
 
-        $this->assertCount(3, $products);
+        $this->assertCount(1, $inRange);
+        $this->assertTrue($inRange->contains($product2));
+    }
+
+    /** @test */
+    public function it_can_filter_by_minimum_price_only()
+    {
+        $product1 = Product::factory()->withPrices(1, 50)->create();
+        $product2 = Product::factory()->withPrices(1, 100)->create();
+        $product3 = Product::factory()->withPrices(1, 150)->create();
+
+        $minPrice = Product::priceRange(100)->get();
+
+        $this->assertCount(2, $minPrice);
+        $this->assertTrue($minPrice->contains($product2));
+        $this->assertTrue($minPrice->contains($product3));
+    }
+
+    /** @test */
+    public function it_can_filter_by_maximum_price_only()
+    {
+        $product1 = Product::factory()->withPrices(1, 50)->create();
+        $product2 = Product::factory()->withPrices(1, 100)->create();
+        $product3 = Product::factory()->withPrices(1, 150)->create();
+
+        $maxPrice = Product::priceRange(null, 100)->get();
+
+        $this->assertCount(2, $maxPrice);
+        $this->assertTrue($maxPrice->contains($product1));
+        $this->assertTrue($maxPrice->contains($product2));
+    }
+
+    /** @test */
+    public function it_can_order_products_by_price_ascending()
+    {
+        $product1 = Product::factory()->withPrices(1, 150)->create(['name' => 'Expensive']);
+        $product2 = Product::factory()->withPrices(1, 50)->create(['name' => 'Cheap']);
+        $product3 = Product::factory()->withPrices(1, 100)->create(['name' => 'Medium']);
+
+        $ordered = Product::orderByPrice('asc')->get();
+
+        $this->assertEquals($product2->id, $ordered->first()->id);
+        $this->assertEquals($product1->id, $ordered->last()->id);
+    }
+
+    /** @test */
+    public function it_can_order_products_by_price_descending()
+    {
+        $product1 = Product::factory()->withPrices(1, 150)->create(['name' => 'Expensive']);
+        $product2 = Product::factory()->withPrices(1, 50)->create(['name' => 'Cheap']);
+        $product3 = Product::factory()->withPrices(1, 100)->create(['name' => 'Medium']);
+
+        $ordered = Product::orderByPrice('desc')->get();
+
+        $this->assertEquals($product1->id, $ordered->first()->id);
+        $this->assertEquals($product2->id, $ordered->last()->id);
+    }
+
+    /** @test */
+    public function it_can_combine_price_range_and_order_by_price()
+    {
+        $product1 = Product::factory()->withPrices(1, 50)->create();
+        $product2 = Product::factory()->withPrices(1, 100)->create();
+        $product3 = Product::factory()->withPrices(1, 150)->create();
+        $product4 = Product::factory()->withPrices(1, 200)->create();
+
+        $filtered = Product::priceRange(75, 175)->orderByPrice('asc')->get();
+
+        $this->assertCount(2, $filtered);
+        $this->assertEquals($product2->id, $filtered->first()->id);
+        $this->assertEquals($product3->id, $filtered->last()->id);
     }
 
     /** @test */
@@ -151,7 +219,7 @@ class ProductScopeTest extends TestCase
     public function in_stock_scope_includes_products_without_stock_management()
     {
         Product::factory()->create(['manage_stock' => false]);
-        
+
         $managedProduct = Product::factory()->create(['manage_stock' => true]);
         $managedProduct->increaseStock(10);
 
@@ -164,7 +232,7 @@ class ProductScopeTest extends TestCase
     public function in_stock_scope_excludes_out_of_stock_products()
     {
         $outOfStock = Product::factory()->create(['manage_stock' => true]);
-        
+
         $inStock = Product::factory()->create(['manage_stock' => true]);
         $inStock->increaseStock(10);
 
