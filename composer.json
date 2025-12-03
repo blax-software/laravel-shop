@@ -19,13 +19,13 @@
     },
     "require": {
         "php": "^8.2|^8.3",
-        "illuminate/support": "^10.0|^11.0|^12.0",
-        "illuminate/database": "^10.0|^11.0|^12.0",
+        "illuminate/support": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/database": "^9.0|^10.0|^11.0|^12.0",
         "blax-software/laravel-workkit": "dev-master|*",
         "laravel/cashier": "^15.7"
     },
     "require-dev": {
-        "orchestra/testbench": "^8.0|^9.0",
+        "orchestra/testbench": "^7.0|^8.0|^9.0|^10.0",
         "phpunit/phpunit": "^10.0",
         "mockery/mockery": "^1.5"
     },

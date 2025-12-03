@@ -12,11 +12,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: [8.2, 8.3, 8.4, 8.5]
-        laravel: [10.*, 11.*, 12.*]
-        testbench: [9.*]
+        include:
+          - php: 8.2
+            laravel: 9.*
+            testbench: 7.*
+          - php: 8.2
+            laravel: 10.*
+            testbench: 8.*
+          - php: 8.2
+            laravel: 11.*
+            testbench: 9.*
+          - php: 8.2
+            laravel: 12.*
+            testbench: 10.*
+          - php: 8.3
+            laravel: 9.*
+            testbench: 7.*
+          - php: 8.3
+            laravel: 10.*
+            testbench: 8.*
+          - php: 8.3
+            laravel: 11.*
+            testbench: 9.*
+          - php: 8.3
+            laravel: 12.*
+            testbench: 10.*
+          - php: 8.4
+            laravel: 11.*
+            testbench: 9.*
+          - php: 8.4
+            laravel: 12.*
+            testbench: 10.*
 
-    name: PHP ${{ matrix.php }} - Laravel ${{ matrix.laravel }}
+    name: PHP ${{ matrix.php }} - Laravel ${{ matrix.laravel }} - Testbench ${{ matrix.testbench }}
 
     steps:
       - name: Checkout code
