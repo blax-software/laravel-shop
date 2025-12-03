@@ -351,11 +351,11 @@ class ProductActionTest extends TestCase
         $product->actions()->create([
             'events' => ['purchased'],
             'class' => 'App\\Actions\\SendThankYouEmail',
-            'defer' => false,
+            'defer' => true,
         ]);
 
         $purchase = $user->purchase($product, 1);
 
-        $this->assertEquals(1, $purchase->actionRuns()->count());
+        $this->assertEquals(2, $purchase->actionRuns()->count());
     }
 }
