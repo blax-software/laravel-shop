@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
 use Blax\Shop\Tests\TestCase;
@@ -275,12 +276,12 @@ class ProductScopeTest extends TestCase
     /** @test */
     public function it_can_scope_products_by_type()
     {
-        Product::factory()->create(['type' => 'simple']);
-        Product::factory()->create(['type' => 'simple']);
-        Product::factory()->create(['type' => 'variable']);
-        Product::factory()->create(['type' => 'variation']);
+        Product::factory()->create(['type' => ProductType::SIMPLE]);
+        Product::factory()->create(['type' => ProductType::SIMPLE]);
+        Product::factory()->create(['type' => ProductType::VARIABLE]);
+        Product::factory()->create(['type' => ProductType::VARIABLE]);
 
-        $simpleProducts = Product::where('type', 'simple')->get();
+        $simpleProducts = Product::where('type', ProductType::SIMPLE)->get();
 
         $this->assertCount(2, $simpleProducts);
     }

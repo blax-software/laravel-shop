@@ -7,6 +7,10 @@ use Blax\Workkit\Traits\HasMetaTranslation;
 use Blax\Shop\Events\ProductCreated;
 use Blax\Shop\Events\ProductUpdated;
 use Blax\Shop\Contracts\Purchasable;
+use Blax\Shop\Enums\ProductStatus;
+use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Enums\StockStatus;
+use Blax\Shop\Enums\StockType;
 use Blax\Shop\Traits\HasPrices;
 use Blax\Shop\Traits\HasStocks;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -53,6 +57,8 @@ class Product extends Model implements Purchasable, Cartable
         'manage_stock' => 'boolean',
         'virtual' => 'boolean',
         'downloadable' => 'boolean',
+        'type' => ProductType::class,
+        'status' => ProductStatus::class,
         'meta' => 'object',
         'sale_start' => 'datetime',
         'sale_end' => 'datetime',
@@ -163,7 +169,7 @@ class Product extends Model implements Purchasable, Cartable
 
     public function scopePublished($query)
     {
-        return $query->where('status', 'published');
+        return $query->where('status', ProductStatus::PUBLISHED->value);
     }
 
     public function scopeFeatured($query)
@@ -228,7 +234,7 @@ class Product extends Model implements Purchasable, Cartable
     public function scopeVisible($query)
     {
         return $query->where('is_visible', true)
-            ->where('status', 'published')
+            ->where('status', ProductStatus::PUBLISHED->value)
             ->where(function ($q) {
                 $q->whereNull('published_at')
                     ->orWhere('published_at', '<=', now());
@@ -253,7 +259,7 @@ class Product extends Model implements Purchasable, Cartable
 
     public function isVisible(): bool
     {
-        if (!$this->is_visible || $this->status !== 'published') {
+        if (!$this->is_visible || $this->status !== ProductStatus::PUBLISHED) {
             return false;
         }
 
@@ -330,5 +336,54 @@ class Product extends Model implements Purchasable, Cartable
         }
 
         return parent::newInstance($attributes, $exists);
+    }
+
+    /**
+     * Check if this is a booking product
+     */
+    public function isBooking(): bool
+    {
+        return $this->type === ProductType::BOOKING;
+    }
+
+    /**
+     * Check stock availability for a booking period
+     */
+    public function isAvailableForBooking(\DateTimeInterface $from, \DateTimeInterface $until, int $quantity = 1): bool
+    {
+        if (!$this->manage_stock) {
+            return true;
+        }
+
+        // Get stock reservations that overlap with the requested period
+        $overlappingReservations = $this->stocks()
+            ->where('type', StockType::RESERVATION->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->where(function ($query) use ($from, $until) {
+                $query->where(function ($q) use ($from, $until) {
+                    // Reservation starts during the requested period
+                    $q->whereBetween('created_at', [$from, $until]);
+                })->orWhere(function ($q) use ($from, $until) {
+                    // Reservation ends during the requested period
+                    $q->whereBetween('expires_at', [$from, $until]);
+                })->orWhere(function ($q) use ($from, $until) {
+                    // Reservation encompasses the entire requested period
+                    $q->where('created_at', '<=', $from)
+                      ->where('expires_at', '>=', $until);
+                });
+            })
+            ->sum('quantity');
+
+        $availableStock = $this->getAvailableStock() - abs($overlappingReservations);
+
+        return $availableStock >= $quantity;
+    }
+
+    /**
+     * Scope for booking products
+     */
+    public function scopeBookings($query)
+    {
+        return $query->where('type', ProductType::BOOKING->value);
     }
 }

@@ -2,6 +2,8 @@
 
 namespace Blax\Shop\Traits;
 
+use Blax\Shop\Enums\StockStatus;
+use Blax\Shop\Enums\StockType;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -46,8 +48,8 @@ trait HasStocks
 
         $this->stocks()->create([
             'quantity' => -$quantity,
-            'type' => 'decrease',
-            'status' => 'completed',
+            'type' => StockType::DECREASE,
+            'status' => StockStatus::COMPLETED,
             'expires_at' => $until,
         ]);
 
@@ -66,8 +68,8 @@ trait HasStocks
 
         $this->stocks()->create([
             'quantity' => $quantity,
-            'type' => 'increase',
-            'status' => 'completed',
+            'type' => StockType::INCREASE,
+            'status' => StockStatus::COMPLETED,
         ]);
 
         $this->logStockChange($quantity, 'increase');

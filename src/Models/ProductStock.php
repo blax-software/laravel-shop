@@ -2,6 +2,8 @@
 
 namespace Blax\Shop\Models;
 
+use Blax\Shop\Enums\StockStatus;
+use Blax\Shop\Enums\StockType;
 use Blax\Shop\Models\Product;
 use Blax\Workkit\Traits\HasExpiration;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -27,6 +29,8 @@ class ProductStock extends Model
 
     protected $casts = [
         'quantity' => 'integer',
+        'type' => StockType::class,
+        'status' => StockStatus::class,
         'expires_at' => 'datetime',
     ];
 
@@ -43,7 +47,7 @@ class ProductStock extends Model
         });
 
         static::updated(function ($model) {
-            if ($model->wasChanged('status') && $model->status === 'completed') {
+            if ($model->wasChanged('status') && $model->status === StockStatus::COMPLETED) {
                 $model->releaseStock();
             }
         });
@@ -61,12 +65,12 @@ class ProductStock extends Model
 
     public function scopePending($query)
     {
-        return $query->where('status', 'pending');
+        return $query->where('status', StockStatus::PENDING->value);
     }
 
     public function scopeReleased($query)
     {
-        return $query->where('status', 'completed');
+        return $query->where('status', StockStatus::COMPLETED->value);
     }
 
     public function scopeTemporary($query)
@@ -82,7 +86,7 @@ class ProductStock extends Model
     // Backward compatibility accessors
     public function getReleasedAtAttribute()
     {
-        return $this->status === 'completed' ? $this->updated_at : null;
+        return $this->status === StockStatus::COMPLETED ? $this->updated_at : null;
     }
 
     public function getUntilAtAttribute()
@@ -105,8 +109,8 @@ class ProductStock extends Model
             return self::create([
                 'product_id' => $product->id,
                 'quantity' => $quantity,
-                'type' => 'reservation',
-                'status' => 'pending',
+                'type' => StockType::RESERVATION,
+                'status' => StockStatus::PENDING,
                 'reference_type' => $reference ? get_class($reference) : null,
                 'reference_id' => $reference?->id,
                 'expires_at' => $until,
@@ -117,12 +121,12 @@ class ProductStock extends Model
 
     public function release(): bool
     {
-        if ($this->status !== 'pending') {
+        if ($this->status !== StockStatus::PENDING) {
             return false;
         }
 
         return DB::transaction(function () {
-            $this->status = 'completed';
+            $this->status = StockStatus::COMPLETED;
             $this->save();
 
             return true;
@@ -142,13 +146,13 @@ class ProductStock extends Model
     public function isExpired(): bool
     {
         return $this->isTemporary()
-            && $this->status === 'pending'
+            && $this->status === StockStatus::PENDING
             && $this->expires_at->isPast();
     }
 
     public function isActive(): bool
     {
-        return $this->status === 'pending';
+        return $this->status === StockStatus::PENDING;
     }
 
     protected function logStockChange(): void
@@ -180,7 +184,7 @@ class ProductStock extends Model
             'product_id' => $this->product_id,
             'quantity_change' => $this->quantity,
             'quantity_after' => $this->product->stock_quantity,
-            'type' => 'release',
+            'type' => StockType::RELEASE->value,
             'note' => 'Stock released from reservation',
             'reference_type' => $this->reference_type,
             'reference_id' => $this->reference_id,
@@ -205,12 +209,12 @@ class ProductStock extends Model
 
     public static function scopeAvailable($query)
     {
-        return $query->where('status', 'completed');
+        return $query->where('status', StockStatus::COMPLETED->value);
     }
 
     public static function scopeAvailableReservations($query)
     {
-        return $query->where('type', 'reservation')->where('status', 'pending');
+        return $query->where('type', StockType::RESERVATION->value)->where('status', StockStatus::PENDING->value);
     }
 
     public static function reservations()

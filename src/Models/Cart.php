@@ -3,6 +3,8 @@
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Contracts\Cartable;
+use Blax\Shop\Enums\CartStatus;
+use Blax\Shop\Enums\ProductType;
 use Blax\Workkit\Traits\HasExpiration;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,6 +29,7 @@ class Cart extends Model
     ];
 
     protected $casts = [
+        'status' => CartStatus::class,
         'expires_at' => 'datetime',
         'converted_at' => 'datetime',
         'last_activity_at' => 'datetime',
@@ -174,10 +177,30 @@ class Cart extends Model
         foreach ($items as $item) {
             $product = $item->purchasable;
             $quantity = $item->quantity;
+            
+            // Extract booking dates from parameters if this is a booking product
+            $from = null;
+            $until = null;
+            if ($product->type === ProductType::BOOKING && $item->parameters) {
+                $params = is_array($item->parameters) ? $item->parameters : (array) $item->parameters;
+                $from = $params['from'] ?? null;
+                $until = $params['until'] ?? null;
+                
+                // Convert to Carbon instances if they're strings
+                if ($from && is_string($from)) {
+                    $from = \Carbon\Carbon::parse($from);
+                }
+                if ($until && is_string($until)) {
+                    $until = \Carbon\Carbon::parse($until);
+                }
+            }
 
             $purchase = $this->customer->purchase(
                 $product->prices()->first(),
-                $quantity
+                $quantity,
+                null,
+                $from,
+                $until
             );
 
             $purchase->update([

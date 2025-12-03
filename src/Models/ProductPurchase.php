@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Models;
 
+use Blax\Shop\Enums\PurchaseStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -21,13 +22,18 @@ class ProductPurchase extends Model
         'amount',
         'amount_paid',
         'charge_id',
+        'from',
+        'until',
         'meta',
     ];
 
     protected $casts = [
+        'status' => PurchaseStatus::class,
         'quantity' => 'integer',
         'amount' => 'integer',
         'amount_paid' => 'integer',
+        'from' => 'datetime',
+        'until' => 'datetime',
         'meta' => 'object',
     ];
 
@@ -67,12 +73,12 @@ class ProductPurchase extends Model
 
     public static function scopeInCart($query)
     {
-        return $query->where('status', 'cart');
+        return $query->where('status', PurchaseStatus::CART->value);
     }
 
     public static function scopeCompleted($query)
     {
-        return $query->where('status', 'completed');
+        return $query->where('status', PurchaseStatus::COMPLETED->value);
     }
 
     protected static function booted()
@@ -86,7 +92,7 @@ class ProductPurchase extends Model
                 ? $productPurchase->purchasable?->product
                 : $product;
 
-            if ($productPurchase->status === 'completed' && $product) {
+            if ($productPurchase->status === PurchaseStatus::COMPLETED && $product) {
                 $product->callActions('purchased', $productPurchase);
             }
         });
@@ -102,7 +108,7 @@ class ProductPurchase extends Model
                 : $product;
 
 
-            if ($productPurchase->status === 'completed' && $product) {
+            if ($productPurchase->status === PurchaseStatus::COMPLETED && $product) {
                 $product->callActions('purchased', $productPurchase);
             }
         });
@@ -118,5 +124,41 @@ class ProductPurchase extends Model
             'purchasable_id', // Local key on ProductPurchase table...
             'id' // Local key on ProductAction table...
         );
+    }
+
+    /**
+     * Check if this is a booking purchase
+     */
+    public function isBooking(): bool
+    {
+        return !is_null($this->from) && !is_null($this->until);
+    }
+
+    /**
+     * Check if the booking has ended
+     */
+    public function isBookingEnded(): bool
+    {
+        if (!$this->isBooking()) {
+            return false;
+        }
+
+        return now()->isAfter($this->until);
+    }
+
+    /**
+     * Scope for booking purchases
+     */
+    public function scopeBookings($query)
+    {
+        return $query->whereNotNull('from')->whereNotNull('until');
+    }
+
+    /**
+     * Scope for ended bookings
+     */
+    public function scopeEndedBookings($query)
+    {
+        return $query->bookings()->where('until', '<', now());
     }
 }

@@ -2,6 +2,9 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Enums\BillingScheme;
+use Blax\Shop\Enums\PriceType;
+use Blax\Shop\Enums\RecurringInterval;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
@@ -90,8 +93,8 @@ class ProductPriceTest extends TestCase
             'trial_period_days' => 14,
         ]);
 
-        $this->assertEquals('recurring', $price->type);
-        $this->assertEquals('month', $price->interval);
+        $this->assertEquals(PriceType::RECURRING, $price->type);
+        $this->assertEquals(RecurringInterval::MONTH, $price->interval);
         $this->assertEquals(1, $price->interval_count);
         $this->assertEquals(14, $price->trial_period_days);
     }
@@ -109,7 +112,7 @@ class ProductPriceTest extends TestCase
             'type' => 'one_time',
         ]);
 
-        $this->assertEquals('one_time', $price->type);
+        $this->assertEquals(PriceType::ONE_TIME, $price->type);
         $this->assertNull($price->interval);
     }
 
@@ -274,7 +277,7 @@ class ProductPriceTest extends TestCase
             'billing_scheme' => 'per_unit',
         ]);
 
-        $this->assertEquals('tiered', $tieredPrice->billing_scheme);
-        $this->assertEquals('per_unit', $perUnitPrice->billing_scheme);
+        $this->assertEquals(BillingScheme::TIERED, $tieredPrice->billing_scheme);
+        $this->assertEquals(BillingScheme::PER_UNIT, $perUnitPrice->billing_scheme);
     }
 }

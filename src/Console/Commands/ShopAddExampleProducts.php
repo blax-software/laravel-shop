@@ -2,6 +2,8 @@
 
 namespace Blax\Shop\Console\Commands;
 
+use Blax\Shop\Enums\ProductStatus;
+use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductAction;
 use Blax\Shop\Models\ProductAttribute;
@@ -131,20 +133,20 @@ class ShopAddExampleProducts extends Command
             'slug' => $slug,
             'name' => $productName,
             'sku' => 'EX-' . strtoupper($this->faker->bothify('??-####')),
-            'type' => $type,
-            'status' => $this->faker->randomElement(['published', 'published', 'published', 'draft']),
+            'type' => ProductType::from($type),
+            'status' => $this->faker->randomElement([ProductStatus::PUBLISHED, ProductStatus::PUBLISHED, ProductStatus::PUBLISHED, ProductStatus::DRAFT]),
             'is_visible' => true,
             'featured' => $this->faker->boolean(20),
             'sale_start' => $saleStart,
             'sale_end' => $saleEnd,
-            'manage_stock' => $type !== 'external',
-            'low_stock_threshold' => $type !== 'external' ? 5 : null,
+            'manage_stock' => $type !== ProductType::EXTERNAL->value,
+            'low_stock_threshold' => $type !== ProductType::EXTERNAL->value ? 5 : null,
             'weight' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 0.1, 50),
             'length' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 5, 100),
             'width' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 5, 100),
             'height' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 5, 100),
-            'virtual' => $type === 'variable' ? $this->faker->boolean(20) : false,
-            'downloadable' => $type === 'simple' ? $this->faker->boolean(15) : false,
+            'virtual' => $type === ProductType::VARIABLE->value ? $this->faker->boolean(20) : false,
+            'downloadable' => $type === ProductType::SIMPLE->value ? $this->faker->boolean(15) : false,
             'published_at' => now(),
             'sort_order' => $this->faker->numberBetween(0, 100),
             'tax_class' => $this->faker->randomElement(['standard', 'reduced', 'zero']),
@@ -184,7 +186,7 @@ class ShopAddExampleProducts extends Command
         $this->addAttributes($product, $type);
 
         // Add additional prices (multi-currency or subscription)
-        if ($type === 'simple' || $type === 'variable') {
+        if ($type === ProductType::SIMPLE->value || $type === ProductType::VARIABLE->value) {
             $this->addAdditionalPrices($product, $baseUnitAmount);
         }
 
@@ -192,12 +194,12 @@ class ShopAddExampleProducts extends Command
         $this->addExampleActions($product);
 
         // For variable products, add variations
-        if ($type === 'variable') {
+        if ($type === ProductType::VARIABLE->value) {
             $this->addVariations($product, $baseUnitAmount);
         }
 
         // For grouped products, add child products
-        if ($type === 'grouped') {
+        if ($type === ProductType::GROUPED->value) {
             $this->addGroupedProducts($product);
         }
 

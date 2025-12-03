@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Tests\TestCase;
@@ -109,8 +110,8 @@ class ProductPurchaseTest extends TestCase
             'status' => 'completed',
         ]);
 
-        $this->assertEquals('unpaid', $unpaidPurchase->status);
-        $this->assertEquals('completed', $completedPurchase->status);
+        $this->assertEquals(PurchaseStatus::UNPAID, $unpaidPurchase->status);
+        $this->assertEquals(PurchaseStatus::COMPLETED, $completedPurchase->status);
     }
 
     /** @test */
@@ -144,7 +145,7 @@ class ProductPurchaseTest extends TestCase
         $completed = ProductPurchase::completed()->get();
 
         $this->assertCount(1, $completed);
-        $this->assertEquals('completed', $completed->first()->status);
+        $this->assertEquals(PurchaseStatus::COMPLETED, $completed->first()->status);
     }
 
     /** @test */
@@ -178,7 +179,7 @@ class ProductPurchaseTest extends TestCase
         $inCart = ProductPurchase::inCart()->get();
 
         $this->assertCount(1, $inCart);
-        $this->assertEquals('cart', $inCart->first()->status);
+        $this->assertEquals(PurchaseStatus::CART, $inCart->first()->status);
     }
 
     /** @test */
@@ -235,7 +236,7 @@ class ProductPurchaseTest extends TestCase
         ]);
 
         $this->assertEquals(5000, $purchase->fresh()->amount_paid);
-        $this->assertEquals('completed', $purchase->fresh()->status);
+        $this->assertEquals(PurchaseStatus::COMPLETED, $purchase->fresh()->status);
     }
 
     /** @test */

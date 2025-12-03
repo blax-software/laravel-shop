@@ -4,6 +4,9 @@ namespace Blax\Shop\Models;
 
 use Blax\Shop\Contracts\Cartable;
 use Blax\Shop\Contracts\Purchasable;
+use Blax\Shop\Enums\BillingScheme;
+use Blax\Shop\Enums\PriceType;
+use Blax\Shop\Enums\RecurringInterval;
 use Blax\Workkit\Traits\HasMetaTranslation;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -34,6 +37,9 @@ class ProductPrice extends Model implements Cartable
     protected $casts = [
         'is_default' => 'boolean',
         'active' => 'boolean',
+        'type' => PriceType::class,
+        'billing_scheme' => BillingScheme::class,
+        'interval' => RecurringInterval::class,
         'meta' => 'object',
         'unit_amount' => 'float',
         'sale_unit_amount' => 'float',

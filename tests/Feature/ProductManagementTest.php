@@ -2,6 +2,8 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Enums\ProductStatus;
+use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
 use Blax\Shop\Models\ProductAttribute;
@@ -130,8 +132,8 @@ class ProductManagementTest extends TestCase
         ProductPrice::create([
             'purchasable_id' => $product->id,
             'purchasable_type' => get_class($product),
-            'type' => 'one-time',
-            'price' => 9999,
+            'type' => 'one_time',
+            'unit_amount' => 9999,
             'currency' => 'USD',
             'active' => true,
         ]);
@@ -197,7 +199,7 @@ class ProductManagementTest extends TestCase
         $published = Product::published()->get();
 
         $this->assertCount(1, $published);
-        $this->assertEquals('published', $published->first()->status);
+        $this->assertEquals(ProductStatus::PUBLISHED, $published->first()->status);
     }
 
     /** @test */
@@ -243,11 +245,11 @@ class ProductManagementTest extends TestCase
     public function it_can_have_parent_child_relationships()
     {
         $parent = Product::factory()->create([
-            'type' => 'variable',
+            'type' => ProductType::VARIABLE,
         ]);
 
         $child = Product::factory()->create([
-            'type' => 'variation',
+            'type' => ProductType::VARIABLE,
             'parent_id' => $parent->id,
         ]);
 

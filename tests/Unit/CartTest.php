@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Tests\Unit;
 
+use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
@@ -52,8 +53,8 @@ class CartTest extends TestCase
     public function cart_respects_sale_prices()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(1,50)->create([
-            'sale_start' => now()->subDay(), 
+        $product = Product::factory()->withPrices(1, 50)->create([
+            'sale_start' => now()->subDay(),
             'sale_end' => now()->addDay(),
         ]);
 
@@ -109,7 +110,7 @@ class CartTest extends TestCase
     public function cart_total_sums_all_items()
     {
         $cart = Cart::create();
-        
+
         $product1 = Product::factory()->create();
         $price1 = ProductPrice::create([
             'purchasable_id' => $product1->id,
@@ -225,14 +226,14 @@ class CartTest extends TestCase
     public function cart_can_have_status()
     {
         $cart = Cart::create([
-            'status' => 'pending',
+            'status' => CartStatus::ACTIVE,
         ]);
 
-        $this->assertEquals('pending', $cart->status);
+        $this->assertEquals(CartStatus::ACTIVE, $cart->status);
 
-        $cart->update(['status' => 'completed']);
+        $cart->update(['status' => CartStatus::CONVERTED]);
 
-        $this->assertEquals('completed', $cart->fresh()->status);
+        $this->assertEquals(CartStatus::CONVERTED, $cart->fresh()->status);
     }
 
     /** @test */

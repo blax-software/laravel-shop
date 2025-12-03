@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPurchase;
@@ -37,7 +38,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals($product->id, $purchase->purchasable_id);
         $this->assertEquals($user->id, $purchase->purchaser_id);
         $this->assertEquals(1, $purchase->quantity);
-        $this->assertEquals('unpaid', $purchase->status);
+        $this->assertEquals(PurchaseStatus::UNPAID, $purchase->status);
     }
 
     /** @test */
@@ -126,8 +127,8 @@ class PurchaseFlowTest extends TestCase
         $purchases = $cart->purchases;
 
         $this->assertCount(2, $purchases);
-        $this->assertEquals('unpaid', $purchases[0]->status);
-        $this->assertEquals('unpaid', $purchases[1]->status);
+        $this->assertEquals(PurchaseStatus::UNPAID, $purchases[0]->status);
+        $this->assertEquals(PurchaseStatus::UNPAID, $purchases[1]->status);
     }
 
     /** @test */

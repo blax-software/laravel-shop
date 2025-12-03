@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductStock;
@@ -216,7 +217,7 @@ class ProductStockTest extends TestCase
 
         $stock = $product->stocks()->first();
 
-        $this->assertEquals('completed', $stock->status);
+        $this->assertEquals(StockStatus::COMPLETED, $stock->status);
     }
 
     /** @test */

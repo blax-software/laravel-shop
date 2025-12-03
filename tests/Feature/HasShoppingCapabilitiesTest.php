@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Exceptions\MultiplePurchaseOptions;
 use Blax\Shop\Exceptions\NotPurchasable;
 use Blax\Shop\Models\Product;
@@ -123,7 +124,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $completed = $user->completedPurchases;
 
         $this->assertCount(1, $completed);
-        $this->assertEquals('completed', $completed->first()->status);
+        $this->assertEquals(PurchaseStatus::COMPLETED, $completed->first()->status);
     }
 
     /** @test */

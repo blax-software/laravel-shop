@@ -3,6 +3,8 @@
 namespace Blax\Shop\Traits;
 
 use Blax\Shop\Contracts\Purchasable;
+use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Exceptions\MultiplePurchaseOptions;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Exceptions\NotPurchasable;
@@ -36,7 +38,7 @@ trait HasShoppingCapabilities
      */
     public function completedPurchases(): MorphMany
     {
-        return $this->purchases()->where('status', 'completed');
+        return $this->purchases()->where('status', PurchaseStatus::COMPLETED->value);
     }
 
     /**
@@ -44,6 +46,9 @@ trait HasShoppingCapabilities
      *
      * @param Product|Product $product_or_price
      * @param int $quantity
+     * @param array|object|null $meta
+     * @param \DateTimeInterface|null $from Booking start date (for booking products)
+     * @param \DateTimeInterface|null $until Booking end date (for booking products)
      * 
      * @return ProductPurchase
      * @throws \Exception
@@ -51,7 +56,9 @@ trait HasShoppingCapabilities
     public function purchase(
         ProductPrice|Product $product_or_price,
         int $quantity = 1,
-        array|object|null $meta = null
+        array|object|null $meta = null,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
     ): ProductPurchase {
 
         if ($product_or_price instanceof Product) {
@@ -98,8 +105,15 @@ trait HasShoppingCapabilities
             throw new \Exception("Product is not available for purchase");
         }
 
-        // Decrease stock
-        if (!$product->decreaseStock($quantity)) {
+        // Handle booking products
+        $isBooking = $product->type === ProductType::BOOKING;
+        
+        if ($isBooking && (!$from || !$until)) {
+            throw new \Exception("Booking products require 'from' and 'until' dates");
+        }
+
+        // Decrease stock (for bookings, pass the until date)
+        if (!$product->decreaseStock($quantity, $isBooking ? $until : null)) {
             throw new \Exception("Unable to decrease stock");
         }
 
@@ -110,7 +124,9 @@ trait HasShoppingCapabilities
             'purchaser_id' => $this->getKey(),
             'purchaser_type' => get_class($this),
             'quantity' => $quantity,
-            'status' => 'unpaid',
+            'status' => PurchaseStatus::UNPAID,
+            'from' => $from,
+            'until' => $until,
             'meta' => $meta,
             'amount' => $price->unit_amount * $quantity,
         ]);
@@ -192,7 +208,7 @@ trait HasShoppingCapabilities
      */
     public function refundPurchase(ProductPurchase $purchase, array $options = []): bool
     {
-        if ($purchase->status !== 'completed') {
+        if ($purchase->status !== PurchaseStatus::COMPLETED) {
             throw new \Exception("Can only refund completed purchases");
         }
 
@@ -203,7 +219,7 @@ trait HasShoppingCapabilities
 
         // Update purchase
         $purchase->update([
-            'status' => 'refunded',
+            'status' => PurchaseStatus::REFUNDED,
         ]);
 
         // Trigger refund actions

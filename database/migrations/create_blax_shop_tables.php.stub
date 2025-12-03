@@ -20,7 +20,7 @@ return new class extends Migration
                 $table->string('sku')->nullable()->unique();
                 $table->text('short_description')->nullable();
                 $table->longText('description')->nullable();
-                $table->string('type')->default('simple'); // simple, variable, grouped, external
+                $table->string('type')->default('simple'); // simple, variable, grouped, external, booking
                 $table->string('stripe_product_id')->nullable();
                 $table->timestamp('sale_start')->nullable();
                 $table->timestamp('sale_end')->nullable();
@@ -240,6 +240,8 @@ return new class extends Migration
                 $table->decimal('amount', 10, 8)->nullable();
                 $table->decimal('amount_paid', 10, 8)->default(0);
                 $table->string('charge_id')->nullable();
+                $table->timestamp('from')->nullable();
+                $table->timestamp('until')->nullable();
                 $table->json('meta')->nullable();
                 $table->timestamps();
             });
