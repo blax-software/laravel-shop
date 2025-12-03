@@ -34,5 +34,9 @@ jobs:
           composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-update --no-interaction
           composer update --prefer-dist --no-interaction --no-progress
 
+      - name: Setup testbench
+        run: |
+          composer run-script post-autoload-dump
+
       - name: Execute tests
         run: vendor/bin/phpunit --testdox
