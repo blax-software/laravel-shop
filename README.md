@@ -1,5 +1,10 @@
 # Laravel Shop Package
 
+[![Tests](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml/badge.svg)](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml)
+[![Latest Version](https://img.shields.io/packagist/v/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
+[![License](https://img.shields.io/packagist/l/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
+[![PHP Version](https://img.shields.io/packagist/php-v/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
+
 A comprehensive headless e-commerce package for Laravel with stock management, Stripe integration, and product actions.
 
 ## Features

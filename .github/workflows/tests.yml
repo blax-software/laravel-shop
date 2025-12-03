@@ -2,20 +2,17 @@ name: Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php: [8.1, 8.2, 8.3]
-        laravel: [10.*, 11.*]
-        exclude:
-          - php: 8.1
-            laravel: 11.*
+        php: [8.2, 8.3]
+        laravel: [10.*, 11.*, 12.*]
 
     name: PHP ${{ matrix.php }} - Laravel ${{ matrix.laravel }}
 
