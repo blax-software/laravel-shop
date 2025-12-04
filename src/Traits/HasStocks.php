@@ -100,9 +100,10 @@ trait HasStocks
         return true;
     }
 
-    public function reserveStock(
+    public function claimStock(
         int $quantity,
         $reference = null,
+        ?\DateTimeInterface $from = null,
         ?\DateTimeInterface $until = null,
         ?string $note = null
     ): ?\Blax\Shop\Models\ProductStock {
@@ -113,10 +114,11 @@ trait HasStocks
 
         $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
 
-        return $stockModel::reserve(
+        return $stockModel::claim(
             $this,
             $quantity,
             $reference,
+            $from,
             $until,
             $note
         );
@@ -131,7 +133,7 @@ trait HasStocks
         return max(0, $this->AvailableStocks);
     }
 
-    public function getReservedStock(): int
+    public function getClaimedStock(): int
     {
         return $this->activeStocks()->sum('quantity');
     }
@@ -180,12 +182,38 @@ trait HasStocks
         return $this->getAvailableStock() <= $this->low_stock_threshold;
     }
 
-    public function reservations()
+    public function claims()
     {
         $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
 
-        return $stockModel::reservations()
+        return $stockModel::claims()
             ->willExpire()
             ->where('product_id', $this->id);
+    }
+
+    public function availableOnDate(\DateTimeInterface $date): int
+    {
+        if (!$this->manage_stock) {
+            return PHP_INT_MAX;
+        }
+
+        $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
+
+        // Get current available stock (includes all completed stocks minus all currently pending claims)
+        $currentAvailable = $this->getAvailableStock();
+
+        // Get all currently pending claimed stocks (not date-filtered)
+        $allClaimedStocks = $this->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->sum('quantity');
+
+        // Get stocks claimed on this specific date
+        $claimedOnDate = $stockModel::availableOnDate($date)
+            ->where('product_id', $this->id)
+            ->sum('quantity');
+
+        // Available on date = current available + all claims - claims active on date
+        return max(0, $currentAvailable + abs($allClaimedStocks) - abs($claimedOnDate));
     }
 }

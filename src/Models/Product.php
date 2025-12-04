@@ -355,26 +355,33 @@ class Product extends Model implements Purchasable, Cartable
             return true;
         }
 
-        // Get stock reservations that overlap with the requested period
-        $overlappingReservations = $this->stocks()
-            ->where('type', StockType::RESERVATION->value)
+        // Get stock claims that overlap with the requested period
+        $overlappingClaims = $this->stocks()
+            ->where('type', StockType::CLAIMED->value)
             ->where('status', StockStatus::PENDING->value)
             ->where(function ($query) use ($from, $until) {
                 $query->where(function ($q) use ($from, $until) {
-                    // Reservation starts during the requested period
-                    $q->whereBetween('created_at', [$from, $until]);
+                    // Claim starts during the requested period
+                    $q->whereBetween('claimed_from', [$from, $until]);
                 })->orWhere(function ($q) use ($from, $until) {
-                    // Reservation ends during the requested period
+                    // Claim ends during the requested period
                     $q->whereBetween('expires_at', [$from, $until]);
                 })->orWhere(function ($q) use ($from, $until) {
-                    // Reservation encompasses the entire requested period
-                    $q->where('created_at', '<=', $from)
-                      ->where('expires_at', '>=', $until);
+                    // Claim encompasses the entire requested period
+                    $q->where('claimed_from', '<=', $from)
+                        ->where('expires_at', '>=', $until);
+                })->orWhere(function ($q) use ($from, $until) {
+                    // Claim without claimed_from (immediately claimed)
+                    $q->whereNull('claimed_from')
+                        ->where(function ($subQ) use ($from, $until) {
+                            $subQ->whereNull('expires_at')
+                                ->orWhere('expires_at', '>=', $from);
+                        });
                 });
             })
             ->sum('quantity');
 
-        $availableStock = $this->getAvailableStock() - abs($overlappingReservations);
+        $availableStock = $this->getAvailableStock() - abs($overlappingClaims);
 
         return $availableStock >= $quantity;
     }

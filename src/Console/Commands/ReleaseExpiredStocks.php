@@ -9,7 +9,7 @@ class ReleaseExpiredStocks extends Command
 {
     protected $signature = 'shop:release-expired-stocks';
 
-    protected $description = 'Release expired stock reservations back to inventory';
+    protected $description = 'Release expired stock claims back to inventory';
 
     public function handle(): int
     {
@@ -18,11 +18,11 @@ class ReleaseExpiredStocks extends Command
             return self::SUCCESS;
         }
 
-        $this->info('Checking for expired stock reservations...');
+        $this->info('Checking for expired stock claims...');
 
         $count = ProductStock::releaseExpired();
 
-        $this->info("Released {$count} expired stock reservation(s).");
+        $this->info("Released {$count} expired stock claim(s).");
 
         return self::SUCCESS;
     }

@@ -23,6 +23,7 @@ class ProductStock extends Model
         'status',
         'reference_type',
         'reference_id',
+        'claimed_from',
         'expires_at',
         'note',
     ];
@@ -31,6 +32,7 @@ class ProductStock extends Model
         'quantity' => 'integer',
         'type' => StockType::class,
         'status' => StockStatus::class,
+        'claimed_from' => 'datetime',
         'expires_at' => 'datetime',
     ];
 
@@ -88,14 +90,15 @@ class ProductStock extends Model
         return $this->expires_at;
     }
 
-    public static function reserve(
+    public static function claim(
         Product $product,
         int $quantity,
         $reference = null,
+        ?\DateTimeInterface $from = null,
         ?\DateTimeInterface $until = null,
         ?string $note = null
     ): ?self {
-        return DB::transaction(function () use ($product, $quantity, $reference, $until, $note) {
+        return DB::transaction(function () use ($product, $quantity, $reference, $from, $until, $note) {
             if (!$product->decreaseStock($quantity)) {
                 return null;
             }
@@ -103,10 +106,11 @@ class ProductStock extends Model
             return self::create([
                 'product_id' => $product->id,
                 'quantity' => $quantity,
-                'type' => StockType::RESERVATION,
+                'type' => StockType::CLAIMED,
                 'status' => StockStatus::PENDING,
                 'reference_type' => $reference ? get_class($reference) : null,
                 'reference_id' => $reference?->id,
+                'claimed_from' => $from,
                 'expires_at' => $until,
                 'note' => $note,
             ]);
@@ -187,13 +191,37 @@ class ProductStock extends Model
         return $query->where('status', StockStatus::COMPLETED->value);
     }
 
-    public static function scopeAvailableReservations($query)
+    public static function scopeAvailableClaims($query)
     {
-        return $query->where('type', StockType::RESERVATION->value)->where('status', StockStatus::PENDING->value);
+        return $query->where('type', StockType::CLAIMED->value)->where('status', StockStatus::PENDING->value);
     }
 
-    public static function reservations()
+    public static function claims()
     {
-        return self::availableReservations();
+        return self::availableClaims();
+    }
+
+    public static function scopeAvailableOnDate($query, \DateTimeInterface $date)
+    {
+        return $query->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->where(function ($q) use ($date) {
+                $q->where(function ($subQuery) use ($date) {
+                    // Claimed items with claimed_from set
+                    $subQuery->whereNotNull('claimed_from')
+                        ->where('claimed_from', '<=', $date)
+                        ->where(function ($dateQuery) use ($date) {
+                            $dateQuery->whereNull('expires_at')
+                                ->orWhere('expires_at', '>=', $date);
+                        });
+                })->orWhere(function ($subQuery) use ($date) {
+                    // Claimed items without claimed_from (always claimed)
+                    $subQuery->whereNull('claimed_from')
+                        ->where(function ($dateQuery) use ($date) {
+                            $dateQuery->whereNull('expires_at')
+                                ->orWhere('expires_at', '>=', $date);
+                        });
+                });
+            });
     }
 }

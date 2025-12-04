@@ -58,12 +58,12 @@ trait HasCart
             $product = $product_or_price->purchasable;
 
             if ($product instanceof Product) {
-                $product->reserveStock($quantity);
+                $product->claimStock($quantity);
             }
         }
 
         if ($product_or_price instanceof Product) {
-            $product_or_price->reserveStock($quantity);
+            $product_or_price->claimStock($quantity);
 
             $default_prices = $product_or_price->defaultPrice()->count();
 

@@ -124,14 +124,14 @@ class BookingFeatureTest extends TestCase
             $until
         );
 
-        // Find the stock reservation
-        $reservation = $this->bookingProduct->stocks()
+        // Find the stock claim
+        $claim = $this->bookingProduct->stocks()
             ->where('type', 'decrease')
             ->where('expires_at', $until)
             ->first();
 
-        $this->assertNotNull($reservation);
-        $this->assertEquals($until->format('Y-m-d H:i:s'), $reservation->expires_at->format('Y-m-d H:i:s'));
+        $this->assertNotNull($claim);
+        $this->assertEquals($until->format('Y-m-d H:i:s'), $claim->expires_at->format('Y-m-d H:i:s'));
     }
 
     /** @test */

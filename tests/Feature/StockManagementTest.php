@@ -14,55 +14,55 @@ class StockManagementTest extends TestCase
     use RefreshDatabase;
 
     /** @test */
-    public function it_can_reserve_stock_for_a_product()
+    public function it_can_claim_stock_for_a_product()
     {
         $product = Product::factory()
             ->withStocks(100)
             ->create();
 
-        $reservation = $product->reserveStock(
+        $claim = $product->claimStock(
             quantity: 10,
             until: now()->addHours(2)
         );
 
-        $this->assertNotNull($reservation);
-        $this->assertEquals(10, $reservation->quantity);
+        $this->assertNotNull($claim);
+        $this->assertEquals(10, $claim->quantity);
         $this->assertEquals(90, $product->getAvailableStock());
     }
 
     /** @test */
-    public function it_cannot_reserve_more_stock_than_available()
+    public function it_cannot_claim_more_stock_than_available()
     {
         $product = Product::factory()
             ->withStocks(5)
             ->create();
 
-        $reservation = null;
+        $claim = null;
 
-        $this->assertThrows(fn() => $reservation = $product->reserveStock(15), NotEnoughStockException::class);
+        $this->assertThrows(fn() => $claim = $product->claimStock(15), NotEnoughStockException::class);
 
-        $this->assertNull($reservation);
+        $this->assertNull($claim);
         $this->assertEquals(5, $product->getAvailableStock());
     }
 
     /** @test */
-    public function it_can_release_reserved_stock()
+    public function it_can_release_claimed_stock()
     {
         $product = Product::factory()
             ->withStocks(100)
             ->create();
 
-        $reservation = $product->reserveStock(
+        $claim = $product->claimStock(
             quantity: 10,
             until: now()->addHours(2)
         );
 
         $this->assertEquals(90, $product->getAvailableStock());
 
-        $reservation->release();
+        $claim->release();
 
         $this->assertEquals(100, $product->refresh()->getAvailableStock());
-        $this->assertNotNull($reservation->fresh()->released_at);
+        $this->assertNotNull($claim->fresh()->released_at);
     }
 
     /** @test */
@@ -70,9 +70,9 @@ class StockManagementTest extends TestCase
     {
         $product = Product::factory()->withStocks(10)->create();
 
-        $reservation = $product->reserveStock(5);
+        $claim = $product->claimStock(5);
 
-        $pending = ProductStock::pending()->where('id', $reservation->id)->first();
+        $pending = ProductStock::pending()->where('id', $claim->id)->first();
 
         $this->assertNotNull($pending);
         $this->assertNull($pending->released_at);
@@ -83,35 +83,35 @@ class StockManagementTest extends TestCase
     {
         $product = Product::factory()->withStocks(50)->create();
 
-        $reservation = $product->reserveStock(5);
+        $claim = $product->claimStock(5);
 
-        $reservation->release();
+        $claim->release();
 
-        $released = ProductStock::released()->where('id', $reservation->id)->first();
+        $released = ProductStock::released()->where('id', $claim->id)->first();
 
         $this->assertNotNull($released);
         $this->assertNotNull($released->released_at);
     }
 
     /** @test */
-    public function it_can_distinguish_temporary_and_permanent_reservations()
+    public function it_can_distinguish_temporary_and_permanent_claims()
     {
         $product = Product::factory()->withStocks(100)->create();
 
-        $permanentReservation = $product->reserveStock(
+        $permanentClaim = $product->claimStock(
             quantity: 10
         );
 
-        $temporaryReservation = $product->reserveStock(
+        $temporaryClaim = $product->claimStock(
             quantity: 5,
             until: now()->addHours(1)
         );
 
-        $this->assertTrue($permanentReservation->isPermanent());
-        $this->assertFalse($permanentReservation->isTemporary());
+        $this->assertTrue($permanentClaim->isPermanent());
+        $this->assertFalse($permanentClaim->isTemporary());
 
-        $this->assertTrue($temporaryReservation->isTemporary());
-        $this->assertFalse($temporaryReservation->isPermanent());
+        $this->assertTrue($temporaryClaim->isTemporary());
+        $this->assertFalse($temporaryClaim->isPermanent());
     }
 
     /** @test */
@@ -119,10 +119,10 @@ class StockManagementTest extends TestCase
     {
         $product = Product::factory()->withStocks(20)->create();
 
-        $reservation = $product->reserveStock(5);
+        $claim = $product->claimStock(5);
 
-        $this->assertInstanceOf(Product::class, $reservation->product);
-        $this->assertEquals($product->id, $reservation->product->id);
+        $this->assertInstanceOf(Product::class, $claim->product);
+        $this->assertEquals($product->id, $claim->product->id);
     }
 
     /** @test */
@@ -140,24 +140,24 @@ class StockManagementTest extends TestCase
     }
 
     /** @test */
-    public function it_can_get_active_stock_reservations()
+    public function it_can_get_active_stock_claims()
     {
         $product = Product::factory()->withStocks(100)->create();
 
-        $activeReservation = $product->reserveStock(
+        $activeClaim = $product->claimStock(
             quantity: 10,
             until: now()->addHours(2)
         );
 
-        $expiredReservation = $product->reserveStock(
+        $expiredClaim = $product->claimStock(
             quantity: 5,
             until: now()->subHours(1)
         );
 
-        $activeReservations = $product->reservations()->get();
+        $activeClaims = $product->claims()->get();
 
-        $this->assertCount(1, $activeReservations);
-        $this->assertEquals($activeReservation->id, $activeReservations->first()->id);
+        $this->assertCount(1, $activeClaims);
+        $this->assertEquals($activeClaim->id, $activeClaims->first()->id);
     }
 
     /** @test */
@@ -165,25 +165,25 @@ class StockManagementTest extends TestCase
     {
         $product = Product::factory()->withStocks()->create();
 
-        $reservation = $product->reserveStock(5);
+        $claim = $product->claimStock(5);
 
-        $this->assertTrue($reservation->release());
-        $this->assertFalse($reservation->release());
+        $this->assertTrue($claim->release());
+        $this->assertFalse($claim->release());
     }
 
     /** @test */
-    public function it_can_store_reservation_note()
+    public function it_can_store_claim_note()
     {
         $product = Product::factory()->withStocks()->create();
 
         $note = "Customer requested to hold this item for 2 days.";
 
-        $reservation = $product->reserveStock(
+        $claim = $product->claimStock(
             quantity: 5,
             note: $note
         );
 
-        $this->assertEquals($note, $reservation->note);
+        $this->assertEquals($note, $claim->note);
     }
 
     /** @test */
@@ -191,18 +191,18 @@ class StockManagementTest extends TestCase
     {
         $product = Product::factory()->withStocks(100)->create();
 
-        $reservation1 = $product->reserveStock(
+        $claim1 = $product->claimStock(
             quantity: 10,
             until: now()->addHours(2)
         );
 
-        $reservation2 = $product->reserveStock(
+        $claim2 = $product->claimStock(
             quantity: 5,
             until: now()->addHours(1)
         );
 
-        $reservation1->refresh();
-        $reservation2->refresh();
+        $claim1->refresh();
+        $claim2->refresh();
 
         $this->assertEquals(85, $product->refresh()->getAvailableStock());
     }

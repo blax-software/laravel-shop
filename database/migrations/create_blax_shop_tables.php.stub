@@ -150,22 +150,24 @@ return new class extends Migration
             });
         }
 
-        // Product stocks table (reservations)
+        // Product stocks table (claims)
         if (!Schema::hasTable(config('shop.tables.product_stocks', 'product_stocks'))) {
             Schema::create(config('shop.tables.product_stocks', 'product_stocks'), function (Blueprint $table) {
                 $table->uuid('id')->primary();
                 $table->uuid('product_id');
                 $table->integer('quantity');
-                $table->string('type')->default('reservation'); // reservation, adjustment, sale, return
+                $table->string('type')->default('claimed'); // claimed, adjustment, sale, return
                 $table->string('status')->default('pending'); // pending, completed, cancelled, expired
                 $table->string('reference_type')->nullable();
                 $table->string('reference_id')->nullable();
+                $table->timestamp('claimed_from')->nullable();
                 $table->timestamp('expires_at')->nullable();
                 $table->text('note')->nullable();
                 $table->timestamps();
 
                 $table->index(['product_id', 'status']);
                 $table->index(['reference_type', 'reference_id']);
+                $table->index(['claimed_from', 'expires_at']);
                 $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
             });
         }
