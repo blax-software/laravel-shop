@@ -234,4 +234,201 @@ class StockManagementTest extends TestCase
 
         $this->assertFalse($product->fresh()->isInStock());
     }
+
+    /** @test */
+    public function it_can_adjust_stock_with_from_parameter_for_claimed_type()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+        $fromDate = now()->addDays(3);
+        $untilDate = now()->addDays(10);
+
+        $result = $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::CLAIMED,
+            quantity: 15,
+            until: $untilDate,
+            from: $fromDate
+        );
+
+        // adjustStock(CLAIMED) now returns ProductStock (delegates to claimStock)
+        $this->assertInstanceOf(\Blax\Shop\Models\ProductStock::class, $result);
+
+        // Now creates two entries: DECREASE (COMPLETED) + CLAIMED (PENDING)
+        $claimedStock = $product->stocks()->where('type', 'claimed')->first();
+        $this->assertNotNull($claimedStock);
+        $this->assertEquals(15, $claimedStock->quantity); // Positive quantity
+        $this->assertEquals($fromDate->format('Y-m-d H:i:s'), $claimedStock->claimed_from->format('Y-m-d H:i:s'));
+        $this->assertEquals($untilDate->format('Y-m-d H:i:s'), $claimedStock->expires_at->format('Y-m-d H:i:s'));
+
+        // Check for the DECREASE entry
+        $decreaseStock = $product->stocks()->where('type', 'decrease')->first();
+        $this->assertNotNull($decreaseStock);
+        $this->assertEquals(-15, $decreaseStock->quantity);
+    }
+
+    /** @test */
+    public function it_uses_now_as_default_from_date_for_claimed_type()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        $result = $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::CLAIMED,
+            quantity: 10
+        );
+
+        // adjustStock(CLAIMED) now returns ProductStock
+        $this->assertInstanceOf(\Blax\Shop\Models\ProductStock::class, $result);
+
+        $claimedStock = $product->stocks()->where('type', 'claimed')->first();
+        // claimed_from defaults to null when not provided (claim active immediately)
+        $this->assertNull($claimedStock->claimed_from);
+    }
+
+    /** @test */
+    public function it_does_not_set_claimed_from_for_non_claimed_types()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::INCREASE,
+            quantity: 10,
+            from: now()->addDays(5)
+        );
+
+        $stock = $product->stocks()->where('type', 'increase')->first();
+        $this->assertNull($stock->claimed_from);
+    }
+
+    /** @test */
+    public function it_can_adjust_stock_with_note_parameter()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+        $note = 'Customer requested extra units for bulk order #12345';
+
+        $result = $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::INCREASE,
+            quantity: 50,
+            note: $note
+        );
+
+        $this->assertTrue($result);
+
+        $stock = $product->stocks()->where('type', 'increase')->where('quantity', 50)->first();
+        $this->assertNotNull($stock);
+        $this->assertEquals($note, $stock->note);
+    }
+
+    /** @test */
+    public function it_can_adjust_stock_with_referencable_model()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+        $referencedProduct = Product::factory()->create();
+
+        $result = $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::DECREASE,
+            quantity: 10,
+            referencable: $referencedProduct
+        );
+
+        $this->assertTrue($result);
+
+        $stock = $product->stocks()->where('type', 'decrease')->where('quantity', -10)->first();
+        $this->assertNotNull($stock);
+        $this->assertEquals(Product::class, $stock->reference_type);
+        $this->assertEquals($referencedProduct->id, $stock->reference_id);
+    }
+
+    /** @test */
+    public function it_can_adjust_stock_with_all_parameters_combined()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+        $referencedProduct = Product::factory()->create();
+        $fromDate = now()->addDays(2);
+        $untilDate = now()->addDays(7);
+        $note = 'Reserved for special event booking';
+
+        $result = $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::CLAIMED,
+            quantity: 25,
+            until: $untilDate,
+            from: $fromDate,
+            note: $note,
+            referencable: $referencedProduct
+        );
+
+        // adjustStock(CLAIMED) now returns ProductStock
+        $this->assertInstanceOf(\Blax\Shop\Models\ProductStock::class, $result);
+
+        $stock = $product->stocks()->where('type', 'claimed')->first();
+        $this->assertNotNull($stock);
+        $this->assertEquals(25, $stock->quantity); // Positive quantity
+        $this->assertEquals('pending', $stock->status->value);
+        $this->assertEquals($fromDate->format('Y-m-d H:i:s'), $stock->claimed_from->format('Y-m-d H:i:s'));
+        $this->assertEquals($untilDate->format('Y-m-d H:i:s'), $stock->expires_at->format('Y-m-d H:i:s'));
+        $this->assertEquals($note, $stock->note);
+        $this->assertEquals(Product::class, $stock->reference_type);
+        $this->assertEquals($referencedProduct->id, $stock->reference_id);
+    }
+
+    /** @test */
+    public function it_adjusts_stock_with_correct_quantity_signs_based_on_type()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // INCREASE should add stock (positive)
+        $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::INCREASE,
+            quantity: 20
+        );
+        $increaseStock = $product->stocks()->where('type', 'increase')->where('quantity', 20)->first();
+        $this->assertNotNull($increaseStock);
+        $this->assertEquals(20, $increaseStock->quantity);
+
+        // RETURN should add stock (positive)
+        $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::RETURN,
+            quantity: 15
+        );
+        $returnStock = $product->stocks()->where('type', 'return')->where('quantity', 15)->first();
+        $this->assertNotNull($returnStock);
+        $this->assertEquals(15, $returnStock->quantity);
+
+        // DECREASE should remove stock (negative)
+        $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::DECREASE,
+            quantity: 10
+        );
+        $decreaseStock = $product->stocks()->where('type', 'decrease')->where('quantity', -10)->first();
+        $this->assertNotNull($decreaseStock);
+        $this->assertEquals(-10, $decreaseStock->quantity);
+
+        // CLAIMED now creates two entries: DECREASE + CLAIMED (positive quantity)
+        $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::CLAIMED,
+            quantity: 5
+        );
+        $claimedStock = $product->stocks()->where('type', 'claimed')->where('quantity', 5)->first();
+        $this->assertNotNull($claimedStock);
+        $this->assertEquals(5, $claimedStock->quantity); // Now positive
+
+        // And also creates a DECREASE entry
+        $claimedDecrease = $product->stocks()->where('type', 'decrease')->where('quantity', -5)->first();
+        $this->assertNotNull($claimedDecrease);
+        $this->assertEquals(-5, $claimedDecrease->quantity);
+    }
+
+    /** @test */
+    public function it_returns_false_when_adjusting_stock_with_management_disabled()
+    {
+        $product = Product::factory()->create([
+            'manage_stock' => false,
+        ]);
+
+        $result = $product->adjustStock(
+            type: \Blax\Shop\Enums\StockType::INCREASE,
+            quantity: 10
+        );
+
+        $this->assertFalse($result);
+        $this->assertCount(0, $product->stocks);
+    }
 }

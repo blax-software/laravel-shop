@@ -6,6 +6,7 @@ use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 
@@ -55,6 +56,7 @@ trait HasStocks
     {
         return $this->stocks()
             ->available()
+            ->where('type', '!=', StockType::CLAIMED->value)
             ->willExpire()
             ->sum('quantity') ?? 0;
     }
@@ -90,7 +92,8 @@ trait HasStocks
             return true;
         }
 
-        if ($this->AvailableStocks < $quantity) {
+        $available = $this->getAvailableStock();
+        if ($available < $quantity) {
             return throw new NotEnoughStockException("Not enough stock available for product ID {$this->id}");
         }
 
@@ -140,28 +143,61 @@ trait HasStocks
      * Adjust stock with custom type and status
      * 
      * More flexible than increaseStock/decreaseStock, allows:
-     * - Custom stock type (INCREASE, DECREASE, RETURN)
+     * - Custom stock type (INCREASE, DECREASE, RETURN, CLAIMED)
      * - Custom status (defaults to COMPLETED)
      * - Optional expiration date
+     * - Optional claim start date (for CLAIMED type)
+     * - Optional note for documentation
+     * - Optional reference to related model (Order, Cart, Booking, etc.)
      * 
-     * @param StockType $type The type of adjustment
+     * Note: CLAIMED type creates two entries like claimStock() for consistency:
+     * 1. DECREASE entry (COMPLETED) - reduces available stock
+     * 2. CLAIMED entry (PENDING) - tracks the claim
+     * 
+     * @param StockType $type The type of adjustment (INCREASE/RETURN add stock, DECREASE/CLAIMED remove stock)
      * @param int $quantity Amount to adjust (always positive, type determines direction)
-     * @param \DateTimeInterface|null $until Optional expiration date
-     * @param StockStatus|null $status Optional status (defaults to COMPLETED)
-     * @return bool True if successful, false if stock management disabled
+     * @param \DateTimeInterface|null $until Optional expiration date (when stock expires or claim ends)
+     * @param \DateTimeInterface|null $from Optional start date (used for CLAIMED type, defaults to now())
+     * @param StockStatus|null $status Optional status (defaults to COMPLETED, or PENDING for CLAIMED type)
+     * @param string|null $note Optional note for documentation purposes
+     * @param Model|null $referencable Optional polymorphic reference to related model
+     * @return bool|\Blax\Shop\Models\ProductStock True if successful for non-CLAIMED types, ProductStock instance for CLAIMED type, false if stock management disabled
+     * @throws NotEnoughStockException If insufficient stock available for DECREASE or CLAIMED types
      */
     public function adjustStock(
         StockType $type,
         int $quantity,
         \DateTimeInterface|null $until = null,
+        \DateTimeInterface|null $from = null,
         ?StockStatus $status = null,
+        string|null $note = null,
+        Model|null $referencable = null
     ) {
         if (!$this->manage_stock) {
             return false;
         }
 
-        // INCREASE and RETURN add stock (positive), DECREASE and CLAIMED remove stock (negative)
+        // For CLAIMED type, delegate to claimStock which handles the two-entry pattern
+        if ($type === StockType::CLAIMED) {
+            return $this->claimStock(
+                quantity: $quantity,
+                reference: $referencable,
+                from: $from,
+                until: $until,
+                note: $note
+            );
+        }
+
+        // Validate stock availability for types that reduce inventory
         $isPositive = in_array($type, [StockType::INCREASE, StockType::RETURN]);
+        if (!$isPositive) {
+            // Only validate for COMPLETED status (PENDING doesn't affect available stock)
+            $effectiveStatus = $status ?? StockStatus::COMPLETED;
+            if ($effectiveStatus === StockStatus::COMPLETED && $this->getAvailableStock() < $quantity) {
+                throw new NotEnoughStockException("Not enough stock available for product ID {$this->id}");
+            }
+        }
+
         $adjustedQuantity = $isPositive ? $quantity : -$quantity;
 
         $this->stocks()->create([
@@ -169,6 +205,9 @@ trait HasStocks
             'type' => $type,
             'status' => $status ?? StockStatus::COMPLETED,
             'expires_at' => $until,
+            'note' => $note,
+            'reference_type' => $referencable ? get_class($referencable) : null,
+            'reference_id' => $referencable ? $referencable->id : null,
         ]);
 
         $this->logStockChange($adjustedQuantity, 'adjust');
@@ -227,7 +266,8 @@ trait HasStocks
      * Get currently available stock
      * 
      * This is the stock available for new orders/claims.
-     * Calculated as: Sum of all COMPLETED entries (includes DECREASE from active claims)
+     * Calculated as: Sum of all COMPLETED entries that haven't expired (includes DECREASE from active claims)
+     * CLAIMED entries are excluded as they track claims, not physical inventory.
      * 
      * @return int Available quantity (PHP_INT_MAX if stock management disabled)
      */
@@ -237,7 +277,11 @@ trait HasStocks
             return PHP_INT_MAX;
         }
 
-        return max(0, $this->AvailableStocks);
+        return max(0, $this->stocks()
+            ->where('status', StockStatus::COMPLETED->value)
+            ->where('type', '!=', StockType::CLAIMED->value)
+            ->willExpire()
+            ->sum('quantity'));
     }
 
     /**
@@ -245,15 +289,16 @@ trait HasStocks
      * 
      * Sum of all active (PENDING) claims.
      * This stock is unavailable but tracked separately from physical inventory.
+     * Returns absolute value to always show positive quantity.
      * 
-     * @return int Total claimed quantity
+     * @return int Total claimed quantity (always positive)
      */
     public function getClaimedStock(): int
     {
-        return $this->stocks()
+        return abs($this->stocks()
             ->where('type', StockType::CLAIMED->value)
             ->where('status', StockStatus::PENDING->value)
-            ->sum('quantity');
+            ->sum('quantity'));
     }
 
     /**
@@ -267,7 +312,7 @@ trait HasStocks
         DB::table('product_stock_logs')->insert([
             'product_id' => $this->id,
             'quantity_change' => $quantityChange,
-            'quantity_after' => $this->stock_quantity,
+            'quantity_after' => $this->getAvailableStock(),
             'type' => $type,
             'created_at' => now(),
             'updated_at' => now(),
@@ -307,7 +352,7 @@ trait HasStocks
 
         return $query->where('manage_stock', true)
             ->whereNotNull('low_stock_threshold')
-            ->whereRaw("(SELECT COALESCE(SUM(quantity), 0) FROM {$stockTable} WHERE {$stockTable}.product_id = {$productTable}.id AND {$stockTable}.status IN ('completed', 'pending') AND ({$stockTable}.expires_at IS NULL OR {$stockTable}.expires_at > ?)) <= {$productTable}.low_stock_threshold", [
+            ->whereRaw("(SELECT COALESCE(SUM(quantity), 0) FROM {$stockTable} WHERE {$stockTable}.product_id = {$productTable}.id AND {$stockTable}.status = 'completed' AND ({$stockTable}.expires_at IS NULL OR {$stockTable}.expires_at > ?)) <= {$productTable}.low_stock_threshold", [
                 now()
             ]);
     }

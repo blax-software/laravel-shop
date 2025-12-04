@@ -11,6 +11,7 @@ use Blax\Shop\Enums\ProductStatus;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
+use Blax\Shop\Traits\HasCategories;
 use Blax\Shop\Traits\HasPrices;
 use Blax\Shop\Traits\HasStocks;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\Cache;
 
 class Product extends Model implements Purchasable, Cartable
 {
-    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices;
+    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasCategories;
 
     protected $fillable = [
         'slug',
@@ -141,14 +142,6 @@ class Product extends Model implements Purchasable, Cartable
         return $this->hasMany(self::class, 'parent_id');
     }
 
-    public function categories(): BelongsToMany
-    {
-        return $this->belongsToMany(
-            config('shop.models.product_category'),
-            'product_category_product'
-        );
-    }
-
     public function attributes(): HasMany
     {
         return $this->hasMany(config('shop.models.product_attribute', 'Blax\Shop\Models\ProductAttribute'));
@@ -239,13 +232,6 @@ class Product extends Model implements Purchasable, Cartable
                 $q->whereNull('published_at')
                     ->orWhere('published_at', '<=', now());
             });
-    }
-
-    public function scopeByCategory($query, $categoryId)
-    {
-        return $query->whereHas('categories', function ($q) use ($categoryId) {
-            $q->where('id', $categoryId);
-        });
     }
 
     public function scopeSearch($query, string $search)

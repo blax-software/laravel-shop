@@ -225,4 +225,307 @@ class ProductCategoryTest extends TestCase
         $this->assertEquals($parent->id, $child->parent->id);
         $this->assertNull($grandparent->parent);
     }
+
+    /** @test */
+    public function it_can_filter_products_by_category_using_instance()
+    {
+        $category1 = ProductCategory::factory()->create();
+        $category2 = ProductCategory::factory()->create();
+
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+        $product3 = Product::factory()->create();
+
+        $product1->categories()->attach($category1->id);
+        $product2->categories()->attach($category1->id);
+        $product3->categories()->attach($category2->id);
+
+        $results = Product::byCategory($category1)->get();
+
+        $this->assertCount(2, $results);
+        $this->assertTrue($results->contains($product1));
+        $this->assertTrue($results->contains($product2));
+        $this->assertFalse($results->contains($product3));
+    }
+
+    /** @test */
+    public function it_can_filter_products_by_category_using_id_string()
+    {
+        $category = ProductCategory::factory()->create();
+
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+        $product3 = Product::factory()->create();
+
+        $product1->categories()->attach($category->id);
+        $product2->categories()->attach($category->id);
+
+        $results = Product::byCategory($category->id)->get();
+
+        $this->assertCount(2, $results);
+        $this->assertTrue($results->contains($product1));
+        $this->assertTrue($results->contains($product2));
+        $this->assertFalse($results->contains($product3));
+    }
+
+    /** @test */
+    public function it_can_filter_products_by_multiple_categories()
+    {
+        $category1 = ProductCategory::factory()->create();
+        $category2 = ProductCategory::factory()->create();
+        $category3 = ProductCategory::factory()->create();
+
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+        $product3 = Product::factory()->create();
+        $product4 = Product::factory()->create();
+
+        // Product 1 has category1 and category2
+        $product1->categories()->attach([$category1->id, $category2->id]);
+        // Product 2 has only category1
+        $product2->categories()->attach($category1->id);
+        // Product 3 has only category2
+        $product3->categories()->attach($category2->id);
+        // Product 4 has category3
+        $product4->categories()->attach($category3->id);
+
+        $results = Product::byCategories([$category1->id, $category2->id])->get();
+
+        // Only product1 should match (has both categories)
+        $this->assertCount(1, $results);
+        $this->assertTrue($results->contains($product1));
+        $this->assertFalse($results->contains($product2));
+        $this->assertFalse($results->contains($product3));
+        $this->assertFalse($results->contains($product4));
+    }
+
+    /** @test */
+    public function it_can_filter_products_without_specific_category()
+    {
+        $category1 = ProductCategory::factory()->create();
+        $category2 = ProductCategory::factory()->create();
+
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+        $product3 = Product::factory()->create();
+
+        $product1->categories()->attach($category1->id);
+        $product2->categories()->attach($category2->id);
+        // product3 has no categories
+
+        $results = Product::withoutCategory($category1)->get();
+
+        $this->assertCount(2, $results);
+        $this->assertFalse($results->contains($product1));
+        $this->assertTrue($results->contains($product2));
+        $this->assertTrue($results->contains($product3));
+    }
+
+    /** @test */
+    public function it_can_filter_products_without_category_using_instance()
+    {
+        $category = ProductCategory::factory()->create();
+
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+
+        $product1->categories()->attach($category->id);
+
+        $results = Product::withoutCategory($category)->get();
+
+        $this->assertCount(1, $results);
+        $this->assertFalse($results->contains($product1));
+        $this->assertTrue($results->contains($product2));
+    }
+
+    /** @test */
+    public function it_can_filter_products_without_multiple_categories()
+    {
+        $category1 = ProductCategory::factory()->create();
+        $category2 = ProductCategory::factory()->create();
+        $category3 = ProductCategory::factory()->create();
+
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+        $product3 = Product::factory()->create();
+        $product4 = Product::factory()->create();
+
+        // Product 1 has category1 and category2
+        $product1->categories()->attach([$category1->id, $category2->id]);
+        // Product 2 has only category1
+        $product2->categories()->attach($category1->id);
+        // Product 3 has only category3
+        $product3->categories()->attach($category3->id);
+        // Product 4 has no categories
+
+        $results = Product::withoutCategories([$category1->id, $category2->id])->get();
+
+        // Only products without both category1 AND category2 should match
+        $this->assertCount(2, $results);
+        $this->assertFalse($results->contains($product1));
+        $this->assertFalse($results->contains($product2));
+        $this->assertTrue($results->contains($product3));
+        $this->assertTrue($results->contains($product4));
+    }
+
+    /** @test */
+    public function it_can_assign_a_category_to_product()
+    {
+        $product = Product::factory()->create();
+        $category = ProductCategory::factory()->create();
+
+        $product->assignCategory($category);
+
+        $this->assertCount(1, $product->fresh()->categories);
+        $this->assertTrue($product->categories->contains($category));
+    }
+
+    /** @test */
+    public function it_can_assign_multiple_categories_to_product()
+    {
+        $product = Product::factory()->create();
+        $category1 = ProductCategory::factory()->create();
+        $category2 = ProductCategory::factory()->create();
+        $category3 = ProductCategory::factory()->create();
+
+        $product->assignCategories([$category1, $category2, $category3]);
+
+        $this->assertCount(3, $product->fresh()->categories);
+        $this->assertTrue($product->categories->contains($category1));
+        $this->assertTrue($product->categories->contains($category2));
+        $this->assertTrue($product->categories->contains($category3));
+    }
+
+    /** @test */
+    public function it_can_remove_a_category_from_product()
+    {
+        $product = Product::factory()->create();
+        $category1 = ProductCategory::factory()->create();
+        $category2 = ProductCategory::factory()->create();
+
+        $product->categories()->attach([$category1->id, $category2->id]);
+        $this->assertCount(2, $product->fresh()->categories);
+
+        $product->removeCategory($category1);
+
+        $this->assertCount(1, $product->fresh()->categories);
+        $this->assertFalse($product->categories->contains($category1));
+        $this->assertTrue($product->categories->contains($category2));
+    }
+
+    /** @test */
+    public function it_can_remove_multiple_categories_from_product()
+    {
+        $product = Product::factory()->create();
+        $category1 = ProductCategory::factory()->create();
+        $category2 = ProductCategory::factory()->create();
+        $category3 = ProductCategory::factory()->create();
+
+        $product->categories()->attach([$category1->id, $category2->id, $category3->id]);
+        $this->assertCount(3, $product->fresh()->categories);
+
+        $product->removeCategories([$category1, $category2]);
+
+        $this->assertCount(1, $product->fresh()->categories);
+        $this->assertFalse($product->categories->contains($category1));
+        $this->assertFalse($product->categories->contains($category2));
+        $this->assertTrue($product->categories->contains($category3));
+    }
+
+    /** @test */
+    public function it_can_sync_categories_on_product()
+    {
+        $product = Product::factory()->create();
+        $category1 = ProductCategory::factory()->create();
+        $category2 = ProductCategory::factory()->create();
+        $category3 = ProductCategory::factory()->create();
+
+        // Initially assign category1 and category2
+        $product->categories()->attach([$category1->id, $category2->id]);
+        $this->assertCount(2, $product->fresh()->categories);
+
+        // Sync to category2 and category3 (removes category1, keeps category2, adds category3)
+        $product->syncCategories([$category2->id, $category3->id]);
+
+        $this->assertCount(2, $product->fresh()->categories);
+        $this->assertFalse($product->categories->contains($category1));
+        $this->assertTrue($product->categories->contains($category2));
+        $this->assertTrue($product->categories->contains($category3));
+    }
+
+    /** @test */
+    public function it_can_assign_category_by_name()
+    {
+        $product = Product::factory()->create();
+
+        $product->assignCategoryByName('Electronics');
+
+        $this->assertCount(1, $product->fresh()->categories);
+        $category = $product->categories->first();
+        $this->assertEquals('Electronics', $category->name);
+    }
+
+    /** @test */
+    public function it_can_assign_category_by_name_without_creating_duplicates()
+    {
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+
+        $product1->assignCategoryByName('Electronics');
+        $product2->assignCategoryByName('Electronics');
+
+        $this->assertCount(1, ProductCategory::where('name', 'Electronics')->get());
+    }
+
+    /** @test */
+    public function it_can_assign_multiple_categories_by_names()
+    {
+        $product = Product::factory()->create();
+
+        $product->assignCategoriesByNames(['Electronics', 'Gadgets', 'Accessories']);
+
+        $this->assertCount(3, $product->fresh()->categories);
+        $categoryNames = $product->categories->pluck('name')->toArray();
+        $this->assertContains('Electronics', $categoryNames);
+        $this->assertContains('Gadgets', $categoryNames);
+        $this->assertContains('Accessories', $categoryNames);
+    }
+
+    /** @test */
+    public function it_can_assign_category_by_slug()
+    {
+        $product = Product::factory()->create();
+
+        $product->asssignCategoryBySlug('electronics');
+
+        $this->assertCount(1, $product->fresh()->categories);
+        $category = $product->categories->first();
+        $this->assertEquals('electronics', $category->slug);
+    }
+
+    /** @test */
+    public function it_can_assign_category_by_slug_without_creating_duplicates()
+    {
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+
+        $product1->asssignCategoryBySlug('electronics');
+        $product2->asssignCategoryBySlug('electronics');
+
+        $this->assertCount(1, ProductCategory::where('slug', 'electronics')->get());
+    }
+
+    /** @test */
+    public function it_can_assign_multiple_categories_by_slugs()
+    {
+        $product = Product::factory()->create();
+
+        $product->assignCategoriesBySlugs(['electronics', 'gadgets', 'accessories']);
+
+        $this->assertCount(3, $product->fresh()->categories);
+        $categorySlugs = $product->categories->pluck('slug')->toArray();
+        $this->assertContains('electronics', $categorySlugs);
+        $this->assertContains('gadgets', $categorySlugs);
+        $this->assertContains('accessories', $categorySlugs);
+    }
 }

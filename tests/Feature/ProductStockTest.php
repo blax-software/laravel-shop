@@ -642,4 +642,389 @@ class ProductStockTest extends TestCase
         $this->assertNotNull($claim->fresh()->released_at);
         $this->assertEquals($claim->fresh()->updated_at->format('Y-m-d H:i:s'), $claim->fresh()->released_at->format('Y-m-d H:i:s'));
     }
+
+    /** @test */
+    public function adjust_stock_increase_type_affects_available_stock_correctly()
+    {
+        $product = Product::factory()->create(['manage_stock' => true]);
+
+        $this->assertEquals(0, $product->getAvailableStock());
+
+        // Add stock using adjustStock with INCREASE type
+        $product->adjustStock(
+            type: StockType::INCREASE,
+            quantity: 50
+        );
+
+        $this->assertEquals(50, $product->getAvailableStock());
+
+        // Add more stock
+        $product->adjustStock(
+            type: StockType::INCREASE,
+            quantity: 30
+        );
+
+        $this->assertEquals(80, $product->getAvailableStock());
+    }
+
+    /** @test */
+    public function adjust_stock_decrease_type_affects_available_stock_correctly()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        $this->assertEquals(100, $product->getAvailableStock());
+
+        // Decrease stock using adjustStock
+        $product->adjustStock(
+            type: StockType::DECREASE,
+            quantity: 20
+        );
+
+        $this->assertEquals(80, $product->getAvailableStock());
+
+        // Decrease more stock
+        $product->adjustStock(
+            type: StockType::DECREASE,
+            quantity: 15
+        );
+
+        $this->assertEquals(65, $product->getAvailableStock());
+    }
+
+    /** @test */
+    public function adjust_stock_return_type_affects_available_stock_correctly()
+    {
+        $product = Product::factory()->withStocks(50)->create();
+        $product->decreaseStock(10);
+
+        $this->assertEquals(40, $product->getAvailableStock());
+
+        // Return stock using adjustStock with RETURN type
+        $product->adjustStock(
+            type: StockType::RETURN,
+            quantity: 8
+        );
+
+        $this->assertEquals(48, $product->getAvailableStock());
+    }
+
+    /** @test */
+    public function adjust_stock_claimed_type_affects_available_and_claimed_stock_correctly()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        $this->assertEquals(100, $product->getAvailableStock());
+        $this->assertEquals(0, $product->getClaimedStock());
+
+        // Claim stock using adjustStock with CLAIMED type
+        // Note: adjustStock(CLAIMED) now delegates to claimStock() for consistency
+        // This creates: DECREASE (COMPLETED) + CLAIMED (PENDING)
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 25
+        );
+
+        // Available stock is reduced by the DECREASE entry
+        $this->assertEquals(75, $product->getAvailableStock());
+
+        // Claimed stock shows the pending claim (always positive now)
+        $this->assertEquals(25, $product->getClaimedStock());
+    }
+    /** @test */
+    public function adjust_stock_with_until_parameter_expires_correctly()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Add stock with expiration date in the future
+        $product->adjustStock(
+            type: StockType::INCREASE,
+            quantity: 50,
+            until: now()->addDays(5)
+        );
+
+        // Should be available now
+        $this->assertEquals(150, $product->getAvailableStock());
+
+        // Travel to after expiration
+        $this->travel(6)->days();
+
+        // Should no longer be counted as available
+        $this->assertEquals(100, $product->getAvailableStock());
+    }
+
+    /** @test */
+    public function adjust_stock_claimed_with_from_and_until_affects_availability_by_date()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Claim stock from day 5 to day 10 using adjustStock
+        // Now works correctly because adjustStock(CLAIMED) uses the same pattern as claimStock
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 30,
+            from: now()->addDays(5),
+            until: now()->addDays(10)
+        );
+
+        // Current available stock is reduced by the DECREASE entry
+        $this->assertEquals(70, $product->getAvailableStock());
+
+        // Check availability on specific dates
+        $availableOnDay3 = $product->availableOnDate(now()->addDays(3));
+        $this->assertEquals(100, $availableOnDay3); // Before claim starts
+
+        $availableOnDay7 = $product->availableOnDate(now()->addDays(7));
+        $this->assertEquals(70, $availableOnDay7); // During claim period
+
+        $availableOnDay12 = $product->availableOnDate(now()->addDays(12));
+        $this->assertEquals(100, $availableOnDay12); // After claim expires
+    }
+    /** @test */
+    public function adjust_stock_multiple_claimed_types_accumulate_in_claimed_stock()
+    {
+        $product = Product::factory()->withStocks(200)->create();
+
+        // Make multiple claims using adjustStock
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 20
+        );
+
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 35
+        );
+
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 15
+        );
+
+        // Available stock is reduced by all claims
+        $this->assertEquals(130, $product->getAvailableStock());
+
+        // Total claimed stock (always positive)
+        $this->assertEquals(70, $product->getClaimedStock());
+    }
+    /** @test */
+    public function adjust_stock_claimed_with_completed_status_does_not_count_as_claimed()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Note: adjustStock(CLAIMED) now always delegates to claimStock() which creates PENDING claims
+        // This test no longer makes sense with the corrected implementation
+        // Manual claim with COMPLETED status can still be created directly
+        $product->stocks()->create([
+            'type' => StockType::CLAIMED,
+            'quantity' => 25,
+            'status' => StockStatus::COMPLETED,
+        ]);
+
+        // Available stock unchanged (this is completed/released claim)
+        $this->assertEquals(100, $product->getAvailableStock());
+
+        // Should NOT count as claimed stock (only PENDING claims count)
+        $this->assertEquals(0, $product->getClaimedStock());
+    }
+
+    /** @test */
+    public function adjust_stock_with_mixed_types_calculates_correctly()
+    {
+        $product = Product::factory()->create(['manage_stock' => true]);
+
+        // Start with 100
+        $product->adjustStock(type: StockType::INCREASE, quantity: 100);
+        $this->assertEquals(100, $product->getAvailableStock());
+
+        // Claim 30 - now reduces available stock
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 30
+        );
+        $this->assertEquals(70, $product->getAvailableStock());
+        $this->assertEquals(30, $product->getClaimedStock());
+
+        // Decrease 20 (regular decrease with COMPLETED status)
+        $product->adjustStock(type: StockType::DECREASE, quantity: 20);
+        $this->assertEquals(50, $product->getAvailableStock());
+        $this->assertEquals(30, $product->getClaimedStock());
+
+        // Return 10 (adds back to stock)
+        $product->adjustStock(type: StockType::RETURN, quantity: 10);
+        $this->assertEquals(60, $product->getAvailableStock());
+        $this->assertEquals(30, $product->getClaimedStock());
+
+        // Increase 25
+        $product->adjustStock(type: StockType::INCREASE, quantity: 25);
+        $this->assertEquals(85, $product->getAvailableStock());
+        $this->assertEquals(30, $product->getClaimedStock());
+    }
+    /** @test */
+    public function adjust_stock_claimed_without_from_is_immediately_active()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Claim without 'from' date - should be immediately active
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 40,
+            until: now()->addDays(10)
+        );
+
+        // Should be claimed right now
+        $availableNow = $product->availableOnDate(now());
+        $this->assertEquals(60, $availableNow);
+
+        // Should still be claimed tomorrow
+        $availableTomorrow = $product->availableOnDate(now()->addDays(1));
+        $this->assertEquals(60, $availableTomorrow);
+
+        // Should be released after expiration
+        $availableAfter = $product->availableOnDate(now()->addDays(11));
+        $this->assertEquals(100, $availableAfter);
+    }
+    /** @test */
+    public function adjust_stock_claimed_without_until_is_permanent_claim()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Permanent claim from day 5 onwards (no until date)
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 35,
+            from: now()->addDays(5)
+        );
+
+        // Before 'from' date: full stock available
+        $availableOnDay3 = $product->availableOnDate(now()->addDays(3));
+        $this->assertEquals(100, $availableOnDay3);
+
+        // After 'from' date: permanently reduced
+        $availableOnDay10 = $product->availableOnDate(now()->addDays(10));
+        $this->assertEquals(65, $availableOnDay10);
+
+        // Far future: still reduced (permanent)
+        $availableOnDay100 = $product->availableOnDate(now()->addDays(100));
+        $this->assertEquals(65, $availableOnDay100);
+    }
+    /** @test */
+    public function adjust_stock_with_overlapping_claimed_periods_calculates_correctly()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // First claim: days 5-15
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 20,
+            from: now()->addDays(5),
+            until: now()->addDays(15)
+        );
+
+        // Second claim: days 10-20
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 30,
+            from: now()->addDays(10),
+            until: now()->addDays(20)
+        );
+
+        // Day 3: no claims active
+        $this->assertEquals(100, $product->availableOnDate(now()->addDays(3)));
+
+        // Day 7: only first claim active
+        $this->assertEquals(80, $product->availableOnDate(now()->addDays(7)));
+
+        // Day 12: both claims active
+        $this->assertEquals(50, $product->availableOnDate(now()->addDays(12)));
+
+        // Day 18: only second claim active
+        $this->assertEquals(70, $product->availableOnDate(now()->addDays(18)));
+
+        // Day 25: no claims active
+        $this->assertEquals(100, $product->availableOnDate(now()->addDays(25)));
+
+        // Current available stock (both claims reduce it)
+        $this->assertEquals(50, $product->getAvailableStock());
+
+        // Total claimed stock
+        $this->assertEquals(50, $product->getClaimedStock());
+    }
+    /** @test */
+    public function adjust_stock_with_note_and_reference_tracks_correctly()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+        $user = \Workbench\App\Models\User::factory()->create();
+
+        // Claim with note and reference
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 25,
+            note: 'VIP customer reservation',
+            referencable: $user
+        );
+
+        // Available stock is reduced
+        $this->assertEquals(75, $product->getAvailableStock());
+        // Claimed stock shows positive value
+        $this->assertEquals(25, $product->getClaimedStock());
+
+        // Verify note and reference are stored
+        $claim = $product->stocks()->where('type', StockType::CLAIMED->value)->first();
+        $this->assertEquals('VIP customer reservation', $claim->note);
+        $this->assertEquals($user->id, $claim->reference_id);
+        $this->assertEquals(get_class($user), $claim->reference_type);
+    }
+
+    /** @test */
+    public function adjust_stock_expired_claims_dont_affect_current_availability()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Create an expired claim using adjustStock
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 30,
+            from: now()->subDays(5),
+            until: now()->subDays(1)
+        );
+
+        // Available stock is reduced (the DECREASE is permanent)
+        $this->assertEquals(70, $product->getAvailableStock());
+
+        // Claimed stock still shows the pending claim
+        $this->assertEquals(30, $product->getClaimedStock());
+
+        // Active claims (not expired) should be empty
+        $activeClaims = $product->claims()->get();
+        $this->assertCount(0, $activeClaims);
+    }
+
+    /** @test */
+    public function adjust_stock_releasing_claimed_updates_calculations()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Create claim using adjustStock
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 40
+        );
+
+        $this->assertEquals(60, $product->getAvailableStock());
+        $this->assertEquals(40, $product->getClaimedStock());
+
+        // Find and release the claim
+        $claim = $product->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->first();
+
+        $claim->release();
+
+        // Claimed stock should drop to 0
+        $this->assertEquals(0, $product->getClaimedStock());
+
+        // Available stock is restored when claim is released
+        $this->assertEquals(100, $product->getAvailableStock());
+    }
 }

@@ -188,8 +188,8 @@ class ProductStock extends Model
      * Release a claimed stock entry
      * 
      * Changes status from PENDING to COMPLETED, marking the claim as released.
-     * Note: This does NOT add stock back - the stock remains decreased.
-     * To return stock to inventory, use increaseStock() on the product.
+     * For claims created with the two-entry pattern (DECREASE + CLAIMED), this will also
+     * create a RETURN entry to restore the stock to inventory.
      * 
      * @return bool True if released successfully, false if not pending
      */
@@ -200,8 +200,13 @@ class ProductStock extends Model
         }
 
         return DB::transaction(function () {
+            // Mark claim as completed (released)
             $this->status = StockStatus::COMPLETED;
             $this->save();
+
+            // Return the claimed stock to inventory
+            // This creates a RETURN entry to offset the DECREASE that was created when claiming
+            $this->product->increaseStock($this->quantity, StockType::RETURN);
 
             return true;
         });
