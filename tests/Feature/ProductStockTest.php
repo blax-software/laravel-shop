@@ -988,11 +988,11 @@ class ProductStockTest extends TestCase
             until: now()->subDays(1)
         );
 
-        // Available stock is reduced (the DECREASE is permanent)
-        $this->assertEquals(70, $product->getAvailableStock());
+        // Available stock is automatically restored (expired claims add stock back)
+        $this->assertEquals(100, $product->getAvailableStock());
 
-        // Claimed stock still shows the pending claim
-        $this->assertEquals(30, $product->getClaimedStock());
+        // Claimed stock does NOT show expired claims (automatically excluded)
+        $this->assertEquals(0, $product->getClaimedStock());
 
         // Active claims (not expired) should be empty
         $activeClaims = $product->claims()->get();
@@ -1026,5 +1026,226 @@ class ProductStockTest extends TestCase
 
         // Available stock is restored when claim is released
         $this->assertEquals(100, $product->getAvailableStock());
+    }
+
+    /** @test */
+    public function stock_claim_creates_correct_transactions()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Claim 30 units for 5 days
+        $claim = $product->claimStock(
+            quantity: 30,
+            until: now()->addDays(5)
+        );
+
+        $this->assertNotNull($claim);
+
+        // Should create two entries: DECREASE (COMPLETED) + CLAIMED (PENDING)
+        $decreaseEntry = $product->stocks()
+            ->where('type', StockType::DECREASE->value)
+            ->where('status', StockStatus::COMPLETED->value)
+            ->first();
+
+        $claimedEntry = $product->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->first();
+
+        $this->assertNotNull($decreaseEntry, 'DECREASE entry should exist');
+        $this->assertEquals(-30, $decreaseEntry->quantity);
+        $this->assertEquals(StockStatus::COMPLETED, $decreaseEntry->status);
+
+        $this->assertNotNull($claimedEntry, 'CLAIMED entry should exist');
+        $this->assertEquals(30, $claimedEntry->quantity);
+        $this->assertEquals(StockStatus::PENDING, $claimedEntry->status);
+        $this->assertNotNull($claimedEntry->expires_at);
+    }
+
+    /** @test */
+    public function claimed_stock_reduces_available_and_increases_claimed()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Initial state
+        $this->assertEquals(100, $product->getAvailableStock());
+        $this->assertEquals(0, $product->getClaimedStock());
+
+        // Claim 30 units
+        $product->claimStock(quantity: 30, until: now()->addDays(5));
+
+        // Available stock should be reduced
+        $this->assertEquals(70, $product->getAvailableStock());
+
+        // Claimed stock should show the claim
+        $this->assertEquals(30, $product->getClaimedStock());
+
+        // Claim another 20 units
+        $product->claimStock(quantity: 20, until: now()->addDays(3));
+
+        // Available stock should be further reduced
+        $this->assertEquals(50, $product->getAvailableStock());
+
+        // Claimed stock should show both claims
+        $this->assertEquals(50, $product->getClaimedStock());
+    }
+
+    /** @test */
+    public function expired_claims_automatically_restore_available_stock()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Claim 30 units, expires in 5 days
+        $product->claimStock(quantity: 30, until: now()->addDays(5));
+
+        // During claim period: available reduced, claimed shows 30
+        $this->assertEquals(70, $product->getAvailableStock());
+        $this->assertEquals(30, $product->getClaimedStock());
+
+        // Travel to day 3 (still within claim period)
+        $this->travel(3)->days();
+
+        $this->assertEquals(70, $product->getAvailableStock());
+        $this->assertEquals(30, $product->getClaimedStock());
+
+        // Travel to day 6 (after expiration)
+        $this->travel(3)->days();
+
+        // Available stock should be automatically restored
+        $this->assertEquals(100, $product->getAvailableStock());
+
+        // Claimed stock should be 0 (expired claims excluded)
+        $this->assertEquals(0, $product->getClaimedStock());
+
+        // No manual release() was called!
+    }
+
+    /** @test */
+    public function multiple_claims_with_different_expirations_restore_progressively()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Claim 1: 20 units, expires in 3 days
+        $product->claimStock(quantity: 20, until: now()->addDays(3));
+
+        // Claim 2: 30 units, expires in 7 days
+        $product->claimStock(quantity: 30, until: now()->addDays(7));
+
+        // Initial state: both claims active
+        $this->assertEquals(50, $product->getAvailableStock()); // 100 - 20 - 30
+        $this->assertEquals(50, $product->getClaimedStock());   // 20 + 30
+
+        // Travel to day 4 (first claim expired, second still active)
+        $this->travel(4)->days();
+
+        $this->assertEquals(70, $product->getAvailableStock()); // 100 - 30 (only second claim)
+        $this->assertEquals(30, $product->getClaimedStock());   // Only second claim
+
+        // Travel to day 8 (both claims expired)
+        $this->travel(4)->days();
+
+        $this->assertEquals(100, $product->getAvailableStock()); // All restored
+        $this->assertEquals(0, $product->getClaimedStock());     // No claims
+    }
+
+    /** @test */
+    public function permanent_claims_without_expiration_never_auto_restore()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Permanent claim (no until date)
+        $product->claimStock(quantity: 25);
+
+        // Available stock reduced, claimed shows 25
+        $this->assertEquals(75, $product->getAvailableStock());
+        $this->assertEquals(25, $product->getClaimedStock());
+
+        // Travel far into the future
+        $this->travel(100)->days();
+
+        // Permanent claim never expires
+        $this->assertEquals(75, $product->getAvailableStock());
+        $this->assertEquals(25, $product->getClaimedStock());
+
+        // Must manually release permanent claims
+        $claim = $product->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->first();
+
+        $claim->release();
+
+        // Now stock is restored
+        $this->assertEquals(100, $product->getAvailableStock());
+        $this->assertEquals(0, $product->getClaimedStock());
+    }
+
+    /** @test */
+    public function adjust_stock_claimed_also_auto_restores_after_expiration()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Use adjustStock instead of claimStock
+        $product->adjustStock(
+            type: StockType::CLAIMED,
+            quantity: 40,
+            until: now()->addDays(5)
+        );
+
+        // During claim period
+        $this->assertEquals(60, $product->getAvailableStock());
+        $this->assertEquals(40, $product->getClaimedStock());
+
+        // After expiration
+        $this->travel(6)->days();
+
+        // Stock automatically restored
+        $this->assertEquals(100, $product->getAvailableStock());
+        $this->assertEquals(0, $product->getClaimedStock());
+    }
+
+    /** @test */
+    public function claimed_stock_transactions_maintain_data_integrity()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Claim 35 units
+        $claim = $product->claimStock(quantity: 35, until: now()->addDays(5));
+
+        // Verify DECREASE entry
+        $decrease = $product->stocks()
+            ->where('type', StockType::DECREASE->value)
+            ->latest()
+            ->first();
+
+        $this->assertEquals(-35, $decrease->quantity);
+        $this->assertEquals(StockStatus::COMPLETED, $decrease->status);
+
+        // Verify CLAIMED entry matches the returned claim
+        $this->assertEquals($claim->id, $product->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->latest()
+            ->first()
+            ->id);
+
+        $this->assertEquals(35, $claim->quantity);
+        $this->assertEquals(StockStatus::PENDING, $claim->status);
+
+        // Verify totals
+        $allCompleted = $product->stocks()
+            ->where('status', StockStatus::COMPLETED->value)
+            ->where('type', '!=', StockType::CLAIMED->value)
+            ->sum('quantity');
+
+        // Should be: initial increase (100) + decrease (-35) = 65
+        // But getAvailableStock applies willExpire filter
+        $this->assertEquals(65, $product->getAvailableStock());
+
+        $allClaimed = $product->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->sum('quantity');
+
+        $this->assertEquals(35, $allClaimed);
     }
 }

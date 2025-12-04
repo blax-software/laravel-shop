@@ -266,8 +266,11 @@ trait HasStocks
      * Get currently available stock
      * 
      * This is the stock available for new orders/claims.
-     * Calculated as: Sum of all COMPLETED entries that haven't expired (includes DECREASE from active claims)
-     * CLAIMED entries are excluded as they track claims, not physical inventory.
+     * Calculation:
+     * 1. Sum all COMPLETED stock entries (INCREASE, DECREASE, RETURN) that haven't expired
+     * 2. Add back expired CLAIMED stocks (their DECREASE entries are negated when claims expire)
+     * 
+     * CLAIMED entries are excluded from the main sum as they track claims, not physical inventory.
      * 
      * @return int Available quantity (PHP_INT_MAX if stock management disabled)
      */
@@ -277,17 +280,28 @@ trait HasStocks
             return PHP_INT_MAX;
         }
 
-        return max(0, $this->stocks()
+        // Base stock: all COMPLETED entries except CLAIMED, filtered by expiration
+        $baseStock = $this->stocks()
             ->where('status', StockStatus::COMPLETED->value)
             ->where('type', '!=', StockType::CLAIMED->value)
             ->willExpire()
-            ->sum('quantity'));
+            ->sum('quantity');
+
+        // Add back expired claims (these had DECREASE entries that should no longer reduce stock)
+        $expiredClaims = $this->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<=', now())
+            ->sum('quantity');
+
+        return max(0, $baseStock + $expiredClaims);
     }
 
     /**
      * Get total currently claimed stock
      * 
-     * Sum of all active (PENDING) claims.
+     * Sum of all active (PENDING) claims that haven't expired yet.
      * This stock is unavailable but tracked separately from physical inventory.
      * Returns absolute value to always show positive quantity.
      * 
@@ -298,6 +312,7 @@ trait HasStocks
         return abs($this->stocks()
             ->where('type', StockType::CLAIMED->value)
             ->where('status', StockStatus::PENDING->value)
+            ->willExpire()
             ->sum('quantity'));
     }
 
