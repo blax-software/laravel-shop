@@ -9,13 +9,48 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * HasStocks Trait
+ * 
+ * Provides stock management functionality to Product models.
+ * 
+ * Key Features:
+ * - Basic stock operations (increase, decrease, adjust)
+ * - Stock claims for bookings/reservations
+ * - Date-based availability checking
+ * - Low stock detection
+ * - Stock movement logging
+ * 
+ * Usage:
+ * - Add 'manage_stock' boolean column to products table
+ * - Set manage_stock = true to enable stock tracking
+ * - Use increaseStock/decreaseStock for inventory changes
+ * - Use claimStock for reservations/bookings
+ * - Use availableOnDate for date-based availability
+ * 
+ * Stock Calculation:
+ * - Physical Stock = Sum of all COMPLETED entries
+ * - Available Stock = Physical Stock (accounts for pending claims via their DECREASE entries)
+ * - Claimed Stock = Sum of PENDING claims
+ * - Available on Date = Available Stock + All Claims - Claims Active on Date
+ */
 trait HasStocks
 {
+    /**
+     * Get all stock entries for this product
+     */
     public function stocks(): HasMany
     {
         return $this->hasMany(config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'));
     }
 
+    /**
+     * Attribute accessor: Get available physical stock
+     * 
+     * Sums all COMPLETED stock entries that haven't expired.
+     * This includes INCREASE (+), DECREASE (-), and released claims.
+     * Does NOT include PENDING claims (they're tracked separately).
+     */
     public function getAvailableStocksAttribute(): int
     {
         return $this->stocks()
@@ -24,6 +59,11 @@ trait HasStocks
             ->sum('quantity') ?? 0;
     }
 
+    /**
+     * Check if product is in stock
+     * 
+     * @return bool True if stock management is disabled OR available stock > 0
+     */
     public function isInStock(): bool
     {
         if (!$this->manage_stock) {
@@ -33,6 +73,17 @@ trait HasStocks
         return $this->getAvailableStock() > 0;
     }
 
+    /**
+     * Decrease physical stock (inventory reduction)
+     * 
+     * Creates a DECREASE entry with negative quantity and COMPLETED status.
+     * This represents actual stock leaving the inventory (sold, damaged, etc.).
+     * 
+     * @param int $quantity Amount to decrease
+     * @param Carbon|null $until Optional expiration (for temporary decreases)
+     * @return bool True if successful
+     * @throws NotEnoughStockException If insufficient stock available
+     */
     public function decreaseStock(int $quantity = 1, Carbon|null $until = null): bool
     {
         if (!$this->manage_stock) {
@@ -57,6 +108,15 @@ trait HasStocks
         return true;
     }
 
+    /**
+     * Increase physical stock (inventory addition)
+     * 
+     * Creates an INCREASE entry with positive quantity and COMPLETED status.
+     * This represents stock being added to inventory (purchased, returned, etc.).
+     * 
+     * @param int $quantity Amount to increase
+     * @return bool True if successful, false if stock management disabled
+     */
     public function increaseStock(int $quantity = 1): bool
     {
         if (!$this->manage_stock) {
@@ -76,6 +136,20 @@ trait HasStocks
         return true;
     }
 
+    /**
+     * Adjust stock with custom type and status
+     * 
+     * More flexible than increaseStock/decreaseStock, allows:
+     * - Custom stock type (INCREASE, DECREASE, RETURN)
+     * - Custom status (defaults to COMPLETED)
+     * - Optional expiration date
+     * 
+     * @param StockType $type The type of adjustment
+     * @param int $quantity Amount to adjust (always positive, type determines direction)
+     * @param \DateTimeInterface|null $until Optional expiration date
+     * @param StockStatus|null $status Optional status (defaults to COMPLETED)
+     * @return bool True if successful, false if stock management disabled
+     */
     public function adjustStock(
         StockType $type,
         int $quantity,
@@ -86,20 +160,45 @@ trait HasStocks
             return false;
         }
 
+        // INCREASE and RETURN add stock (positive), DECREASE and CLAIMED remove stock (negative)
+        $isPositive = in_array($type, [StockType::INCREASE, StockType::RETURN]);
+        $adjustedQuantity = $isPositive ? $quantity : -$quantity;
+
         $this->stocks()->create([
-            'quantity' => $type === StockType::INCREASE ? $quantity : -$quantity,
+            'quantity' => $adjustedQuantity,
             'type' => $type,
             'status' => $status ?? StockStatus::COMPLETED,
             'expires_at' => $until,
         ]);
 
-        $this->logStockChange($type === StockType::INCREASE ? $quantity : -$quantity, 'adjust');
+        $this->logStockChange($adjustedQuantity, 'adjust');
 
         $this->save();
 
         return true;
     }
 
+    /**
+     * Claim stock for temporary use (reservation/booking)
+     * 
+     * This is different from decreaseStock - it:
+     * 1. Removes stock from available inventory (via DECREASE entry)
+     * 2. Tracks it as a claim (via CLAIMED entry with PENDING status)
+     * 3. Can be released back later (changes CLAIMED to COMPLETED)
+     * 4. Supports date ranges for bookings (claimed_from to expires_at)
+     * 
+     * Use cases:
+     * - Hotel room bookings (claimed_from = check-in, expires_at = check-out)
+     * - Equipment rentals (claimed_from = rental start, expires_at = return date)
+     * - Cart reservations (no claimed_from, expires_at = cart expiry)
+     * 
+     * @param int $quantity Amount to claim
+     * @param mixed $reference Optional reference model (Order, Booking, Cart, etc.)
+     * @param \DateTimeInterface|null $from When claim starts (null = immediately)
+     * @param \DateTimeInterface|null $until When claim expires (null = permanent)
+     * @param string|null $note Optional note about the claim
+     * @return \Blax\Shop\Models\ProductStock|null The claim entry, or null if insufficient stock
+     */
     public function claimStock(
         int $quantity,
         $reference = null,
@@ -124,6 +223,14 @@ trait HasStocks
         );
     }
 
+    /**
+     * Get currently available stock
+     * 
+     * This is the stock available for new orders/claims.
+     * Calculated as: Sum of all COMPLETED entries (includes DECREASE from active claims)
+     * 
+     * @return int Available quantity (PHP_INT_MAX if stock management disabled)
+     */
     public function getAvailableStock(): int
     {
         if (!$this->manage_stock) {
@@ -133,11 +240,28 @@ trait HasStocks
         return max(0, $this->AvailableStocks);
     }
 
+    /**
+     * Get total currently claimed stock
+     * 
+     * Sum of all active (PENDING) claims.
+     * This stock is unavailable but tracked separately from physical inventory.
+     * 
+     * @return int Total claimed quantity
+     */
     public function getClaimedStock(): int
     {
-        return $this->activeStocks()->sum('quantity');
+        return $this->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->sum('quantity');
     }
 
+    /**
+     * Log a stock change to the audit log
+     * 
+     * @param int $quantityChange The change in quantity (positive or negative)
+     * @param string $type The type of change (increase, decrease, adjust)
+     */
     protected function logStockChange(int $quantityChange, string $type): void
     {
         DB::table('product_stock_logs')->insert([
@@ -150,6 +274,13 @@ trait HasStocks
         ]);
     }
 
+    /**
+     * Query scope: Get products that are in stock
+     * 
+     * Includes products with:
+     * - Stock management disabled (always in stock), OR
+     * - Stock management enabled AND available stock > 0
+     */
     public function scopeInStock($query)
     {
         return $query->where(function ($q) {
@@ -161,6 +292,14 @@ trait HasStocks
         });
     }
 
+    /**
+     * Query scope: Get products with low stock
+     * 
+     * Returns products where:
+     * - Stock management is enabled
+     * - low_stock_threshold is set
+     * - Available stock <= threshold
+     */
     public function scopeLowStock($query)
     {
         $stockTable = config('shop.tables.product_stocks', 'product_stocks');
@@ -173,6 +312,11 @@ trait HasStocks
             ]);
     }
 
+    /**
+     * Check if product stock is low
+     * 
+     * @return bool True if stock management enabled, threshold set, and stock <= threshold
+     */
     public function isLowStock(): bool
     {
         if (!$this->manage_stock || !$this->low_stock_threshold) {
@@ -182,6 +326,17 @@ trait HasStocks
         return $this->getAvailableStock() <= $this->low_stock_threshold;
     }
 
+    /**
+     * Get active claims for this product
+     * 
+     * Returns query builder for PENDING claims that haven't expired yet.
+     * Useful for:
+     * - Viewing current reservations
+     * - Checking what's claimed but not released
+     * - Managing active bookings
+     * 
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function claims()
     {
         $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
@@ -191,6 +346,30 @@ trait HasStocks
             ->where('product_id', $this->id);
     }
 
+    /**
+     * Get available stock on a specific date
+     * 
+     * This is crucial for booking/rental systems where you need to know:
+     * "How many units are available on date X?"
+     * 
+     * Calculation:
+     * 1. Start with current available stock
+     * 2. Add back all currently pending claims (they reduce available stock)
+     * 3. Subtract only the claims that are active on the specific date
+     * 
+     * Example with 100 units:
+     * - Claim 1: 20 units, days 5-10
+     * - Claim 2: 30 units, days 8-15
+     * - Current available: 50 (100 - 20 - 30)
+     * - Available on day 3: 100 (no claims active)
+     * - Available on day 6: 80 (only claim 1 active)
+     * - Available on day 9: 50 (both claims active)
+     * - Available on day 12: 70 (only claim 2 active)
+     * - Available on day 20: 100 (no claims active)
+     * 
+     * @param \DateTimeInterface $date The date to check availability for
+     * @return int Available stock on that date (PHP_INT_MAX if stock management disabled)
+     */
     public function availableOnDate(\DateTimeInterface $date): int
     {
         if (!$this->manage_stock) {

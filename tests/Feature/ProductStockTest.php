@@ -3,6 +3,7 @@
 namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Enums\StockStatus;
+use Blax\Shop\Enums\StockType;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductStock;
@@ -480,5 +481,165 @@ class ProductStockTest extends TestCase
 
         $this->assertCount(1, $claimsOnDay12);
         $this->assertEquals($claim2->id, $claimsOnDay12->first()->id);
+    }
+
+    /** @test */
+    public function it_can_get_claimed_stock_amount()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Claim some stock
+        $product->claimStock(quantity: 25);
+        $product->claimStock(quantity: 15);
+
+        // Should return total claimed
+        $this->assertEquals(40, $product->getClaimedStock());
+    }
+
+    /** @test */
+    public function it_checks_if_claim_is_active()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        $claim = $product->claimStock(quantity: 10);
+
+        $this->assertTrue($claim->isActive());
+
+        $claim->release();
+
+        $this->assertFalse($claim->fresh()->isActive());
+    }
+
+    /** @test */
+    public function it_releases_expired_claims()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        // Create expired claim
+        $expiredClaim = $product->claimStock(
+            quantity: 20,
+            until: now()->subHour()
+        );
+
+        // Create active claim
+        $activeClaim = $product->claimStock(
+            quantity: 15,
+            until: now()->addHours(2)
+        );
+
+        // Release expired claims
+        $count = \Blax\Shop\Models\ProductStock::releaseExpired();
+
+        $this->assertEquals(1, $count);
+        $this->assertEquals(StockStatus::COMPLETED, $expiredClaim->fresh()->status);
+        $this->assertEquals(StockStatus::PENDING, $activeClaim->fresh()->status);
+    }
+
+    /** @test */
+    public function it_has_reference_relationship()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+        $user = \Workbench\App\Models\User::factory()->create();
+
+        $claim = $product->claimStock(
+            quantity: 10,
+            reference: $user,
+            note: 'Reserved for user'
+        );
+
+        $this->assertNotNull($claim->reference);
+        $this->assertEquals($user->id, $claim->reference->id);
+        $this->assertEquals(get_class($user), $claim->reference_type);
+    }
+
+    /** @test */
+    public function it_handles_return_stock_type()
+    {
+        $product = Product::factory()->create(['manage_stock' => true]);
+
+        $product->increaseStock(50);
+        $product->decreaseStock(10);
+
+        // Use adjustStock with RETURN type (adds stock back)
+        $product->adjustStock(
+            type: StockType::RETURN,
+            quantity: 5
+        );
+
+        // Refresh to get updated stock
+        $product = $product->fresh();
+
+        // Should have 45 total (50 - 10 + 5)
+        $this->assertEquals(45, $product->getAvailableStock());
+
+        // Verify the return entry exists
+        $returnEntry = $product->stocks()->where('type', StockType::RETURN->value)->first();
+        $this->assertNotNull($returnEntry);
+        $this->assertEquals(5, $returnEntry->quantity);
+    }
+
+    /** @test */
+    public function temporary_scope_filters_correctly()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        $temporary = $product->claimStock(quantity: 10, until: now()->addDay());
+        $permanent = $product->claimStock(quantity: 20);
+
+        $temporaryStocks = \Blax\Shop\Models\ProductStock::temporary()->get();
+        $permanentStocks = \Blax\Shop\Models\ProductStock::permanent()->get();
+
+        $this->assertTrue($temporaryStocks->contains($temporary));
+        $this->assertFalse($temporaryStocks->contains($permanent));
+        $this->assertTrue($permanentStocks->contains($permanent));
+        $this->assertFalse($permanentStocks->contains($temporary));
+    }
+
+    /** @test */
+    public function it_tracks_stock_with_custom_status()
+    {
+        $product = Product::factory()->create(['manage_stock' => true]);
+
+        // Add stock with PENDING status
+        $product->adjustStock(
+            type: StockType::INCREASE,
+            quantity: 50,
+            status: StockStatus::PENDING
+        );
+
+        // Should not be counted in available stock (only COMPLETED counts)
+        $this->assertEquals(0, $product->getAvailableStock());
+
+        // Mark as completed
+        $stockEntry = $product->stocks()->where('type', StockType::INCREASE->value)->first();
+        $stockEntry->status = StockStatus::COMPLETED;
+        $stockEntry->save();
+
+        // Now should be available
+        $this->assertEquals(50, $product->fresh()->getAvailableStock());
+    }
+
+    /** @test */
+    public function backward_compatibility_accessors_work()
+    {
+        $product = Product::factory()->withStocks(100)->create();
+
+        $claim = $product->claimStock(
+            quantity: 10,
+            until: now()->addDays(5)
+        );
+
+        // Test released_at accessor (should be null for pending)
+        $this->assertNull($claim->released_at);
+
+        // Test until_at accessor (alias for expires_at)
+        $this->assertEquals($claim->expires_at->format('Y-m-d'), $claim->until_at->format('Y-m-d'));
+
+        // Release the claim
+        $claim->release();
+
+        // Now released_at should return updated_at
+        $this->assertNotNull($claim->fresh()->released_at);
+        $this->assertEquals($claim->fresh()->updated_at->format('Y-m-d H:i:s'), $claim->fresh()->released_at->format('Y-m-d H:i:s'));
     }
 }

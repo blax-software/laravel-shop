@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ master ]
   pull_request:
-    branches: [ master, develop ]
+    branches: [ master, dev ]
 
 jobs:
   test:
@@ -64,4 +64,4 @@ jobs:
           composer run-script post-autoload-dump
 
       - name: Execute tests
-        run: vendor/bin/phpunit --testdox
+        run: vendor/bin/phpunit
