@@ -7,7 +7,6 @@ enum StockStatus: string
     case PENDING = 'pending';
     case COMPLETED = 'completed';
     case CANCELLED = 'cancelled';
-    case EXPIRED = 'expired';
 
     public function label(): string
     {
@@ -15,7 +14,6 @@ enum StockStatus: string
             self::PENDING => 'Pending',
             self::COMPLETED => 'Completed',
             self::CANCELLED => 'Cancelled',
-            self::EXPIRED => 'Expired',
         };
     }
 }

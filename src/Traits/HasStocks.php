@@ -20,10 +20,7 @@ trait HasStocks
     {
         return $this->stocks()
             ->available()
-            ->where(function ($query) {
-                $query->whereNull('expires_at')
-                    ->orWhere('expires_at', '>', now());
-            })
+            ->willExpire()
             ->sum('quantity') ?? 0;
     }
 
@@ -188,10 +185,7 @@ trait HasStocks
         $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
 
         return $stockModel::reservations()
-            ->where(function ($query) {
-                $query->whereNull('expires_at')
-                    ->orWhere('expires_at', '>', now());
-            })
+            ->willExpire()
             ->where('product_id', $this->id);
     }
 }

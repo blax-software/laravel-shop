@@ -45,12 +45,6 @@ class ProductStock extends Model
         static::created(function ($model) {
             $model->logStockChange();
         });
-
-        static::updated(function ($model) {
-            if ($model->wasChanged('status') && $model->status === StockStatus::COMPLETED) {
-                $model->releaseStock();
-            }
-        });
     }
 
     public function product(): BelongsTo
@@ -167,25 +161,6 @@ class ProductStock extends Model
             'quantity_after' => $this->product->stock_quantity,
             'type' => $this->type,
             'note' => $this->note,
-            'reference_type' => $this->reference_type,
-            'reference_id' => $this->reference_id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-    }
-
-    protected function releaseStock(): void
-    {
-        if (!config('shop.stock.log_changes', true)) {
-            return;
-        }
-
-        DB::table('product_stock_logs')->insert([
-            'product_id' => $this->product_id,
-            'quantity_change' => $this->quantity,
-            'quantity_after' => $this->product->stock_quantity,
-            'type' => StockType::RELEASE->value,
-            'note' => 'Stock released from reservation',
             'reference_type' => $this->reference_type,
             'reference_id' => $this->reference_id,
             'created_at' => now(),
