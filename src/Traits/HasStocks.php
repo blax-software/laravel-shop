@@ -38,11 +38,21 @@ use Illuminate\Support\Facades\DB;
 trait HasStocks
 {
     /**
-     * Get all stock entries for this product
+     * Get all available stock entries for this product
      */
     public function stocks(): HasMany
     {
         return $this->hasMany(config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'));
+    }
+
+    /**
+     * Get all stock entries for this product including unavailable ones
+     */
+    public function allStocks(): HasMany
+    {
+        return $this->hasMany(config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'))
+            ->withExpired()
+            ->where('status', 'LIKE', '%');
     }
 
     /**
@@ -274,28 +284,44 @@ trait HasStocks
      * 
      * @return int Available quantity (PHP_INT_MAX if stock management disabled)
      */
-    public function getAvailableStock(): int
+    public function getAvailableStock(?\DateTimeInterface $date = null): int
     {
         if (!$this->manage_stock) {
             return PHP_INT_MAX;
         }
 
-        // Base stock: all COMPLETED entries except CLAIMED, filtered by expiration
+        $date = $date ?? now();
+
+        // Base stock: all COMPLETED entries except CLAIMED, filtered using the provided date
         $baseStock = $this->stocks()
+            ->withoutGlobalScope('willExpire')
             ->where('status', StockStatus::COMPLETED->value)
             ->where('type', '!=', StockType::CLAIMED->value)
-            ->willExpire()
+            ->where(function ($query) use ($date) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', $date);
+            })
             ->sum('quantity');
 
-        // Add back expired claims (these had DECREASE entries that should no longer reduce stock)
-        $expiredClaims = $this->stocks()
+        // Add back claims that should not reduce availability at the given date
+        $inactiveClaims = $this->stocks()
+            ->withoutGlobalScope('willExpire')
             ->where('type', StockType::CLAIMED->value)
             ->where('status', StockStatus::PENDING->value)
-            ->whereNotNull('expires_at')
-            ->where('expires_at', '<=', now())
+            ->where(function ($query) use ($date) {
+                $query->where(function ($q) use ($date) {
+                    // Claim has not started yet
+                    $q->whereNotNull('claimed_from')
+                        ->where('claimed_from', '>', $date);
+                })->orWhere(function ($q) use ($date) {
+                    // Claim expired before the date
+                    $q->whereNotNull('expires_at')
+                        ->where('expires_at', '<=', $date);
+                });
+            })
             ->sum('quantity');
 
-        return max(0, $baseStock + $expiredClaims);
+        return max(0, $baseStock + $inactiveClaims);
     }
 
     /**
@@ -307,7 +333,27 @@ trait HasStocks
      * 
      * @return int Total claimed quantity (always positive)
      */
-    public function getClaimedStock(): int
+    public function getCurrentlyClaimedStock(): int
+    {
+        return abs($this->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->willExpire()
+            ->where(function ($query) {
+                $query->whereNull('claimed_from')
+                    ->orWhere('claimed_from', '<=', now());
+            })
+            ->sum('quantity'));
+    }
+
+    /**
+     * Get total current and planned claimed stock
+     * 
+     * Includes all PENDING claims, regardless of start date.
+     * Useful for understanding total reservations including future bookings.
+     * @return int Total current and future claimed quantity (always positive)
+     */
+    public function getActiveAndPlannedClaimedStock(): int
     {
         return abs($this->stocks()
             ->where('type', StockType::CLAIMED->value)
@@ -315,6 +361,32 @@ trait HasStocks
             ->willExpire()
             ->sum('quantity'));
     }
+
+    /**
+     * Get future claimed stock starting from a specific date or all where claimed_at is future
+     * 
+     * @param \DateTimeInterface|null $from Optional start date to filter claims
+     * @return int Total future claimed quantity (always positive)
+     */
+    public function getFutureClaimedStock(?\DateTimeInterface $from = null): int
+    {
+        $query = $this->stocks()
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->willExpire();
+
+        if ($from) {
+            $query->where('claimed_from', '>=', $from);
+        } else {
+            $query->where(function ($q) {
+                $q->whereNotNull('claimed_from')
+                    ->where('claimed_from', '>', now());
+            });
+        }
+
+        return abs($query->sum('quantity'));
+    }
+
 
     /**
      * Log a stock change to the audit log
@@ -436,23 +508,6 @@ trait HasStocks
             return PHP_INT_MAX;
         }
 
-        $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
-
-        // Get current available stock (includes all completed stocks minus all currently pending claims)
-        $currentAvailable = $this->getAvailableStock();
-
-        // Get all currently pending claimed stocks (not date-filtered)
-        $allClaimedStocks = $this->stocks()
-            ->where('type', StockType::CLAIMED->value)
-            ->where('status', StockStatus::PENDING->value)
-            ->sum('quantity');
-
-        // Get stocks claimed on this specific date
-        $claimedOnDate = $stockModel::availableOnDate($date)
-            ->where('product_id', $this->id)
-            ->sum('quantity');
-
-        // Available on date = current available + all claims - claims active on date
-        return max(0, $currentAvailable + abs($allClaimedStocks) - abs($claimedOnDate));
+        return $this->getAvailableStock($date);
     }
 }
