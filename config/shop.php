@@ -10,10 +10,13 @@ return [
         'product_action_runs' => 'product_action_runs',
         'product_attributes' => 'product_attributes',
         'product_categories' => 'product_categories',
+        'product_relations' => 'product_relations',
         'product_prices' => 'product_prices',
         'product_purchases' => 'product_purchases',
+        'product_actions' => 'product_actions',
         'product_stocks' => 'product_stocks',
         'products' => 'products',
+        'cart_discounts' => 'cart_discounts',
     ],
 
     // Model classes (allow overriding in main instance)

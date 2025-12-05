@@ -13,18 +13,18 @@ use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
 use Blax\Shop\Traits\HasCategories;
 use Blax\Shop\Traits\HasPrices;
+use Blax\Shop\Traits\HasProductRelations;
 use Blax\Shop\Traits\HasStocks;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Cache;
 
 class Product extends Model implements Purchasable, Cartable
 {
-    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasCategories;
+    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasCategories, HasProductRelations;
 
     protected $fillable = [
         'slug',
@@ -202,26 +202,6 @@ class Product extends Model implements Purchasable, Cartable
             $productPurchase,
             $additionalData
         );
-    }
-
-    public function relatedProducts(): BelongsToMany
-    {
-        return $this->belongsToMany(
-            self::class,
-            'product_relations',
-            'product_id',
-            'related_product_id'
-        )->withPivot('type')->withTimestamps();
-    }
-
-    public function upsells(): BelongsToMany
-    {
-        return $this->relatedProducts()->wherePivot('type', 'upsell');
-    }
-
-    public function crossSells(): BelongsToMany
-    {
-        return $this->relatedProducts()->wherePivot('type', 'cross-sell');
     }
 
     public function scopeVisible($query)

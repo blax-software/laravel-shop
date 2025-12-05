@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Tests\Feature;
 
+use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductStatus;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Models\Product;
@@ -157,11 +158,11 @@ class ProductManagementTest extends TestCase
         $product = Product::factory()->create();
         $relatedProduct = Product::factory()->create();
 
-        $product->relatedProducts()->attach($relatedProduct->id, [
-            'type' => 'related',
+        $product->productRelations()->attach($relatedProduct->id, [
+            'type' => ProductRelationType::RELATED->value,
         ]);
 
-        $this->assertTrue($product->relatedProducts->contains($relatedProduct));
+        $this->assertTrue($product->relatedProducts()->get()->contains($relatedProduct));
     }
 
     /** @test */
@@ -170,11 +171,11 @@ class ProductManagementTest extends TestCase
         $product = Product::factory()->create();
         $upsellProduct = Product::factory()->create();
 
-        $product->relatedProducts()->attach($upsellProduct->id, [
-            'type' => 'upsell',
+        $product->productRelations()->attach($upsellProduct->id, [
+            'type' => ProductRelationType::UPSELL->value,
         ]);
 
-        $this->assertTrue($product->upsells->contains($upsellProduct));
+        $this->assertTrue($product->upsellProducts()->get()->contains($upsellProduct));
     }
 
     /** @test */
@@ -183,11 +184,11 @@ class ProductManagementTest extends TestCase
         $product = Product::factory()->create();
         $crossSellProduct = Product::factory()->create();
 
-        $product->relatedProducts()->attach($crossSellProduct->id, [
-            'type' => 'cross-sell',
+        $product->productRelations()->attach($crossSellProduct->id, [
+            'type' => ProductRelationType::CROSS_SELL->value,
         ]);
 
-        $this->assertTrue($product->crossSells->contains($crossSellProduct));
+        $this->assertTrue($product->crossSellProducts()->get()->contains($crossSellProduct));
     }
 
     /** @test */
