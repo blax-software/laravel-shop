@@ -135,6 +135,40 @@ trait HasCategories
     }
 
     /**
+     * Sync categories by name
+     *
+     * @param  array<string>  $categories
+     */
+    public function syncCategoriesByNames(array $categories): void
+    {
+        $categoryIds = [];
+
+        foreach ($categories as $name) {
+            $category = config('shop.models.product_category')::firstOrCreate(['name' => $name]);
+            $categoryIds[] = $category->id;
+        }
+
+        $this->categories()->sync($categoryIds);
+    }
+
+    /**
+     * Sync categories by slug
+     *
+     * @param  array<string>  $categories
+     */
+    public function syncCategoriesBySlugs(array $categories): void
+    {
+        $categoryIds = [];
+
+        foreach ($categories as $slug) {
+            $category = config('shop.models.product_category')::firstOrCreate(['slug' => $slug]);
+            $categoryIds[] = $category->id;
+        }
+
+        $this->categories()->sync($categoryIds);
+    }
+
+    /**
      * Attach or create a category by name.
      */
     public function assignCategoryByName(string $name): void
