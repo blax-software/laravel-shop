@@ -13,6 +13,15 @@ class ShopServiceProvider extends ServiceProvider
             __DIR__ . '/../config/shop.php',
             'shop'
         );
+
+        // Register service bindings
+        $this->app->singleton('shop.service', function ($app) {
+            return new \Blax\Shop\Services\ShopService();
+        });
+
+        $this->app->singleton('shop.cart', function ($app) {
+            return new \Blax\Shop\Services\CartService();
+        });
     }
 
     public function boot()
