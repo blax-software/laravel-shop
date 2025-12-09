@@ -137,30 +137,65 @@ class Cart extends Model
         });
     }
 
+    /**
+     * Add an item to the cart or increase quantity if it already exists.
+     *
+     * @param Model&Cartable $cartable The item to add to cart
+     * @param int $quantity The quantity to add
+     * @param array<string, mixed> $parameters Additional parameters for the cart item
+     * @return CartItem
+     * @throws \Exception If the item doesn't implement Cartable interface
+     */
     public function addToCart(
         Model $cartable,
-        $quantity = 1,
-        $parameters = []
+        int $quantity = 1,
+        array $parameters = []
     ): CartItem {
-
         // $cartable must implement Cartable
         if (! $cartable instanceof Cartable) {
             throw new \Exception("Item must implement the Cartable interface.");
         }
 
+        // Check if item already exists in cart with same parameters
+        $existingItem = $this->items()
+            ->where('purchasable_id', $cartable->getKey())
+            ->where('purchasable_type', get_class($cartable))
+            ->get()
+            ->first(function ($item) use ($parameters) {
+                $existingParams = is_array($item->parameters)
+                    ? $item->parameters
+                    : (array) $item->parameters;
+
+                // Sort both arrays to ensure consistent comparison
+                ksort($existingParams);
+                ksort($parameters);
+
+                return $existingParams === $parameters;
+            });
+
+        if ($existingItem) {
+            // Update quantity and subtotal
+            $newQuantity = $existingItem->quantity + $quantity;
+            $existingItem->update([
+                'quantity' => $newQuantity,
+                'subtotal' => ($cartable->getCurrentPrice()) * $newQuantity,
+            ]);
+
+            return $existingItem->fresh();
+        }
+
+        // Create new cart item
         $cartItem = $this->items()->create([
             'purchasable_id' => $cartable->getKey(),
             'purchasable_type' => get_class($cartable),
             'quantity' => $quantity,
-            'price' => $cartable?->getCurrentPrice(),
-            'regular_price' => $cartable?->getCurrentPrice(false) ?? $cartable?->unit_amount,
-            'subtotal' => ($cartable?->getCurrentPrice()) * $quantity,
+            'price' => $cartable->getCurrentPrice(),
+            'regular_price' => $cartable->getCurrentPrice(false) ?? $cartable->unit_amount,
+            'subtotal' => ($cartable->getCurrentPrice()) * $quantity,
             'parameters' => $parameters,
         ]);
 
-        $cartItem = $cartItem->fresh();
-
-        return $cartItem;
+        return $cartItem->fresh();
     }
 
     public function checkout(): static
@@ -177,7 +212,7 @@ class Cart extends Model
         foreach ($items as $item) {
             $product = $item->purchasable;
             $quantity = $item->quantity;
-            
+
             // Extract booking dates from parameters if this is a booking product
             $from = null;
             $until = null;
@@ -185,7 +220,7 @@ class Cart extends Model
                 $params = is_array($item->parameters) ? $item->parameters : (array) $item->parameters;
                 $from = $params['from'] ?? null;
                 $until = $params['until'] ?? null;
-                
+
                 // Convert to Carbon instances if they're strings
                 if ($from && is_string($from)) {
                     $from = \Carbon\Carbon::parse($from);

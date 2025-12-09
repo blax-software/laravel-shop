@@ -319,6 +319,7 @@ class CartManagementTest extends TestCase
         );
 
         $this->assertCount(2, $cart->fresh()->items);
+        $this->assertEquals($productPrice->unit_amount * 3, $cart->getTotal());
     }
 
     /** @test */
