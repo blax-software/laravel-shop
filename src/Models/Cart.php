@@ -198,6 +198,41 @@ class Cart extends Model
         return $cartItem->fresh();
     }
 
+    public function removeFromCart(
+        Model $cartable,
+        int $quantity = 1,
+        array $parameters = []
+    ): CartItem|true {
+        $item = $this->items()
+            ->where('purchasable_id', $cartable->getKey())
+            ->where('purchasable_type', get_class($cartable))
+            ->get()
+            ->first(function ($item) use ($parameters) {
+                $existingParams = is_array($item->parameters)
+                    ? $item->parameters
+                    : (array) $item->parameters;
+                ksort($existingParams);
+                ksort($parameters);
+                return $existingParams === $parameters;
+            });
+
+        if ($item) {
+            if ($item->quantity > $quantity) {
+                // Decrease quantity
+                $newQuantity = $item->quantity - $quantity;
+                $item->update([
+                    'quantity' => $newQuantity,
+                    'subtotal' => ($cartable->getCurrentPrice()) * $newQuantity,
+                ]);
+            } else {
+                // Remove item from cart
+                $item->delete();
+            }
+        }
+
+        return $item ?? true;
+    }
+
     public function checkout(): static
     {
         $items = $this->items()

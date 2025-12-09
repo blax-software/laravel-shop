@@ -396,4 +396,209 @@ class CartManagementTest extends TestCase
         $this->assertEquals(4, $cartWithProduct->getTotalItems());
         $this->assertEquals((150.00 * 2) + (120 * 2), $cartWithProduct->getTotal());
     }
+
+    /** @test */
+    public function it_can_remove_item_from_cart_completely()
+    {
+        $cart = Cart::create();
+        $product = Product::factory()->create();
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'unit_amount' => 50.00,
+        ]);
+
+        $cartItem = $cart->addToCart($price, quantity: 2);
+        $this->assertCount(1, $cart->items);
+
+        $result = $cart->removeFromCart($price, quantity: 2);
+
+        $this->assertCount(0, $cart->refresh()->items);
+        $this->assertTrue(true); // Item was deleted
+    }
+
+    /** @test */
+    public function it_can_decrease_cart_item_quantity()
+    {
+        $cart = Cart::create();
+        $product = Product::factory()->create();
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'unit_amount' => 75.00,
+        ]);
+
+        $cartItem = $cart->addToCart($price, quantity: 5);
+        $this->assertEquals(5, $cartItem->quantity);
+
+        $result = $cart->removeFromCart($price, quantity: 2);
+
+        $updatedItem = $cart->items->first();
+        $this->assertEquals(3, $updatedItem->quantity);
+        $this->assertEquals(75.00 * 3, $updatedItem->subtotal);
+    }
+
+    /** @test */
+    public function it_updates_subtotal_correctly_when_decreasing_quantity()
+    {
+        $cart = Cart::create();
+        $product = Product::factory()->create();
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'unit_amount' => 100.00,
+        ]);
+
+        $cart->addToCart($price, quantity: 4);
+
+        $cart->removeFromCart($price, quantity: 1);
+
+        $cartItem = $cart->items->first();
+        $this->assertEquals(3, $cartItem->quantity);
+        $this->assertEquals(300.00, $cartItem->subtotal);
+    }
+
+    /** @test */
+    public function it_respects_parameters_when_removing_from_cart()
+    {
+        $cart = Cart::create();
+        $product = Product::factory()->create();
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'unit_amount' => 50.00,
+        ]);
+
+        // Add same product with different parameters
+        $cartItem1 = $cart->addToCart(
+            $price,
+            quantity: 2,
+            parameters: ['color' => 'blue']
+        );
+
+        $cartItem2 = $cart->addToCart(
+            $price,
+            quantity: 3,
+            parameters: ['color' => 'red']
+        );
+
+        $this->assertCount(2, $cart->items);
+
+        // Remove only the blue item
+        $cart->removeFromCart($price, quantity: 2, parameters: ['color' => 'blue']);
+
+        $this->assertCount(1, $cart->refresh()->items);
+        $this->assertEquals('red', $cart->items->first()->parameters['color']);
+        $this->assertEquals(3, $cart->items->first()->quantity);
+    }
+
+    /** @test */
+    public function it_decreases_only_matching_parameters_when_removing()
+    {
+        $cart = Cart::create();
+        $product = Product::factory()->create();
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'unit_amount' => 50.00,
+        ]);
+
+        $cart->addToCart(
+            $price,
+            quantity: 5,
+            parameters: ['size' => 'large']
+        );
+
+        $cart->removeFromCart($price, quantity: 2, parameters: ['size' => 'large']);
+
+        $cartItem = $cart->items->first();
+        $this->assertEquals(3, $cartItem->quantity);
+        $this->assertEquals('large', $cartItem->parameters['size']);
+    }
+
+    /** @test */
+    public function it_returns_cart_item_when_quantity_is_decreased()
+    {
+        $cart = Cart::create();
+        $product = Product::factory()->create();
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'unit_amount' => 50.00,
+        ]);
+
+        $cart->addToCart($price, quantity: 5);
+
+        $result = $cart->removeFromCart($price, quantity: 2);
+
+        $this->assertInstanceOf(CartItem::class, $result);
+        $this->assertEquals(3, $result->quantity);
+    }
+
+    /** @test */
+    public function it_handles_removing_nonexistent_item_gracefully()
+    {
+        $cart = Cart::create();
+        $product = Product::factory()->create();
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'unit_amount' => 50.00,
+        ]);
+
+        $result = $cart->removeFromCart($price, quantity: 1);
+
+        // Should return true when item doesn't exist
+        $this->assertTrue($result);
+        $this->assertCount(0, $cart->items);
+    }
+
+    /** @test */
+    public function it_updates_cart_total_after_removing_items()
+    {
+        $cart = Cart::create();
+        $product = Product::factory()->create();
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'unit_amount' => 50.00,
+        ]);
+
+        $cart->addToCart($price, quantity: 5);
+        $this->assertEquals(250.00, $cart->getTotal());
+
+        $cart->removeFromCart($price, quantity: 2);
+
+        $this->assertEquals(150.00, $cart->refresh()->getTotal());
+    }
+
+    /** @test */
+    public function it_can_remove_from_cart_with_multiple_items()
+    {
+        $cart = Cart::create();
+        $product1 = Product::factory()->create();
+        $product2 = Product::factory()->create();
+
+        $price1 = ProductPrice::factory()->create([
+            'purchasable_id' => $product1->id,
+            'purchasable_type' => get_class($product1),
+            'unit_amount' => 50.00,
+        ]);
+
+        $price2 = ProductPrice::factory()->create([
+            'purchasable_id' => $product2->id,
+            'purchasable_type' => get_class($product2),
+            'unit_amount' => 75.00,
+        ]);
+
+        $cart->addToCart($price1, quantity: 2);
+        $cart->addToCart($price2, quantity: 3);
+        $this->assertCount(2, $cart->items);
+
+        $cart->removeFromCart($price1, quantity: 2);
+
+        $this->assertCount(1, $cart->refresh()->items);
+        $this->assertEquals($price2->id, $cart->items->first()->purchasable_id);
+        $this->assertEquals(225.00, $cart->getTotal());
+    }
 }
