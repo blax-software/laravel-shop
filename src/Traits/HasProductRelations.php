@@ -10,7 +10,7 @@ trait HasProductRelations
     public function productRelations(): BelongsToMany
     {
         return $this->belongsToMany(
-            self::class,
+            static::class,
             config('shop.tables.product_relations', 'product_relations'),
             'product_id',
             'related_product_id'

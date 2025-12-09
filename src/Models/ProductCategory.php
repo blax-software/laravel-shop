@@ -76,19 +76,19 @@ class ProductCategory extends Model
 
     public function parent(): BelongsTo
     {
-        return $this->belongsTo(self::class, 'parent_id');
+        return $this->belongsTo(static::class, 'parent_id');
     }
 
     public function children(): HasMany
     {
-        return $this->hasMany(self::class, 'parent_id')
+        return $this->hasMany(static::class, 'parent_id')
             ->where('is_visible', true)
             ->orderBy('sort_order');
     }
 
     public function allChildren(): HasMany
     {
-        return $this->hasMany(self::class, 'parent_id')
+        return $this->hasMany(static::class, 'parent_id')
             ->orderBy('sort_order');
     }
 
