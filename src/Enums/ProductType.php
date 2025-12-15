@@ -10,6 +10,7 @@ enum ProductType: string
     case EXTERNAL = 'external';
     case BOOKING = 'booking';
     case VARIATION = 'variation';
+    case POOL = 'pool';
 
     public function label(): string
     {
@@ -20,6 +21,7 @@ enum ProductType: string
             self::EXTERNAL => 'External',
             self::BOOKING => 'Booking',
             self::VARIATION => 'Variation',
+            self::POOL => 'Pool',
         };
     }
 }

@@ -248,21 +248,56 @@ class Cart extends Model
             $product = $item->purchasable;
             $quantity = $item->quantity;
 
-            // Extract booking dates from parameters if this is a booking product
-            $from = null;
-            $until = null;
-            if ($product->type === ProductType::BOOKING && $item->parameters) {
-                $params = is_array($item->parameters) ? $item->parameters : (array) $item->parameters;
-                $from = $params['from'] ?? null;
-                $until = $params['until'] ?? null;
+            // Get booking dates from cart item directly (preferred) or from parameters (legacy)
+            $from = $item->from;
+            $until = $item->until;
 
-                // Convert to Carbon instances if they're strings
-                if ($from && is_string($from)) {
-                    $from = \Carbon\Carbon::parse($from);
+            if (!$from || !$until) {
+                if (($product->type === ProductType::BOOKING || $product->type === ProductType::POOL) && $item->parameters) {
+                    $params = is_array($item->parameters) ? $item->parameters : (array) $item->parameters;
+                    $from = $params['from'] ?? null;
+                    $until = $params['until'] ?? null;
+
+                    // Convert to Carbon instances if they're strings
+                    if ($from && is_string($from)) {
+                        $from = \Carbon\Carbon::parse($from);
+                    }
+                    if ($until && is_string($until)) {
+                        $until = \Carbon\Carbon::parse($until);
+                    }
                 }
-                if ($until && is_string($until)) {
-                    $until = \Carbon\Carbon::parse($until);
+            }
+
+            // Handle pool products with booking single items
+            if ($product instanceof Product && $product->isPool()) {
+                // Check if pool with booking items requires timespan
+                if ($product->hasBookingSingleItems() && (!$from || !$until)) {
+                    throw new \Exception("Pool product '{$product->name}' with booking items requires a timespan (from/until dates).");
                 }
+
+                // If pool has timespan and has booking single items, claim stock from single items
+                if ($from && $until && $product->hasBookingSingleItems()) {
+                    try {
+                        $claimedItems = $product->claimPoolStock(
+                            $quantity,
+                            $this,
+                            $from,
+                            $until,
+                            "Checkout from cart {$this->id}"
+                        );
+
+                        // Store claimed items info in purchase meta
+                        $item->updateMetaKey('claimed_single_items', array_map(fn($i) => $i->id, $claimedItems));
+                        $item->save();
+                    } catch (\Exception $e) {
+                        throw new \Exception("Failed to checkout pool product '{$product->name}': " . $e->getMessage());
+                    }
+                }
+            }
+
+            // Validate booking products have required dates
+            if ($product instanceof Product && $product->isBooking() && (!$from || !$until)) {
+                throw new \Exception("Booking product '{$product->name}' requires a timespan (from/until dates).");
             }
 
             $purchase = $this->customer->purchase(

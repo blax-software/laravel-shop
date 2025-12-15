@@ -11,6 +11,10 @@ use Blax\Shop\Enums\ProductStatus;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
+use Blax\Shop\Exceptions\HasNoDefaultPriceException;
+use Blax\Shop\Exceptions\HasNoPriceException;
+use Blax\Shop\Exceptions\InvalidBookingConfigurationException;
+use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
 use Blax\Shop\Traits\HasCategories;
 use Blax\Shop\Traits\HasPrices;
 use Blax\Shop\Traits\HasProductRelations;
@@ -313,6 +317,148 @@ class Product extends Model implements Purchasable, Cartable
     }
 
     /**
+     * Check if this is a pool product
+     */
+    public function isPool(): bool
+    {
+        return $this->type === ProductType::POOL;
+    }
+
+    /**
+     * Get the maximum available quantity for a pool product based on single items
+     */
+    public function getPoolMaxQuantity(\DateTimeInterface $from = null, \DateTimeInterface $until = null): int
+    {
+        if (!$this->isPool()) {
+            return $this->getAvailableStock();
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return 0;
+        }
+
+        // If no dates provided, return the count of single items
+        if (!$from || !$until) {
+            return $singleItems->count();
+        }
+
+        // Check availability for each single item during the timespan
+        $availableCount = 0;
+        foreach ($singleItems as $item) {
+            if ($item->isAvailableForBooking($from, $until, 1)) {
+                $availableCount++;
+            }
+        }
+
+        return $availableCount;
+    }
+
+    /**
+     * Claim stock for a pool product
+     * This will claim stock from the available single items
+     * 
+     * @param int $quantity Number of pool items to claim
+     * @param mixed $reference Reference model
+     * @param \DateTimeInterface|null $from Start date
+     * @param \DateTimeInterface|null $until End date
+     * @param string|null $note Optional note
+     * @return array Array of claimed single item products
+     * @throws \Exception
+     */
+    public function claimPoolStock(
+        int $quantity,
+        $reference = null,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null,
+        ?string $note = null
+    ): array {
+        if (!$this->isPool()) {
+            throw new \Exception('This method is only for pool products');
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            throw new \Exception('Pool product has no single items to claim');
+        }
+
+        // Get available single items for the period
+        $availableItems = [];
+        foreach ($singleItems as $item) {
+            if ($item->isAvailableForBooking($from, $until, 1)) {
+                $availableItems[] = $item;
+            }
+
+            if (count($availableItems) >= $quantity) {
+                break;
+            }
+        }
+
+        if (count($availableItems) < $quantity) {
+            throw new \Exception("Only " . count($availableItems) . " items available, but {$quantity} requested");
+        }
+
+        // Claim stock from each selected single item
+        $claimedItems = [];
+        foreach (array_slice($availableItems, 0, $quantity) as $item) {
+            $item->claimStock(1, $reference, $from, $until, $note);
+            $claimedItems[] = $item;
+        }
+
+        return $claimedItems;
+    }
+
+    /**
+     * Release pool stock claims
+     * 
+     * @param mixed $reference Reference model used when claiming
+     * @return int Number of claims released
+     */
+    public function releasePoolStock($reference): int
+    {
+        if (!$this->isPool()) {
+            throw new \Exception('This method is only for pool products');
+        }
+
+        $singleItems = $this->singleProducts;
+        $released = 0;
+
+        foreach ($singleItems as $item) {
+            $referenceType = is_object($reference) ? get_class($reference) : null;
+            $referenceId = is_object($reference) ? $reference->id : null;
+
+            // Find and delete claims for this reference
+            $claims = $item->stocks()
+                ->where('type', StockType::CLAIMED->value)
+                ->where('status', StockStatus::PENDING->value)
+                ->where('reference_type', $referenceType)
+                ->where('reference_id', $referenceId)
+                ->get();
+
+            foreach ($claims as $claim) {
+                $claim->release();
+                $released++;
+            }
+        }
+
+        return $released;
+    }
+
+    /**
+     * Check if any single item in pool is a booking product
+     */
+    public function hasBookingSingleItems(): bool
+    {
+        if (!$this->isPool()) {
+            return false;
+        }
+
+        return $this->singleProducts()->where('products.type', ProductType::BOOKING->value)->exists();
+    }
+
+    /**
      * Check stock availability for a booking period
      */
     public function isAvailableForBooking(\DateTimeInterface $from, \DateTimeInterface $until, int $quantity = 1): bool
@@ -358,5 +504,573 @@ class Product extends Model implements Purchasable, Cartable
     public function scopeBookings($query)
     {
         return $query->where('type', ProductType::BOOKING->value);
+    }
+
+    /**
+     * Get the current price with pool product inheritance support
+     */
+    public function getCurrentPrice(bool|null $sales_price = null): ?float
+    {
+        // If this is a pool product and it has no direct price, inherit from single items
+        if ($this->isPool() && !$this->hasPrice()) {
+            return $this->getInheritedPoolPrice();
+        }
+
+        // If pool has a direct price, use it
+        if ($this->isPool() && $this->hasPrice()) {
+            return $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
+        }
+
+        // For non-pool products, use the trait's default behavior
+        return $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
+    }
+
+    /**
+     * Get inherited price from single items based on pricing strategy
+     */
+    protected function getInheritedPoolPrice(): ?float
+    {
+        if (!$this->isPool()) {
+            return null;
+        }
+
+        $strategy = $this->getPoolPricingStrategy();
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return null;
+        }
+
+        $prices = $singleItems->map(function ($item) {
+            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
+        })->filter()->values();
+
+        if ($prices->isEmpty()) {
+            return null;
+        }
+
+        return match ($strategy) {
+            'lowest' => $prices->min(),
+            'highest' => $prices->max(),
+            'average' => round($prices->avg()),
+            default => round($prices->avg()), // Default to average
+        };
+    }
+
+    /**
+     * Get the pool pricing strategy from metadata
+     */
+    public function getPoolPricingStrategy(): string
+    {
+        if (!$this->isPool()) {
+            return 'average';
+        }
+
+        $meta = $this->getMeta();
+        return $meta->pricing_strategy ?? 'average';
+    }
+
+    /**
+     * Set the pool pricing strategy
+     */
+    public function setPoolPricingStrategy(string $strategy): void
+    {
+        if (!$this->isPool()) {
+            throw new \Exception('This method is only for pool products');
+        }
+
+        if (!in_array($strategy, ['average', 'lowest', 'highest'])) {
+            throw new \InvalidArgumentException("Invalid pricing strategy: {$strategy}");
+        }
+
+        $this->updateMetaKey('pricing_strategy', $strategy);
+        $this->save();
+    }
+
+    /**
+     * Get the lowest price from single items
+     */
+    public function getLowestPoolPrice(): ?float
+    {
+        if (!$this->isPool()) {
+            return null;
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return null;
+        }
+
+        $prices = $singleItems->map(function ($item) {
+            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
+        })->filter()->values();
+
+        return $prices->isEmpty() ? null : $prices->min();
+    }
+
+    /**
+     * Get the highest price from single items
+     */
+    public function getHighestPoolPrice(): ?float
+    {
+        if (!$this->isPool()) {
+            return null;
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return null;
+        }
+
+        $prices = $singleItems->map(function ($item) {
+            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
+        })->filter()->values();
+
+        return $prices->isEmpty() ? null : $prices->max();
+    }
+
+    /**
+     * Get the price range for pool products
+     */
+    public function getPoolPriceRange(): ?array
+    {
+        if (!$this->isPool()) {
+            return null;
+        }
+
+        $lowest = $this->getLowestPoolPrice();
+        $highest = $this->getHighestPoolPrice();
+
+        if ($lowest === null || $highest === null) {
+            return null;
+        }
+
+        return [
+            'min' => $lowest,
+            'max' => $highest,
+        ];
+    }
+
+    /**
+     * Validate pool product configuration and provide helpful error messages
+     * 
+     * @throws InvalidPoolConfigurationException
+     */
+    public function validatePoolConfiguration(bool $throwOnWarnings = false): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        if (!$this->isPool()) {
+            throw InvalidPoolConfigurationException::notAPoolProduct($this->name);
+        }
+
+        $singleItems = $this->singleProducts;
+
+        // Critical: No single items
+        if ($singleItems->isEmpty()) {
+            throw InvalidPoolConfigurationException::noSingleItems($this->name);
+        }
+
+        // Check for mixed product types
+        $types = $singleItems->pluck('type')->unique();
+        if ($types->count() > 1) {
+            $warning = "Mixed single item types detected. This may cause unexpected behavior.";
+            $warnings[] = $warning;
+            if ($throwOnWarnings) {
+                throw InvalidPoolConfigurationException::mixedSingleItemTypes($this->name);
+            }
+        }
+
+        // Check stock management on single items
+        $itemsWithoutStock = $singleItems->filter(fn($item) => !$item->manage_stock);
+        if ($itemsWithoutStock->isNotEmpty()) {
+            $itemNames = $itemsWithoutStock->pluck('name')->toArray();
+            $errors[] = "Single items without stock management: " . implode(', ', $itemNames);
+            throw InvalidPoolConfigurationException::singleItemsWithoutStock($this->name, $itemNames);
+        }
+
+        // Check for items with zero stock
+        $itemsWithZeroStock = $singleItems->filter(fn($item) => $item->getAvailableStock() <= 0);
+        if ($itemsWithZeroStock->isNotEmpty()) {
+            $itemNames = $itemsWithZeroStock->pluck('name')->toArray();
+            $warnings[] = "Single items with zero stock: " . implode(', ', $itemNames);
+            if ($throwOnWarnings) {
+                throw InvalidPoolConfigurationException::singleItemsWithZeroStock($this->name, $itemNames);
+            }
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors,
+            'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * Validate booking product configuration and provide helpful error messages
+     * 
+     * @throws InvalidBookingConfigurationException
+     */
+    public function validateBookingConfiguration(bool $throwOnWarnings = false): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        if (!$this->isBooking()) {
+            throw InvalidBookingConfigurationException::notABookingProduct($this->name);
+        }
+
+        // Critical: Stock management must be enabled
+        if (!$this->manage_stock) {
+            throw InvalidBookingConfigurationException::stockManagementNotEnabled($this->name);
+        }
+
+        // Check for available stock
+        if ($this->getAvailableStock() <= 0) {
+            $warnings[] = "No stock available for booking";
+            if ($throwOnWarnings) {
+                throw InvalidBookingConfigurationException::noStockAvailable($this->name);
+            }
+        }
+
+        // Check for pricing
+        if (!$this->hasPrice()) {
+            $warnings[] = "No pricing configured";
+            if ($throwOnWarnings) {
+                throw InvalidBookingConfigurationException::noPricingConfigured($this->name);
+            }
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors,
+            'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * Validate product pricing configuration
+     * 
+     * @throws HasNoPriceException
+     * @throws HasNoDefaultPriceException
+     */
+    public function validatePricing(bool $throwExceptions = true): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        // Special handling for pool products
+        if ($this->isPool()) {
+            $hasDirectPrice = $this->prices()->exists();
+            $singleItems = $this->singleProducts;
+
+            if (!$hasDirectPrice) {
+                // Check if single items have prices to inherit
+                $singleItemsWithPrices = $singleItems->filter(function ($item) {
+                    return $item->prices()->exists();
+                });
+
+                if ($singleItemsWithPrices->isEmpty()) {
+                    $errors[] = "Pool product has no pricing (direct or inherited)";
+                    if ($throwExceptions) {
+                        throw HasNoPriceException::poolProductNoPriceAndNoSingleItemPrices($this->name);
+                    }
+                }
+            }
+
+            // If pool has direct prices, validate them
+            if ($hasDirectPrice) {
+                return $this->validateDirectPricing($throwExceptions);
+            }
+
+            // Pool with inherited pricing is valid
+            return [
+                'valid' => empty($errors),
+                'errors' => $errors,
+                'warnings' => $warnings,
+            ];
+        }
+
+        // For all other product types, validate direct pricing
+        return $this->validateDirectPricing($throwExceptions);
+    }
+
+    /**
+     * Validate direct pricing on the product
+     * 
+     * @throws HasNoPriceException
+     * @throws HasNoDefaultPriceException
+     */
+    protected function validateDirectPricing(bool $throwExceptions = true): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        $allPrices = $this->prices;
+        $priceCount = $allPrices->count();
+
+        // No prices at all
+        if ($priceCount === 0) {
+            $errors[] = "Product has no prices configured";
+            if ($throwExceptions) {
+                throw HasNoPriceException::noPricesConfigured($this->name, $this->id);
+            }
+
+            return [
+                'valid' => false,
+                'errors' => $errors,
+                'warnings' => $warnings,
+            ];
+        }
+
+        $defaultPrices = $allPrices->where('is_default', true);
+        $defaultCount = $defaultPrices->count();
+
+        // Multiple default prices
+        if ($defaultCount > 1) {
+            $errors[] = "Product has {$defaultCount} default prices (should have exactly 1)";
+            if ($throwExceptions) {
+                throw HasNoDefaultPriceException::multipleDefaultPrices($this->name, $defaultCount);
+            }
+
+            return [
+                'valid' => false,
+                'errors' => $errors,
+                'warnings' => $warnings,
+            ];
+        }
+
+        // No default price
+        if ($defaultCount === 0) {
+            if ($priceCount === 1) {
+                // Single price but not marked as default
+                $errors[] = "Product has one price but it's not marked as default";
+                if ($throwExceptions) {
+                    throw HasNoDefaultPriceException::onlyNonDefaultPriceExists($this->name);
+                }
+            } else {
+                // Multiple prices but none are default
+                $errors[] = "Product has {$priceCount} prices but none are marked as default";
+                if ($throwExceptions) {
+                    throw HasNoDefaultPriceException::multiplePricesNoDefault($this->name, $priceCount);
+                }
+            }
+
+            return [
+                'valid' => false,
+                'errors' => $errors,
+                'warnings' => $warnings,
+            ];
+        }
+
+        // Valid: Exactly one default price
+        return [
+            'valid' => true,
+            'errors' => $errors,
+            'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * Get helpful setup instructions for pool products
+     */
+    public static function getPoolSetupInstructions(): string
+    {
+        return <<<'INSTRUCTIONS'
+# Pool Product Setup Guide
+
+Pool products aggregate multiple individual items (e.g., parking spots, hotel rooms) 
+into a single purchasable product where customers don't need to select specific items.
+
+## Step 1: Create the Pool Product
+
+```php
+use Blax\Shop\Models\Product;
+use Blax\Shop\Enums\ProductType;
+
+$pool = Product::create([
+    'type' => ProductType::POOL,
+    'name' => 'Parking Lot',
+    'slug' => 'parking-lot',
+]);
+```
+
+## Step 2: Create Single Items (Booking Products)
+
+```php
+$spot1 = Product::create([
+    'type' => ProductType::BOOKING,
+    'name' => 'Parking Spot #1',
+    'manage_stock' => true,
+]);
+$spot1->increaseStock(1);
+
+$spot2 = Product::create([
+    'type' => ProductType::BOOKING,
+    'name' => 'Parking Spot #2',
+    'manage_stock' => true,
+]);
+$spot2->increaseStock(1);
+```
+
+## Step 3: Link Single Items to Pool
+
+```php
+use Blax\Shop\Enums\ProductRelationType;
+
+$pool->productRelations()->attach([
+    $spot1->id => ['type' => ProductRelationType::SINGLE],
+    $spot2->id => ['type' => ProductRelationType::SINGLE],
+]);
+```
+
+## Step 4: Set Pricing (Optional)
+
+```php
+use Blax\Shop\Models\ProductPrice;
+
+// Option A: Set price on pool (takes precedence)
+ProductPrice::create([
+    'purchasable_id' => $pool->id,
+    'purchasable_type' => Product::class,
+    'unit_amount' => 5000,  // 50.00 per day
+    'currency' => 'USD',
+    'is_default' => true,
+]);
+
+// Option B: Set prices on single items (pool inherits)
+ProductPrice::create([
+    'purchasable_id' => $spot1->id,
+    'purchasable_type' => Product::class,
+    'unit_amount' => 5000,
+    'currency' => 'USD',
+    'is_default' => true,
+]);
+
+// Set pricing strategy (if using inheritance)
+$pool->setPoolPricingStrategy('average'); // or 'lowest' or 'highest'
+```
+
+## Step 5: Add to Cart with Timespan
+
+```php
+use Blax\Shop\Facades\Cart;
+use Carbon\Carbon;
+
+Cart::addBooking(
+    $pool,
+    2,  // quantity
+    Carbon::parse('2025-01-15 09:00'),  // from
+    Carbon::parse('2025-01-17 17:00'),  // until
+);
+```
+
+## Validation
+
+```php
+// Validate configuration before use
+$validation = $pool->validatePoolConfiguration();
+if (!$validation['valid']) {
+    foreach ($validation['errors'] as $error) {
+        echo "Error: $error\n";
+    }
+}
+```
+
+INSTRUCTIONS;
+    }
+
+    /**
+     * Get helpful setup instructions for booking products
+     */
+    public static function getBookingSetupInstructions(): string
+    {
+        return <<<'INSTRUCTIONS'
+# Booking Product Setup Guide
+
+Booking products represent time-based reservations (conference rooms, equipment, etc.)
+
+## Step 1: Create the Booking Product
+
+```php
+use Blax\Shop\Models\Product;
+use Blax\Shop\Enums\ProductType;
+
+$product = Product::create([
+    'type' => ProductType::BOOKING,
+    'name' => 'Conference Room A',
+    'manage_stock' => true,  // REQUIRED for bookings
+]);
+```
+
+## Step 2: Set Initial Stock
+
+```php
+// For single-unit bookings (1 room, 1 equipment piece, etc.)
+$product->increaseStock(1);
+
+// For multiple units (e.g., 5 identical meeting rooms)
+$product->increaseStock(5);
+```
+
+## Step 3: Configure Pricing
+
+```php
+use Blax\Shop\Models\ProductPrice;
+
+ProductPrice::create([
+    'purchasable_id' => $product->id,
+    'purchasable_type' => Product::class,
+    'unit_amount' => 10000,  // Price per day in cents (100.00 USD)
+    'currency' => 'USD',
+    'is_default' => true,
+]);
+```
+
+## Step 4: Add to Cart with Timespan
+
+```php
+use Blax\Shop\Facades\Cart;
+use Carbon\Carbon;
+
+Cart::addBooking(
+    $product,
+    1,  // quantity
+    Carbon::parse('2025-01-15 09:00'),  // from
+    Carbon::parse('2025-01-17 17:00'),  // until
+);
+
+// Price will be: 100.00/day × 3 days = 300.00
+```
+
+## Check Availability
+
+```php
+$from = Carbon::parse('2025-01-15 09:00');
+$until = Carbon::parse('2025-01-17 17:00');
+
+if ($product->isAvailableForBooking($from, $until, 1)) {
+    // Product is available for this period
+    Cart::addBooking($product, 1, $from, $until);
+}
+```
+
+## Validation
+
+```php
+// Validate configuration
+$validation = $product->validateBookingConfiguration();
+if (!$validation['valid']) {
+    foreach ($validation['errors'] as $error) {
+        echo "Error: $error\n";
+    }
+}
+```
+
+INSTRUCTIONS;
     }
 }

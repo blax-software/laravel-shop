@@ -22,6 +22,8 @@ class CartItem extends Model
         'parameters',
         'purchase_id',
         'meta',
+        'from',
+        'until',
     ];
 
     protected $casts = [
@@ -31,6 +33,8 @@ class CartItem extends Model
         'subtotal' => 'decimal:2',
         'parameters' => 'array',
         'meta' => 'array',
+        'from' => 'datetime',
+        'until' => 'datetime',
     ];
 
     public function __construct(array $attributes = [])

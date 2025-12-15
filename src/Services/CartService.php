@@ -5,6 +5,13 @@ namespace Blax\Shop\Services;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\CartItem;
 use Blax\Shop\Contracts\Cartable;
+use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Exceptions\HasNoDefaultPriceException;
+use Blax\Shop\Exceptions\HasNoPriceException;
+use Blax\Shop\Exceptions\InvalidBookingConfigurationException;
+use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
+use Blax\Shop\Exceptions\NotPurchasable;
+use Blax\Shop\Models\Product;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Contracts\Auth\Authenticatable;
 
@@ -80,6 +87,8 @@ class CartService
      * @param int $quantity
      * @param array $parameters
      * @return CartItem
+     * @throws HasNoPriceException
+     * @throws HasNoDefaultPriceException
      */
     public function add(Model $product, int $quantity = 1, array $parameters = []): CartItem
     {
@@ -87,6 +96,11 @@ class CartService
 
         if (!$user) {
             throw new \Exception('No authenticated user found. Use guest() for guest carts.');
+        }
+
+        // Validate pricing before adding to cart
+        if ($product instanceof Product) {
+            $product->validatePricing(throwExceptions: true);
         }
 
         return $user->addToCart($product, $quantity, $parameters);
@@ -309,5 +323,196 @@ class CartService
         }
 
         return $cart->getPaidAmount();
+    }
+
+    /**
+     * Validate cart items for booking products
+     * Checks if all booking products have valid timespans and stock availability
+     *
+     * @param Cart|null $cart
+     * @return array Array of validation errors
+     * @throws \Exception
+     */
+    public function validateBookings(?Cart $cart = null): array
+    {
+        if (!$cart) {
+            $cart = $this->current();
+        }
+
+        $errors = [];
+
+        foreach ($cart->items as $item) {
+            $product = $item->purchasable;
+
+            if (!$product instanceof Product) {
+                continue;
+            }
+
+            // Check if booking product has timespan
+            if ($product->isBooking() && (!$item->from || !$item->until)) {
+                $errors[] = "Booking product '{$product->name}' requires a timespan (from/until dates).";
+                continue;
+            }
+
+            // Check if pool product with booking items has timespan
+            if ($product->isPool() && $product->hasBookingSingleItems()) {
+                // If pool has a timespan, validate it
+                if ($item->from && $item->until) {
+                    // Check if quantity is available for the timespan
+                    $maxQuantity = $product->getPoolMaxQuantity($item->from, $item->until);
+                    if ($item->quantity > $maxQuantity) {
+                        $errors[] = "Only {$maxQuantity} '{$product->name}' available for the selected period. You requested {$item->quantity}.";
+                    }
+                } else {
+                    // Check if individual single items have timespans in meta
+                    $meta = $item->getMeta();
+                    $hasIndividualTimespans = $meta->individual_timespans ?? false;
+
+                    if (!$hasIndividualTimespans) {
+                        $errors[] = "Pool product '{$product->name}' with booking items requires either a timespan or individual timespans for each item.";
+                    }
+                }
+            }
+
+            // Validate stock availability for booking period
+            if ($product->isBooking() && $item->from && $item->until) {
+                if (!$product->isAvailableForBooking($item->from, $item->until, $item->quantity)) {
+                    $errors[] = "'{$product->name}' is not available for the selected period (insufficient stock).";
+                }
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Check if cart has valid bookings
+     *
+     * @param Cart|null $cart
+     * @return bool
+     * @throws \Exception
+     */
+    public function hasValidBookings(?Cart $cart = null): bool
+    {
+        return empty($this->validateBookings($cart));
+    }
+
+    /**
+     * Add a booking product to cart with timespan
+     *
+     * @param Model&Cartable $product
+     * @param int $quantity
+     * @param \DateTimeInterface $from
+     * @param \DateTimeInterface $until
+     * @param array $parameters
+     * @return CartItem
+     * @throws HasNoPriceException
+     * @throws HasNoDefaultPriceException
+     * @throws InvalidBookingConfigurationException
+     * @throws InvalidPoolConfigurationException
+     * @throws NotPurchasable
+     */
+    public function addBooking(
+        Model $product,
+        int $quantity,
+        \DateTimeInterface $from,
+        \DateTimeInterface $until,
+        array $parameters = []
+    ): CartItem {
+        $user = auth()->user();
+
+        if (!$user) {
+            throw new \Exception('No authenticated user found. Use guest() for guest carts.');
+        }
+
+        // Validate timespan
+        if ($from >= $until) {
+            throw InvalidBookingConfigurationException::invalidTimespan($from, $until);
+        }
+
+        if ($from->lessThan(now())) {
+            throw InvalidBookingConfigurationException::invalidTimespan($from, $until);
+        }
+
+        // Validate the product type and configuration
+        if ($product instanceof Product) {
+            if (!$product->isBooking() && !$product->isPool()) {
+                throw new \Exception(
+                    "Product '{$product->name}' is not a booking or pool type.\n\n" .
+                        "For booking products:\n" .
+                        Product::getBookingSetupInstructions() . "\n\n" .
+                        "For pool products:\n" .
+                        Product::getPoolSetupInstructions()
+                );
+            }
+
+            // Validate pricing before adding to cart
+            $product->validatePricing(throwExceptions: true);
+
+            // Validate booking product configuration
+            if ($product->isBooking()) {
+                $product->validateBookingConfiguration();
+            }
+
+            // Validate pool product configuration
+            if ($product->isPool()) {
+                $product->validatePoolConfiguration();
+            }
+        }        // Check availability
+        if ($product instanceof Product && $product->isBooking()) {
+            if (!$product->isAvailableForBooking($from, $until, $quantity)) {
+                $available = $product->getAvailableStock();
+                throw InvalidBookingConfigurationException::notAvailableForPeriod(
+                    $product->name,
+                    $from,
+                    $until,
+                    $quantity,
+                    $available
+                );
+            }
+        }
+
+        // Check pool product availability
+        if ($product instanceof Product && $product->isPool()) {
+            $maxQuantity = $product->getPoolMaxQuantity($from, $until);
+            if ($quantity > $maxQuantity) {
+                throw InvalidPoolConfigurationException::notEnoughAvailableItems(
+                    $product->name,
+                    $from,
+                    $until,
+                    $quantity,
+                    $maxQuantity
+                );
+            }
+        }
+
+        // Add to cart with timespan
+        $cart = $user->currentCart();
+
+        $pricePerDay = $product->getCurrentPrice();
+
+        // Calculate price based on days for booking products
+        if ($product instanceof Product && ($product->isBooking() || $product->isPool())) {
+            $days = $from->diff($until)->days;
+            $pricePerUnit = $pricePerDay * $days;  // Price for one unit for the entire period
+            $totalPrice = $pricePerUnit * $quantity;  // Total for all units
+        } else {
+            $pricePerUnit = $pricePerDay;
+            $totalPrice = $pricePerDay * $quantity;
+        }
+
+        $cartItem = $cart->items()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'quantity' => $quantity,
+            'price' => $pricePerUnit,  // Price per unit for the period
+            'subtotal' => $totalPrice,  // Total for all units
+            'regular_price' => $pricePerDay,
+            'parameters' => $parameters,
+            'from' => $from,
+            'until' => $until,
+        ]);
+
+        return $cartItem;
     }
 }

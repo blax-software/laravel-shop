@@ -65,14 +65,20 @@ trait HasCart
         if ($product_or_price instanceof Product) {
             $product_or_price->claimStock($quantity);
 
-            $default_prices = $product_or_price->defaultPrice()->count();
+            // Skip default price validation for pool products without direct prices
+            // (they inherit pricing from single items and are validated in validatePricing())
+            $isPoolWithInheritedPricing = $product_or_price->isPool() && !$product_or_price->prices()->exists();
 
-            if ($default_prices === 0) {
-                throw new NotPurchasable("Product has no default price");
-            }
+            if (!$isPoolWithInheritedPricing) {
+                $default_prices = $product_or_price->defaultPrice()->count();
 
-            if ($default_prices > 1) {
-                throw new MultiplePurchaseOptions("Product has multiple default prices, please specify a price to add to cart");
+                if ($default_prices === 0) {
+                    throw new NotPurchasable("Product has no default price");
+                }
+
+                if ($default_prices > 1) {
+                    throw new MultiplePurchaseOptions("Product has multiple default prices, please specify a price to add to cart");
+                }
             }
         }
 
