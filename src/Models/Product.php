@@ -513,7 +513,7 @@ class Product extends Model implements Purchasable, Cartable
     {
         // If this is a pool product and it has no direct price, inherit from single items
         if ($this->isPool() && !$this->hasPrice()) {
-            return $this->getInheritedPoolPrice();
+            return $this->getInheritedPoolPrice($sales_price);
         }
 
         // If pool has a direct price, use it
@@ -528,7 +528,7 @@ class Product extends Model implements Purchasable, Cartable
     /**
      * Get inherited price from single items based on pricing strategy
      */
-    protected function getInheritedPoolPrice(): ?float
+    protected function getInheritedPoolPrice(bool|null $sales_price = null): ?float
     {
         if (!$this->isPool()) {
             return null;
@@ -542,8 +542,8 @@ class Product extends Model implements Purchasable, Cartable
             return null;
         }
 
-        $prices = $singleItems->map(function ($item) {
-            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
+        $prices = $singleItems->map(function ($item) use ($sales_price) {
+            return $item->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $item->isOnSale());
         })->filter()->values();
 
         if ($prices->isEmpty()) {

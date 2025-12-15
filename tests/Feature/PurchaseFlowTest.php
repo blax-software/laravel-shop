@@ -21,16 +21,11 @@ class PurchaseFlowTest extends TestCase
     public function user_can_purchase_a_product_directly()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->create([
+        $product = Product::factory()->withPrices(unit_amount: 49.99)->create([
             'manage_stock' => false,
         ]);
 
-        $price = ProductPrice::create([
-            'purchasable_id' => $product->id,
-            'purchasable_type' => get_class($product),
-            'amount' => 4999, // in cents
-            'currency' => 'USD',
-        ]);
+        $price = $product->defaultPrice()->first();
 
         $purchase = $user->purchase($price, quantity: 1);
 

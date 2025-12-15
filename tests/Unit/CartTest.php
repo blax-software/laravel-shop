@@ -17,13 +17,8 @@ class CartTest extends TestCase
     public function cart_can_add_product_price_directly()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create();
-        $price = ProductPrice::create([
-            'purchasable_id' => $product->id,
-            'purchasable_type' => get_class($product),
-            'unit_amount' => 100.00,
-            'currency' => 'USD',
-        ]);
+        $product = Product::factory()->withPrices(unit_amount: 100.00)->create();
+        $price = $product->defaultPrice()->first();
 
         $cartItem = $cart->addToCart($price, quantity: 2);
 
@@ -36,13 +31,8 @@ class CartTest extends TestCase
     public function cart_calculates_subtotal_automatically()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create();
-        $price = ProductPrice::create([
-            'purchasable_id' => $product->id,
-            'purchasable_type' => get_class($product),
-            'unit_amount' => 50.00,
-            'currency' => 'USD',
-        ]);
+        $product = Product::factory()->withPrices(unit_amount: 50.00)->create();
+        $price = $product->defaultPrice()->first();
 
         $cartItem = $cart->addToCart($price, quantity: 3);
 
@@ -62,7 +52,8 @@ class CartTest extends TestCase
             'is_default' => false,
         ]);
 
-        $price = ProductPrice::create([
+        // Create a second price using factory
+        $price = ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
             'purchasable_type' => get_class($product),
             'unit_amount' => 100.00,
@@ -85,13 +76,8 @@ class CartTest extends TestCase
     public function cart_can_add_items_with_custom_parameters()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create();
-        $price = ProductPrice::create([
-            'purchasable_id' => $product->id,
-            'purchasable_type' => get_class($product),
-            'unit_amount' => 50.00,
-            'currency' => 'USD',
-        ]);
+        $product = Product::factory()->withPrices(unit_amount: 50.00)->create();
+        $price = $product->defaultPrice()->first();
 
         $parameters = [
             'color' => 'red',
@@ -111,21 +97,11 @@ class CartTest extends TestCase
     {
         $cart = Cart::create();
 
-        $product1 = Product::factory()->create();
-        $price1 = ProductPrice::create([
-            'purchasable_id' => $product1->id,
-            'purchasable_type' => get_class($product1),
-            'unit_amount' => 25.00,
-            'currency' => 'USD',
-        ]);
+        $product1 = Product::factory()->withPrices(unit_amount: 25.00)->create();
+        $price1 = $product1->defaultPrice()->first();
 
-        $product2 = Product::factory()->create();
-        $price2 = ProductPrice::create([
-            'purchasable_id' => $product2->id,
-            'purchasable_type' => get_class($product2),
-            'unit_amount' => 50.00,
-            'currency' => 'USD',
-        ]);
+        $product2 = Product::factory()->withPrices(unit_amount: 50.00)->create();
+        $price2 = $product2->defaultPrice()->first();
 
         $cart->addToCart($price1, quantity: 2); // 50
         $cart->addToCart($price2, quantity: 3); // 150
@@ -194,13 +170,8 @@ class CartTest extends TestCase
     public function cart_deletes_items_on_deletion()
     {
         $cart = Cart::create();
-        $product = Product::factory()->create();
-        $price = ProductPrice::create([
-            'purchasable_id' => $product->id,
-            'purchasable_type' => get_class($product),
-            'unit_amount' => 50.00,
-            'currency' => 'USD',
-        ]);
+        $product = Product::factory()->withPrices(unit_amount: 50.00)->create();
+        $price = $product->defaultPrice()->first();
 
         $cartItem = $cart->addToCart($price);
         $cartItemId = $cartItem->id;

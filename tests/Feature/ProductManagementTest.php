@@ -130,7 +130,7 @@ class ProductManagementTest extends TestCase
     {
         $product = Product::factory()->create();
 
-        ProductPrice::create([
+        ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
             'purchasable_type' => get_class($product),
             'type' => 'one_time',
@@ -139,11 +139,11 @@ class ProductManagementTest extends TestCase
             'active' => true,
         ]);
 
-        ProductPrice::create([
+        ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
             'purchasable_type' => get_class($product),
             'type' => 'recurring',
-            'price' => 1999,
+            'unit_amount' => 1999,
             'currency' => 'USD',
             'interval' => 'month',
             'active' => true,

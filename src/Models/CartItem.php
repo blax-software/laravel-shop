@@ -103,4 +103,69 @@ class CartItem extends Model
     {
         return $query->where('product_id', $productId);
     }
+
+    /**
+     * Get required adjustments for this cart item before checkout.
+     * 
+     * Returns an array of fields that need to be set, with suggested field names.
+     * For booking products and pools with booking items, dates are required.
+     * 
+     * This method is useful for:
+     * - Validating cart items before checkout
+     * - Displaying missing information to users
+     * - Checking if a cart item needs additional user input
+     * 
+     * Example usage:
+     * ```php
+     * // Check if cart item needs adjustments
+     * $adjustments = $cartItem->requiredAdjustments();
+     * 
+     * if (!empty($adjustments)) {
+     *     // Item needs dates before checkout
+     *     // $adjustments = ['from' => 'datetime', 'until' => 'datetime']
+     *     echo "Please select booking dates";
+     * }
+     * 
+     * // Check all cart items before checkout
+     * foreach ($cart->items as $item) {
+     *     $required = $item->requiredAdjustments();
+     *     if (!empty($required)) {
+     *         // Handle missing information
+     *     }
+     * }
+     * ```
+     * 
+     * @return array Array of required field adjustments, e.g., ['from' => 'datetime', 'until' => 'datetime']
+     */
+    public function requiredAdjustments(): array
+    {
+        $adjustments = [];
+
+        // Only check if purchasable is a Product
+        if ($this->purchasable_type !== config('shop.models.product', Product::class)) {
+            return $adjustments;
+        }
+
+        $product = $this->purchasable;
+
+        if (!$product) {
+            return $adjustments;
+        }
+
+        // Check if dates are required (for booking products or pools with booking items)
+        $requiresDates = $product->isBooking() ||
+            ($product->isPool() && $product->hasBookingSingleItems());
+
+        if ($requiresDates) {
+            if (is_null($this->from)) {
+                $adjustments['from'] = 'datetime';
+            }
+
+            if (is_null($this->until)) {
+                $adjustments['until'] = 'datetime';
+            }
+        }
+
+        return $adjustments;
+    }
 }
