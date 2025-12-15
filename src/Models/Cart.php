@@ -6,6 +6,7 @@ use Blax\Shop\Contracts\Cartable;
 use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Enums\ProductType;
 use Blax\Workkit\Traits\HasExpiration;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -200,6 +201,14 @@ class Cart extends Model
             throw new \Exception("Item must implement the Cartable interface.");
         }
 
+        // Extract dates from parameters if not provided directly
+        if (!$from && isset($parameters['from'])) {
+            $from = is_string($parameters['from']) ? Carbon::parse($parameters['from']) : $parameters['from'];
+        }
+        if (!$until && isset($parameters['until'])) {
+            $until = is_string($parameters['until']) ? Carbon::parse($parameters['until']) : $parameters['until'];
+        }
+
         // Validate Product-specific requirements
         if ($cartable instanceof Product) {
             // Validate pricing before adding to cart
@@ -222,7 +231,8 @@ class Cart extends Model
                 // Check pool product availability if dates are provided
                 if ($cartable->isPool()) {
                     $maxQuantity = $cartable->getPoolMaxQuantity($from, $until);
-                    if ($quantity > $maxQuantity) {
+                    // Only validate if pool has limited availability
+                    if ($maxQuantity !== PHP_INT_MAX && $quantity > $maxQuantity) {
                         throw new \Blax\Shop\Exceptions\NotEnoughStockException(
                             "Pool product '{$cartable->name}' has only {$maxQuantity} items available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')}). Requested: {$quantity}"
                         );
@@ -231,15 +241,37 @@ class Cart extends Model
             } elseif ($from || $until) {
                 // If only one date is provided, it's an error
                 throw new \Exception("Both 'from' and 'until' dates must be provided together, or both omitted.");
+            } else {
+                // Even without dates, check pool quantity limits
+                if ($cartable->isPool()) {
+                    $maxQuantity = $cartable->getPoolMaxQuantity();
+
+                    // Skip validation if pool has unlimited availability
+                    if ($maxQuantity !== PHP_INT_MAX) {
+                        // Get current quantity in cart for this pool product
+                        $currentQuantityInCart = $this->items()
+                            ->where('purchasable_id', $cartable->getKey())
+                            ->where('purchasable_type', get_class($cartable))
+                            ->sum('quantity');
+
+                        $totalQuantity = $currentQuantityInCart + $quantity;
+
+                        if ($totalQuantity > $maxQuantity) {
+                            throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                                "Pool product '{$cartable->name}' has only {$maxQuantity} items available. Already in cart: {$currentQuantityInCart}, Requested: {$quantity}"
+                            );
+                        }
+                    }
+                }
             }
         }
 
-        // Check if item already exists in cart with same parameters and dates
+        // Check if item already exists in cart with same parameters, dates, AND price
         $existingItem = $this->items()
             ->where('purchasable_id', $cartable->getKey())
             ->where('purchasable_type', get_class($cartable))
             ->get()
-            ->first(function ($item) use ($parameters, $from, $until) {
+            ->first(function ($item) use ($parameters, $from, $until, $cartable) {
                 $existingParams = is_array($item->parameters)
                     ? $item->parameters
                     : (array) $item->parameters;
@@ -260,7 +292,20 @@ class Cart extends Model
                     );
                 }
 
-                return $paramsMatch && $datesMatch;
+                // For pool products, also check if price matches
+                // Different prices mean different availability/items, so separate cart items
+                $priceMatch = true;
+                if ($cartable instanceof Product && $cartable->isPool()) {
+                    $currentPrice = $cartable->getCurrentPrice();
+                    if ($from && $until) {
+                        $days = max(1, $from->diff($until)->days);
+                        $currentPrice *= $days;
+                    }
+                    // Compare with small delta to account for floating point precision
+                    $priceMatch = abs((float)$item->price - $currentPrice) < 0.01;
+                }
+
+                return $paramsMatch && $datesMatch && $priceMatch;
             });
 
         // Calculate price per day (base price)
@@ -347,7 +392,12 @@ class Cart extends Model
         return $item ?? true;
     }
 
-    public function checkout(): static
+    /**
+     * Validate cart for checkout without converting it
+     * 
+     * @throws \Exception
+     */
+    public function validateForCheckout(): void
     {
         $items = $this->items()
             ->with('purchasable')
@@ -356,6 +406,27 @@ class Cart extends Model
         if ($items->isEmpty()) {
             throw new \Exception("Cart is empty");
         }
+
+        // Validate that all items have required information before checkout
+        foreach ($items as $item) {
+            $adjustments = $item->requiredAdjustments();
+            if (!empty($adjustments)) {
+                $product = $item->purchasable;
+                $productName = $product ? $product->name : 'Unknown Product';
+                $missingFields = implode(', ', array_keys($adjustments));
+                throw new \Exception("Cart item '{$productName}' is missing required information: {$missingFields}");
+            }
+        }
+    }
+
+    public function checkout(): static
+    {
+        // Validate cart before proceeding
+        $this->validateForCheckout();
+
+        $items = $this->items()
+            ->with('purchasable')
+            ->get();
 
         // Create ProductPurchase for each cart item
         foreach ($items as $item) {
@@ -437,5 +508,131 @@ class Cart extends Model
         ]);
 
         return $this;
+    }
+
+    /**
+     * Create a Stripe Checkout Session for this cart
+     * 
+     * This method:
+     * - Validates the cart (doesn't convert it)
+     * - Syncs products/prices to Stripe (creates them if they don't exist)
+     * - Creates line items with descriptions including booking dates
+     * - Returns the Stripe checkout session
+     * 
+     * @param array $options Optional session parameters (success_url, cancel_url, etc.)
+     * @return \Stripe\Checkout\Session
+     * @throws \Exception
+     */
+    public function checkoutSession(array $options = []): \Stripe\Checkout\Session
+    {
+        if (!config('shop.stripe.enabled')) {
+            throw new \Exception('Stripe is not enabled');
+        }
+
+        // Ensure Stripe is initialized
+        \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+
+        // Validate cart before proceeding (doesn't convert it)
+        $this->validateForCheckout();
+
+        $syncService = new \Blax\Shop\Services\StripeSyncService();
+        $lineItems = [];
+
+        foreach ($this->items as $item) {
+            $purchasable = $item->purchasable;
+
+            // Get the price model
+            if ($purchasable instanceof Product) {
+                $price = $purchasable->defaultPrice()->first();
+                $product = $purchasable;
+            } elseif ($purchasable instanceof \Blax\Shop\Models\ProductPrice) {
+                $price = $purchasable;
+                $product = $purchasable->purchasable;
+            } else {
+                throw new \Exception("Item has no valid price");
+            }
+
+            if (!$price) {
+                $name = $purchasable->name ?? 'Unknown item';
+                throw new \Exception("Item '{$name}' has no default price");
+            }
+
+            // Sync product and price to Stripe
+            $stripePriceId = $syncService->syncPrice($price, $product);
+
+            // Build line item with description including booking dates if applicable
+            $lineItem = [
+                'price' => $stripePriceId,
+                'quantity' => $item->quantity,
+            ];
+
+            // Add description with booking dates if available
+            $description = null;
+            if ($item->from && $item->until) {
+                $days = max(1, $item->from->diffInDays($item->until));
+                $fromFormatted = $item->from->format('M j, Y');
+                $untilFormatted = $item->until->format('M j, Y');
+                $description = "Period: {$fromFormatted} to {$untilFormatted} ({$days} day" . ($days > 1 ? 's' : '') . ")";
+            }
+
+            if ($description) {
+                $lineItem['description'] = $description;
+            }
+
+            $lineItems[] = $lineItem;
+        }
+
+        // Prepare session parameters
+        $sessionParams = [
+            'payment_method_types' => ['card'],
+            'line_items' => $lineItems,
+            'mode' => 'payment',
+            'success_url' => $options['success_url'] ?? route('shop.stripe.success') . '?session_id={CHECKOUT_SESSION_ID}&cart_id=' . $this->id,
+            'cancel_url' => $options['cancel_url'] ?? route('shop.stripe.cancel') . '?cart_id=' . $this->id,
+            'client_reference_id' => $this->id,
+            'metadata' => array_merge([
+                'cart_id' => $this->id,
+            ], $options['metadata'] ?? []),
+        ];
+
+        // Add customer email if available
+        if ($this->customer) {
+            if (method_exists($this->customer, 'email')) {
+                $sessionParams['customer_email'] = $this->customer->email;
+            } elseif (isset($this->customer->email)) {
+                $sessionParams['customer_email'] = $this->customer->email;
+            }
+        }
+
+        // Allow custom session parameters
+        if (isset($options['session_params'])) {
+            $sessionParams = array_merge($sessionParams, $options['session_params']);
+        }
+
+        try {
+            $session = \Stripe\Checkout\Session::create($sessionParams);
+
+            // Store session ID in cart meta
+            $meta = $this->meta ?? (object)[];
+            if (is_array($meta)) {
+                $meta = (object)$meta;
+            }
+            $meta->stripe_session_id = $session->id;
+            $this->update(['meta' => $meta]);
+
+            \Illuminate\Support\Facades\Log::info('Stripe checkout session created', [
+                'cart_id' => $this->id,
+                'session_id' => $session->id,
+            ]);
+
+            return $session;
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Stripe checkout session creation failed', [
+                'cart_id' => $this->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
     }
 }

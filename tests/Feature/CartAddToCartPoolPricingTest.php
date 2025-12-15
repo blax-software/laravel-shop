@@ -793,4 +793,203 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $cartItem->until->format('Y-m-d H:i:s'));
         $this->assertEquals(6000, $cartItem->price);
     }
+
+    /** @test */
+    public function it_limits_pool_in_cart_quantity_by_single_products()
+    {
+        // Set price on pool
+        ProductPrice::factory()->create([
+            'purchasable_id' => $this->poolProduct->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 3000,
+            'currency' => 'USD',
+            'is_default' => true,
+        ]);
+
+        // Assert cart is empty
+        $this->assertEquals(0, $this->cart->items()->count());
+
+        // Assert poolProduct has quantity availability of 2 (based on 2 single items)
+        $availableQuantity = $this->poolProduct->getAvailableQuantity();
+        $this->assertEquals(2, $availableQuantity);
+
+        // Adding 2 pool items should succeed (without dates)
+        $cartItem = $this->cart->addToCart($this->poolProduct, 2);
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(2, $cartItem->quantity);
+
+        // Try to add 1 more (total would be 3, but only 2 available)
+        $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
+        $this->expectExceptionMessage('has only 2 items available');
+        $this->cart->addToCart($this->poolProduct, 1);
+    }
+
+    /** @test */
+    public function it_counts_single_item_stock_quantities_in_pool_availability()
+    {
+        // Create a pool with multiple single items having different stock quantities
+        $pool = Product::factory()->create([
+            'name' => 'Large Parking Pool',
+            'type' => ProductType::POOL,
+            'manage_stock' => false,
+        ]);
+
+        // Create single items with different stock quantities
+        $spot1 = Product::factory()->create([
+            'name' => 'Standard Spot',
+            'type' => ProductType::BOOKING,
+            'manage_stock' => true,
+        ]);
+        $spot1->increaseStock(5); // 5 units available
+
+        $spot2 = Product::factory()->create([
+            'name' => 'Premium Spot',
+            'type' => ProductType::BOOKING,
+            'manage_stock' => true,
+        ]);
+        $spot2->increaseStock(3); // 3 units available
+
+        $spot3 = Product::factory()->create([
+            'name' => 'VIP Spot',
+            'type' => ProductType::BOOKING,
+            'manage_stock' => true,
+        ]);
+        $spot3->increaseStock(2); // 2 units available
+
+        // Attach single items to pool
+        $pool->attachSingleItems([$spot1->id, $spot2->id, $spot3->id]);
+
+        // Pool should have availability = 5 + 3 + 2 = 10
+        $availableQuantity = $pool->getAvailableQuantity();
+        $this->assertEquals(10, $availableQuantity);
+
+        // Set price on pool
+        ProductPrice::factory()->create([
+            'purchasable_id' => $pool->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 3000,
+            'currency' => 'USD',
+            'is_default' => true,
+        ]);
+
+        $cart = Cart::factory()->create([
+            'customer_id' => $this->user->id,
+            'customer_type' => get_class($this->user),
+        ]);
+
+        // Should be able to add 10 pool items
+        $cartItem = $cart->addToCart($pool, 10);
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(10, $cartItem->quantity);
+
+        // But not 11
+        $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
+        $this->expectExceptionMessage('has only 10 items available');
+        $cart->addToCart($pool, 1);
+    }
+
+    /** @test */
+    public function it_counts_available_stock_with_booking_dates()
+    {
+        // Create pool with single items having stock
+        $pool = Product::factory()->create([
+            'name' => 'Conference Room Pool',
+            'type' => ProductType::POOL,
+            'manage_stock' => false,
+        ]);
+
+        $room1 = Product::factory()->create([
+            'name' => 'Room A',
+            'type' => ProductType::BOOKING,
+            'manage_stock' => true,
+        ]);
+        $room1->increaseStock(3);
+
+        $room2 = Product::factory()->create([
+            'name' => 'Room B',
+            'type' => ProductType::BOOKING,
+            'manage_stock' => true,
+        ]);
+        $room2->increaseStock(2);
+
+        $pool->attachSingleItems([$room1->id, $room2->id]);
+
+        ProductPrice::factory()->create([
+            'purchasable_id' => $pool->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 5000,
+            'currency' => 'USD',
+            'is_default' => true,
+        ]);
+
+        $from = Carbon::now()->addDays(1)->startOfDay();
+        $until = Carbon::now()->addDays(2)->startOfDay();
+
+        // Total availability should be 3 + 2 = 5
+        $this->assertEquals(5, $pool->getAvailableQuantity($from, $until));
+
+        $cart = Cart::factory()->create([
+            'customer_id' => $this->user->id,
+            'customer_type' => get_class($this->user),
+        ]);
+
+        // Should be able to book 5 pool items for the period
+        $cartItem = $cart->addToCart($pool, 5, [], $from, $until);
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(5, $cartItem->quantity);
+    }
+
+    /** @test */
+    public function it_allows_unlimited_pool_when_single_items_dont_manage_stock()
+    {
+        // Create pool with single items that don't manage stock
+        $pool = Product::factory()->create([
+            'name' => 'Unlimited Parking Pool',
+            'type' => ProductType::POOL,
+            'manage_stock' => false,
+        ]);
+
+        $spot1 = Product::factory()->create([
+            'name' => 'Unlimited Spot 1',
+            'type' => ProductType::BOOKING,
+            'manage_stock' => false, // No stock management
+        ]);
+
+        $spot2 = Product::factory()->create([
+            'name' => 'Unlimited Spot 2',
+            'type' => ProductType::BOOKING,
+            'manage_stock' => false, // No stock management
+        ]);
+
+        $pool->attachSingleItems([$spot1->id, $spot2->id]);
+
+        ProductPrice::factory()->create([
+            'purchasable_id' => $pool->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 3000,
+            'currency' => 'USD',
+            'is_default' => true,
+        ]);
+
+        // Pool should have unlimited availability
+        $this->assertEquals(PHP_INT_MAX, $pool->getAvailableQuantity());
+
+        $cart = Cart::factory()->create([
+            'customer_id' => $this->user->id,
+            'customer_type' => get_class($this->user),
+        ]);
+
+        // Should be able to add any quantity without dates
+        $cartItem = $cart->addToCart($pool, 1000);
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(1000, $cartItem->quantity);
+
+        // And with dates
+        $from = Carbon::now()->addDays(1)->startOfDay();
+        $until = Carbon::now()->addDays(2)->startOfDay();
+
+        $cartItem2 = $cart->addToCart($pool, 500, [], $from, $until);
+        $this->assertNotNull($cartItem2);
+        $this->assertEquals(500, $cartItem2->quantity);
+    }
 }

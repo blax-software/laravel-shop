@@ -9,6 +9,7 @@ enum PurchaseStatus: string
     case COMPLETED = 'completed';
     case REFUNDED = 'refunded';
     case CART = 'cart';
+    case FAILED = 'failed';
 
     public function label(): string
     {
@@ -18,6 +19,7 @@ enum PurchaseStatus: string
             self::COMPLETED => 'Completed',
             self::REFUNDED => 'Refunded',
             self::CART => 'Cart',
+            self::FAILED => 'Failed',
         };
     }
 }

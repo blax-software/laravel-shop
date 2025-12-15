@@ -57,6 +57,11 @@ trait HasProductRelations
         return $this->relationsByType(ProductRelationType::SINGLE);
     }
 
+    public function poolProducts(): BelongsToMany
+    {
+        return $this->relationsByType(ProductRelationType::POOL);
+    }
+
     public function relationsByType(ProductRelationType|string $type): BelongsToMany
     {
         $typeValue = $type instanceof ProductRelationType ? $type->value : $type;

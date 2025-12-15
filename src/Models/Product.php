@@ -9,6 +9,7 @@ use Blax\Shop\Events\ProductUpdated;
 use Blax\Shop\Contracts\Purchasable;
 use Blax\Shop\Enums\ProductStatus;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
 use Blax\Shop\Exceptions\HasNoDefaultPriceException;
@@ -19,6 +20,7 @@ use Blax\Shop\Traits\HasCategories;
 use Blax\Shop\Traits\HasPrices;
 use Blax\Shop\Traits\HasProductRelations;
 use Blax\Shop\Traits\HasStocks;
+use Blax\Shop\Traits\MayBePoolProduct;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -28,7 +30,7 @@ use Illuminate\Support\Facades\Cache;
 
 class Product extends Model implements Purchasable, Cartable
 {
-    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasCategories, HasProductRelations;
+    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasCategories, HasProductRelations, MayBePoolProduct;
 
     protected $fillable = [
         'slug',
@@ -317,148 +319,6 @@ class Product extends Model implements Purchasable, Cartable
     }
 
     /**
-     * Check if this is a pool product
-     */
-    public function isPool(): bool
-    {
-        return $this->type === ProductType::POOL;
-    }
-
-    /**
-     * Get the maximum available quantity for a pool product based on single items
-     */
-    public function getPoolMaxQuantity(\DateTimeInterface $from = null, \DateTimeInterface $until = null): int
-    {
-        if (!$this->isPool()) {
-            return $this->getAvailableStock();
-        }
-
-        $singleItems = $this->singleProducts;
-
-        if ($singleItems->isEmpty()) {
-            return 0;
-        }
-
-        // If no dates provided, return the count of single items
-        if (!$from || !$until) {
-            return $singleItems->count();
-        }
-
-        // Check availability for each single item during the timespan
-        $availableCount = 0;
-        foreach ($singleItems as $item) {
-            if ($item->isAvailableForBooking($from, $until, 1)) {
-                $availableCount++;
-            }
-        }
-
-        return $availableCount;
-    }
-
-    /**
-     * Claim stock for a pool product
-     * This will claim stock from the available single items
-     * 
-     * @param int $quantity Number of pool items to claim
-     * @param mixed $reference Reference model
-     * @param \DateTimeInterface|null $from Start date
-     * @param \DateTimeInterface|null $until End date
-     * @param string|null $note Optional note
-     * @return array Array of claimed single item products
-     * @throws \Exception
-     */
-    public function claimPoolStock(
-        int $quantity,
-        $reference = null,
-        ?\DateTimeInterface $from = null,
-        ?\DateTimeInterface $until = null,
-        ?string $note = null
-    ): array {
-        if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
-        }
-
-        $singleItems = $this->singleProducts;
-
-        if ($singleItems->isEmpty()) {
-            throw new \Exception('Pool product has no single items to claim');
-        }
-
-        // Get available single items for the period
-        $availableItems = [];
-        foreach ($singleItems as $item) {
-            if ($item->isAvailableForBooking($from, $until, 1)) {
-                $availableItems[] = $item;
-            }
-
-            if (count($availableItems) >= $quantity) {
-                break;
-            }
-        }
-
-        if (count($availableItems) < $quantity) {
-            throw new \Exception("Only " . count($availableItems) . " items available, but {$quantity} requested");
-        }
-
-        // Claim stock from each selected single item
-        $claimedItems = [];
-        foreach (array_slice($availableItems, 0, $quantity) as $item) {
-            $item->claimStock(1, $reference, $from, $until, $note);
-            $claimedItems[] = $item;
-        }
-
-        return $claimedItems;
-    }
-
-    /**
-     * Release pool stock claims
-     * 
-     * @param mixed $reference Reference model used when claiming
-     * @return int Number of claims released
-     */
-    public function releasePoolStock($reference): int
-    {
-        if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
-        }
-
-        $singleItems = $this->singleProducts;
-        $released = 0;
-
-        foreach ($singleItems as $item) {
-            $referenceType = is_object($reference) ? get_class($reference) : null;
-            $referenceId = is_object($reference) ? $reference->id : null;
-
-            // Find and delete claims for this reference
-            $claims = $item->stocks()
-                ->where('type', StockType::CLAIMED->value)
-                ->where('status', StockStatus::PENDING->value)
-                ->where('reference_type', $referenceType)
-                ->where('reference_id', $referenceId)
-                ->get();
-
-            foreach ($claims as $claim) {
-                $claim->release();
-                $released++;
-            }
-        }
-
-        return $released;
-    }
-
-    /**
-     * Check if any single item in pool is a booking product
-     */
-    public function hasBookingSingleItems(): bool
-    {
-        if (!$this->isPool()) {
-            return false;
-        }
-
-        return $this->singleProducts()->where('products.type', ProductType::BOOKING->value)->exists();
-    }
-
-    /**
      * Check stock availability for a booking period
      */
     public function isAvailableForBooking(\DateTimeInterface $from, \DateTimeInterface $until, int $quantity = 1): bool
@@ -511,203 +371,13 @@ class Product extends Model implements Purchasable, Cartable
      */
     public function getCurrentPrice(bool|null $sales_price = null): ?float
     {
-        // If this is a pool product and it has no direct price, inherit from single items
-        if ($this->isPool() && !$this->hasPrice()) {
-            return $this->getInheritedPoolPrice($sales_price);
-        }
-
-        // If pool has a direct price, use it
-        if ($this->isPool() && $this->hasPrice()) {
-            return $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
+        // If this is a pool product, use the trait method
+        if ($this->isPool()) {
+            return $this->getPoolCurrentPrice($sales_price);
         }
 
         // For non-pool products, use the trait's default behavior
         return $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
-    }
-
-    /**
-     * Get inherited price from single items based on pricing strategy
-     */
-    protected function getInheritedPoolPrice(bool|null $sales_price = null): ?float
-    {
-        if (!$this->isPool()) {
-            return null;
-        }
-
-        $strategy = $this->getPoolPricingStrategy();
-
-        $singleItems = $this->singleProducts;
-
-        if ($singleItems->isEmpty()) {
-            return null;
-        }
-
-        $prices = $singleItems->map(function ($item) use ($sales_price) {
-            return $item->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $item->isOnSale());
-        })->filter()->values();
-
-        if ($prices->isEmpty()) {
-            return null;
-        }
-
-        return match ($strategy) {
-            'lowest' => $prices->min(),
-            'highest' => $prices->max(),
-            'average' => round($prices->avg()),
-            default => round($prices->avg()), // Default to average
-        };
-    }
-
-    /**
-     * Get the pool pricing strategy from metadata
-     */
-    public function getPoolPricingStrategy(): string
-    {
-        if (!$this->isPool()) {
-            return 'average';
-        }
-
-        $meta = $this->getMeta();
-        return $meta->pricing_strategy ?? 'average';
-    }
-
-    /**
-     * Set the pool pricing strategy
-     */
-    public function setPoolPricingStrategy(string $strategy): void
-    {
-        if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
-        }
-
-        if (!in_array($strategy, ['average', 'lowest', 'highest'])) {
-            throw new \InvalidArgumentException("Invalid pricing strategy: {$strategy}");
-        }
-
-        $this->updateMetaKey('pricing_strategy', $strategy);
-        $this->save();
-    }
-
-    /**
-     * Get the lowest price from single items
-     */
-    public function getLowestPoolPrice(): ?float
-    {
-        if (!$this->isPool()) {
-            return null;
-        }
-
-        $singleItems = $this->singleProducts;
-
-        if ($singleItems->isEmpty()) {
-            return null;
-        }
-
-        $prices = $singleItems->map(function ($item) {
-            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
-        })->filter()->values();
-
-        return $prices->isEmpty() ? null : $prices->min();
-    }
-
-    /**
-     * Get the highest price from single items
-     */
-    public function getHighestPoolPrice(): ?float
-    {
-        if (!$this->isPool()) {
-            return null;
-        }
-
-        $singleItems = $this->singleProducts;
-
-        if ($singleItems->isEmpty()) {
-            return null;
-        }
-
-        $prices = $singleItems->map(function ($item) {
-            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
-        })->filter()->values();
-
-        return $prices->isEmpty() ? null : $prices->max();
-    }
-
-    /**
-     * Get the price range for pool products
-     */
-    public function getPoolPriceRange(): ?array
-    {
-        if (!$this->isPool()) {
-            return null;
-        }
-
-        $lowest = $this->getLowestPoolPrice();
-        $highest = $this->getHighestPoolPrice();
-
-        if ($lowest === null || $highest === null) {
-            return null;
-        }
-
-        return [
-            'min' => $lowest,
-            'max' => $highest,
-        ];
-    }
-
-    /**
-     * Validate pool product configuration and provide helpful error messages
-     * 
-     * @throws InvalidPoolConfigurationException
-     */
-    public function validatePoolConfiguration(bool $throwOnWarnings = false): array
-    {
-        $errors = [];
-        $warnings = [];
-
-        if (!$this->isPool()) {
-            throw InvalidPoolConfigurationException::notAPoolProduct($this->name);
-        }
-
-        $singleItems = $this->singleProducts;
-
-        // Critical: No single items
-        if ($singleItems->isEmpty()) {
-            throw InvalidPoolConfigurationException::noSingleItems($this->name);
-        }
-
-        // Check for mixed product types
-        $types = $singleItems->pluck('type')->unique();
-        if ($types->count() > 1) {
-            $warning = "Mixed single item types detected. This may cause unexpected behavior.";
-            $warnings[] = $warning;
-            if ($throwOnWarnings) {
-                throw InvalidPoolConfigurationException::mixedSingleItemTypes($this->name);
-            }
-        }
-
-        // Check stock management on single items
-        $itemsWithoutStock = $singleItems->filter(fn($item) => !$item->manage_stock);
-        if ($itemsWithoutStock->isNotEmpty()) {
-            $itemNames = $itemsWithoutStock->pluck('name')->toArray();
-            $errors[] = "Single items without stock management: " . implode(', ', $itemNames);
-            throw InvalidPoolConfigurationException::singleItemsWithoutStock($this->name, $itemNames);
-        }
-
-        // Check for items with zero stock
-        $itemsWithZeroStock = $singleItems->filter(fn($item) => $item->getAvailableStock() <= 0);
-        if ($itemsWithZeroStock->isNotEmpty()) {
-            $itemNames = $itemsWithZeroStock->pluck('name')->toArray();
-            $warnings[] = "Single items with zero stock: " . implode(', ', $itemNames);
-            if ($throwOnWarnings) {
-                throw InvalidPoolConfigurationException::singleItemsWithZeroStock($this->name, $itemNames);
-            }
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors,
-            'warnings' => $warnings,
-        ];
     }
 
     /**

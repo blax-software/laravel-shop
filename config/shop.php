@@ -61,6 +61,7 @@ return [
     'stripe' => [
         'enabled' => env('SHOP_STRIPE_ENABLED', false),
         'sync_prices' => true,
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
     // Cache configuration

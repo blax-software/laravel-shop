@@ -12,6 +12,7 @@ enum ProductRelationType: string
     case ADD_ON = 'add-on';
     case BUNDLE = 'bundle';
     case SINGLE = 'single';
+    case POOL = 'pool';
 
 
     public function label(): string
@@ -25,6 +26,7 @@ enum ProductRelationType: string
             self::ADD_ON => 'Add-on',
             self::BUNDLE => 'Bundle',
             self::SINGLE => 'Single',
+            self::POOL => 'Pool',
         };
     }
 }

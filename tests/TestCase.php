@@ -12,6 +12,8 @@ abstract class TestCase extends Orchestra
     {
         parent::setUp();
 
+        ini_set('memory_limit', '256M');
+
         Factory::guessFactoryNamesUsing(
             fn(string $modelName) => match (true) {
                 str_starts_with($modelName, 'Workbench\\App\\') => 'Workbench\\Database\\Factories\\' . class_basename($modelName) . 'Factory',

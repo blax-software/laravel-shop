@@ -131,7 +131,7 @@ class PoolProductCheckoutTest extends TestCase
         ]);
 
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('requires a timespan');
+        $this->expectExceptionMessage('is missing required information: from, until');
 
         $cart->checkout();
     }
@@ -385,6 +385,8 @@ class PoolProductCheckoutTest extends TestCase
             'purchasable_type' => Product::class,
             'quantity' => 1,
             'price' => 20.00,
+            'from' => $from,
+            'until' => $until,
             'parameters' => [
                 'from' => $from->toDateTimeString(),
                 'until' => $until->toDateTimeString(),

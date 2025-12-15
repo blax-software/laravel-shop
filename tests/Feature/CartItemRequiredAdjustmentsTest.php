@@ -56,7 +56,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
     {
         $product = Product::factory()->create([
             'type' => ProductType::BOOKING,
+            'manage_stock' => true,
         ]);
+        $product->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
@@ -81,7 +83,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
     {
         $product = Product::factory()->create([
             'type' => ProductType::BOOKING,
+            'manage_stock' => true,
         ]);
+        $product->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
@@ -108,7 +112,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
     {
         $product = Product::factory()->create([
             'type' => ProductType::BOOKING,
+            'manage_stock' => true,
         ]);
+        $product->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
@@ -171,7 +177,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $singleItem1 = Product::factory()->create([
             'name' => 'Parking Spot 1',
             'type' => ProductType::BOOKING,
+            'manage_stock' => true,
         ]);
+        $singleItem1->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $singleItem1->id,
@@ -184,7 +192,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $singleItem2 = Product::factory()->create([
             'name' => 'Parking Spot 2',
             'type' => ProductType::BOOKING,
+            'manage_stock' => true,
         ]);
+        $singleItem2->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $singleItem2->id,
@@ -266,7 +276,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $singleItem1 = Product::factory()->create([
             'name' => 'Item 1',
             'type' => ProductType::SIMPLE,
+            'manage_stock' => true,
         ]);
+        $singleItem1->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $singleItem1->id,
@@ -279,7 +291,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $singleItem2 = Product::factory()->create([
             'name' => 'Item 2',
             'type' => ProductType::SIMPLE,
+            'manage_stock' => true,
         ]);
+        $singleItem2->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $singleItem2->id,
@@ -317,7 +331,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $simpleItem = Product::factory()->create([
             'name' => 'Simple Item',
             'type' => ProductType::SIMPLE,
+            'manage_stock' => true,
         ]);
+        $simpleItem->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $simpleItem->id,
@@ -331,7 +347,9 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $bookingItem = Product::factory()->create([
             'name' => 'Booking Item',
             'type' => ProductType::BOOKING,
+            'manage_stock' => true,
         ]);
+        $bookingItem->increaseStock(10);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $bookingItem->id,

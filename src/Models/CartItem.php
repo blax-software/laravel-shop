@@ -168,4 +168,91 @@ class CartItem extends Model
 
         return $adjustments;
     }
+
+    /**
+     * Update the booking dates for this cart item.
+     * Automatically recalculates price based on the new date range.
+     * 
+     * @param \DateTimeInterface $from Start date
+     * @param \DateTimeInterface $until End date
+     * @return $this
+     * @throws \Exception If dates are invalid
+     */
+    public function updateDates(\DateTimeInterface $from, \DateTimeInterface $until): self
+    {
+        if ($from >= $until) {
+            throw new \Exception("The 'from' date must be before the 'until' date.");
+        }
+
+        $product = $this->purchasable;
+
+        if (!$product || !($product instanceof Product)) {
+            throw new \Exception("Cannot update dates for non-product items.");
+        }
+
+        // Calculate days
+        $days = max(1, $from->diff($until)->days);
+
+        // Get current price per day
+        $pricePerDay = $product->getCurrentPrice();
+        $regularPricePerDay = $product->getCurrentPrice(false) ?? $pricePerDay;
+
+        // Calculate new prices
+        $pricePerUnit = $pricePerDay * $days;
+        $regularPricePerUnit = $regularPricePerDay * $days;
+
+        $this->update([
+            'from' => $from,
+            'until' => $until,
+            'price' => $pricePerUnit,
+            'regular_price' => $regularPricePerUnit,
+            'subtotal' => $pricePerUnit * $this->quantity,
+        ]);
+
+        return $this->fresh();
+    }
+
+    /**
+     * Set the 'from' date for this cart item.
+     * 
+     * @param \DateTimeInterface $from Start date
+     * @return $this
+     */
+    public function setFromDate(\DateTimeInterface $from): self
+    {
+        if ($this->until && $from >= $this->until) {
+            throw new \Exception("The 'from' date must be before the 'until' date.");
+        }
+
+        $this->update(['from' => $from]);
+
+        // If both dates are now set, recalculate pricing
+        if ($this->until) {
+            return $this->updateDates($from, $this->until);
+        }
+
+        return $this->fresh();
+    }
+
+    /**
+     * Set the 'until' date for this cart item.
+     * 
+     * @param \DateTimeInterface $until End date
+     * @return $this
+     */
+    public function setUntilDate(\DateTimeInterface $until): self
+    {
+        if ($this->from && $this->from >= $until) {
+            throw new \Exception("The 'until' date must be after the 'from' date.");
+        }
+
+        $this->update(['until' => $until]);
+
+        // If both dates are now set, recalculate pricing
+        if ($this->from) {
+            return $this->updateDates($this->from, $until);
+        }
+
+        return $this->fresh();
+    }
 }

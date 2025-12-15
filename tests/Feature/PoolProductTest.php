@@ -420,7 +420,9 @@ class PoolProductTest extends TestCase
 
         // Should detect booking items exist
         $this->assertTrue($mixedPool->hasBookingSingleItems());
-        $this->assertEquals(2, $mixedPool->getPoolMaxQuantity());
+        // Pool max quantity should be the stock of managed items (1 from booking item)
+        // Unlimited items (simple item) don't contribute to the count
+        $this->assertEquals(1, $mixedPool->getPoolMaxQuantity());
     }
 
     /** @test */
@@ -505,8 +507,8 @@ class PoolProductTest extends TestCase
             'type' => ProductRelationType::SINGLE->value,
         ]);
 
-        // Should still count as 1 item (not based on stock quantity)
-        $this->assertEquals(1, $customPool->getPoolMaxQuantity($from, $until));
+        // Should count the stock quantity (2), not just the number of items (1)
+        $this->assertEquals(2, $customPool->getPoolMaxQuantity($from, $until));
     }
 
     /** @test */
