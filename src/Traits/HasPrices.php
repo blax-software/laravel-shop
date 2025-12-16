@@ -18,8 +18,18 @@ trait HasPrices
         );
     }
 
-    public function getCurrentPrice(bool|null $sales_price = null): ?float
+    public function getCurrentPrice(bool|null $sales_price = null, mixed $cart = null): ?float
     {
+        // For pool products with a cart, get dynamic pricing based on cart state
+        if ($cart && method_exists($this, 'isPool') && $this->isPool()) {
+            $currentQuantityInCart = $cart->items()
+                ->where('purchasable_id', $this->getKey())
+                ->where('purchasable_type', get_class($this))
+                ->sum('quantity');
+
+            return $this->getNextAvailablePoolPrice($currentQuantityInCart, $sales_price);
+        }
+
         return $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
     }
 

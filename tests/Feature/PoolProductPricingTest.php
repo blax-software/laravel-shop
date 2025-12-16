@@ -4,6 +4,7 @@ namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Enums\PricingStrategy;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
@@ -130,6 +131,9 @@ class PoolProductPricingTest extends TestCase
             'is_default' => true,
         ]);
 
+        // Set pricing strategy to average
+        $this->poolProduct->setPricingStrategy(PricingStrategy::AVERAGE);
+
         // Pool should inherit average: (5000 + 7000) / 2 = 6000
         $price = $this->poolProduct->getCurrentPrice();
 
@@ -164,7 +168,7 @@ class PoolProductPricingTest extends TestCase
             'is_default' => true,
         ]);
 
-        $lowestPrice = $this->poolProduct->getLowestPoolPrice();
+        $lowestPrice = $this->poolProduct->getLowestAvailablePoolPrice();
 
         $this->assertEquals(5000, $lowestPrice);
     }
@@ -188,7 +192,7 @@ class PoolProductPricingTest extends TestCase
             'is_default' => true,
         ]);
 
-        $highestPrice = $this->poolProduct->getHighestPoolPrice();
+        $highestPrice = $this->poolProduct->getHighestAvailablePoolPrice();
 
         $this->assertEquals(7000, $highestPrice);
     }
@@ -394,6 +398,9 @@ class PoolProductPricingTest extends TestCase
         $price1->update(['unit_amount' => 6000]);
         $this->poolProduct->refresh();
 
+        // Set to average pricing to see the average of 6000 and 5000
+        $this->poolProduct->setPricingStrategy(PricingStrategy::AVERAGE);
+
         $updatedPrice = $this->poolProduct->getCurrentPrice();
         $this->assertEquals(5500, $updatedPrice); // Average of 6000 and 5000
     }
@@ -417,8 +424,8 @@ class PoolProductPricingTest extends TestCase
             'is_default' => true,
         ]);
 
-        // Store strategy in metadata
-        $this->poolProduct->updateMetaKey('pricing_strategy', 'lowest');
+        // Store strategy in metadata using the enum
+        $this->poolProduct->setPricingStrategy(PricingStrategy::LOWEST);
 
         $price = $this->poolProduct->getCurrentPrice();
 

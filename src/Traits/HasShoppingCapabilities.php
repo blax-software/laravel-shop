@@ -9,11 +9,9 @@ use Blax\Shop\Exceptions\MultiplePurchaseOptions;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Exceptions\NotPurchasable;
 use Blax\Shop\Models\Cart;
-use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;
 
@@ -107,7 +105,7 @@ trait HasShoppingCapabilities
 
         // Handle booking products
         $isBooking = $product->type === ProductType::BOOKING;
-        
+
         if ($isBooking && (!$from || !$until)) {
             throw new \Exception("Booking products require 'from' and 'until' dates");
         }

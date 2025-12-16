@@ -4,6 +4,8 @@ namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Enums\PricingStrategy;
+use Blax\Shop\Enums\StockType;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
@@ -103,6 +105,9 @@ class CartAddToCartPoolPricingTest extends TestCase
             'is_default' => true,
         ]);
 
+        // Set pricing strategy to average: (2000 + 5000) / 2 = 3500
+        $this->poolProduct->setPricingStrategy(PricingStrategy::AVERAGE);
+
         // Pool should inherit average: (2000 + 5000) / 2 = 3500
         $cartItem = $this->cart->addToCart($this->poolProduct, 1);
 
@@ -163,6 +168,9 @@ class CartAddToCartPoolPricingTest extends TestCase
         $from = Carbon::now()->addDays(1)->startOfDay();
         $until = Carbon::now()->addDays(3)->startOfDay(); // 2 days
         $days = $from->diffInDays($until);
+
+        // Set pricing strategy to average: (2000 + 5000) / 2 = 3500 per day
+        $this->poolProduct->setPricingStrategy(PricingStrategy::AVERAGE);
 
         // Pool inherits average: (2000 + 5000) / 2 = 3500 per day
         $cartItem = $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
@@ -447,6 +455,9 @@ class CartAddToCartPoolPricingTest extends TestCase
 
         $from = Carbon::now()->addDays(1)->startOfDay();
         $until = Carbon::now()->addDays(2)->startOfDay(); // 1 day
+
+        // Set pricing strategy to average
+        $this->poolProduct->setPricingStrategy(PricingStrategy::AVERAGE);
 
         $cartItem = $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
 
@@ -991,5 +1002,256 @@ class CartAddToCartPoolPricingTest extends TestCase
         $cartItem2 = $cart->addToCart($pool, 500, [], $from, $until);
         $this->assertNotNull($cartItem2);
         $this->assertEquals(500, $cartItem2->quantity);
+    }
+
+    /** @test */
+    public function it_picks_correct_price_for_pool_and_items_and_respects_stocks()
+    {
+        $this->actingAs($this->user);
+
+        $pool = Product::factory()
+            ->withPrices(1, 5000) // 50€
+            ->create([
+                'name' => 'Parking Pool',
+                'type' => ProductType::POOL
+            ]);
+
+        $spot1 = Product::factory()
+            ->withStocks(2)
+            ->withPrices(1, 2000) // 20€
+            ->create([
+                'name' => 'Spot 1',
+                'type' => ProductType::BOOKING,
+            ]);
+
+        $spot2 = Product::factory()
+            ->withStocks(2)
+            ->create([
+                'name' => 'Spot 2',
+                'type' => ProductType::BOOKING,
+            ]);
+
+        $spot3 = Product::factory()
+            ->withStocks(2)
+            ->withPrices(1, 8000) // 80€
+            ->create([
+                'name' => 'Spot 3',
+                'type' => ProductType::BOOKING,
+            ]);
+
+        $pool->attachSingleItems([
+            $spot1->id,
+            $spot2->id,
+            $spot3->id
+        ]);
+
+        // Pool should have unlimited availability
+        $this->assertEquals(6, $pool->getAvailableQuantity());
+
+        $pool->setPoolPricingStrategy('lowest');
+
+        $cart = $this->user->currentCart();
+
+        $this->assertEquals(0, $cart->items()->count());
+
+        $this->assertThrows(
+            fn() => $cartItem = $cart->addToCart($pool, 1000),
+            \Blax\Shop\Exceptions\NotEnoughStockException::class
+        );
+
+        // 1. Addition 
+        $this->assertEquals(2000, $pool->getCurrentPrice(cart: $cart)); // 20.00
+        $this->assertEquals(2000, $pool->getLowestAvailablePoolPrice(cart: $cart)); // 20.00
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice(cart: $cart)); // 80.00
+        $cartItem = $cart->addToCart($pool, 1);
+
+        $this->assertNotNull($cartItem);
+
+        // 2. Addition 
+        $this->assertEquals(2000, $pool->getCurrentPrice()); // 20.00
+        $this->assertEquals(2000, $pool->getLowestAvailablePoolPrice()); // 20.00
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice()); // 80.00
+        $cartItem = $cart->addToCart($pool, 1);
+
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(4000, $cartItem->subtotal); // 20.00 × 2
+
+        // 3. Addition 
+        $this->assertEquals(5000, $pool->getCurrentPrice(cart: $cart)); // 50.00
+        $this->assertEquals(5000, $pool->getLowestAvailablePoolPrice(cart: $cart)); // 50.00
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice(cart: $cart)); // 80.00
+        $cartItem = $cart->addToCart($pool, 1);
+
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(5000, $cartItem->price); // Next lowest (inherited from pool): 50.00
+        $this->assertEquals(5000, $cartItem->subtotal); // 50.00 (not cumulative)
+
+        // 4. Addition 
+        $this->assertEquals(5000, $pool->getCurrentPrice()); // 50.00
+        $this->assertEquals(5000, $pool->getLowestAvailablePoolPrice()); // 50.00
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice()); // 80.00
+        $cartItem = $cart->addToCart($pool, 1);
+
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(5000, $cartItem->price); // Next lowest (inherited from pool): 50.00
+        $this->assertEquals(10000, $cartItem->subtotal); // 50.00 × 2 (merged)
+
+        // 5. Addition 
+        $this->assertEquals(8000, $pool->getCurrentPrice(cart: $cart)); // 80.00
+        $this->assertEquals(8000, $pool->getLowestAvailablePoolPrice(cart: $cart)); // 80.00
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice(cart: $cart)); // 80.00
+        $cartItem = $cart->addToCart($pool, 1);
+
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(8000, $cartItem->price); // Next lowest: 80.00
+        $this->assertEquals(8000, $cartItem->subtotal); // 80.00
+
+        // 6. Addition 
+        $this->assertEquals(8000, $pool->getCurrentPrice()); // 80.00
+        $this->assertEquals(8000, $pool->getLowestAvailablePoolPrice()); // 80.00
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice()); // 80.00
+        $cartItem = $cart->addToCart($pool, 1);
+
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(8000, $cartItem->price); // Next lowest: 80.00
+        $this->assertEquals(16000, $cartItem->subtotal); // 80.00 × 2 (merged)
+
+        $this->assertEquals(3, $cart->items()->count());
+
+        $this->assertNull($pool->getCurrentPrice());
+        $this->assertNull($pool->getLowestAvailablePoolPrice());
+        $this->assertNull($pool->getHighestAvailablePoolPrice());
+        $this->assertNull($pool->getCurrentPrice(cart: $cart));
+        $this->assertNull($pool->getLowestAvailablePoolPrice(cart: $cart));
+        $this->assertNull($pool->getHighestAvailablePoolPrice(cart: $cart));
+
+
+        // 7. Addition 
+        $this->assertThrows(
+            fn() => $cart->addToCart($pool, 1),
+            \Blax\Shop\Exceptions\NotEnoughStockException::class
+        );
+    }
+
+    /** @test */
+    public function it_picks_correct_price_respects_stocks_respects_timespan_for_price()
+    {
+        $this->actingAs($this->user);
+
+        $pool = Product::factory()
+            ->withPrices(1, 5000) // 50€
+            ->create([
+                'name' => 'Parking Pool',
+                'type' => ProductType::POOL
+            ]);
+
+        $spot1 = Product::factory()
+            ->withStocks(2)
+            ->withPrices(1, 2000) // 20€
+            ->create([
+                'name' => 'Spot 1',
+                'type' => ProductType::BOOKING,
+            ]);
+
+        $spot2 = Product::factory()
+            ->withStocks(2)
+            ->create([
+                'name' => 'Spot 2',
+                'type' => ProductType::BOOKING,
+            ]);
+
+        $spot3 = Product::factory()
+            ->withStocks(2)
+            ->withPrices(1, 8000) // 80€
+            ->create([
+                'name' => 'Spot 3',
+                'type' => ProductType::BOOKING,
+            ]);
+
+        $pool->attachSingleItems([
+            $spot1->id,
+            $spot2->id,
+            $spot3->id
+        ]);
+
+        // Pool should have unlimited availability
+        $this->assertEquals(6, $pool->getAvailableQuantity());
+
+        $pool->setPoolPricingStrategy('lowest');
+
+        $cart = $this->user->currentCart();
+
+        $this->assertEquals(0, $cart->items()->count());
+
+        $this->assertThrows(
+            fn() => $cartItem = $cart->addToCart($pool, 1000),
+            \Blax\Shop\Exceptions\NotEnoughStockException::class
+        );
+
+        $cart->addToCart(
+            $pool,
+            3,
+            [],
+            now()->addWeek(),
+            now()->addWeek()->addDays(5)
+        );
+
+        $this->assertEquals(
+            (2000 * 2 * 5) + (5000 * 1 * 5),
+            $cart->getTotal()
+        );
+
+        $cart->addToCart(
+            $pool,
+            3,
+            [],
+            now()->addWeek(),
+            now()->addWeek()->addDays(5)
+        );
+
+        $this->assertEquals(
+            (2000 * 2 * 5) + (5000 * 2 * 5) + (8000 * 2 * 5),
+            $cart->getTotal()
+        );
+
+        $this->assertEquals(3, $cart->items()->count());
+
+        // Clear cart
+        $cart->items()->delete();
+
+        $this->assertEquals(0, $cart->items()->count());
+        $this->assertEquals(0, $cart->getTotal());
+
+        // Make one spot unavailable for part of the period
+        $spot2->adjustStock(
+            StockType::CLAIMED,
+            1,
+            from: now()->addWeek()->addDays(2),
+            until: now()->addWeek()->addDays(3)
+        );
+
+        $this->assertThrows(
+            fn() => $cart->addToCart(
+                $pool,
+                6,
+                [],
+                now()->addWeek(),
+                now()->addWeek()->addDays(5)
+            ),
+            \Blax\Shop\Exceptions\NotEnoughStockException::class
+        );
+
+        $cart->addToCart(
+            $pool,
+            5,
+            [],
+            now()->addWeek(),
+            now()->addWeek()->addDays(5)
+        );
+
+        $this->assertEquals(
+            (2000 * 2 * 5) + (5000 * 1 * 5) + (8000 * 2 * 5),
+            $cart->getTotal()
+        );
     }
 }

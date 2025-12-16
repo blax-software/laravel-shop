@@ -4,6 +4,7 @@ namespace Blax\Shop\Traits;
 
 use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Enums\PricingStrategy;
 use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
 use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
@@ -227,14 +228,15 @@ trait MayBePoolProduct
 
     /**
      * Get inherited price from single items based on pricing strategy
+     * Gets prices from available (not yet claimed) single items
      */
-    protected function getInheritedPoolPrice(bool|null $sales_price = null): ?float
+    public function getInheritedPoolPrice(bool|null $sales_price = null, ?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null): ?float
     {
         if (!$this->isPool()) {
             return null;
         }
 
-        $strategy = $this->getPoolPricingStrategy();
+        $strategy = $this->getPricingStrategy();
 
         $singleItems = $this->singleProducts;
 
@@ -242,7 +244,19 @@ trait MayBePoolProduct
             return null;
         }
 
-        $prices = $singleItems->map(function ($item) use ($sales_price) {
+        // Get available prices from single items (filtering out claimed items)
+        $prices = $singleItems->map(function ($item) use ($sales_price, $from, $until) {
+            // Only get price if the item is available
+            if ($from && $until) {
+                if (!$item->isAvailableForBooking($from, $until, 1)) {
+                    return null;
+                }
+            } else {
+                if ($item->getAvailableStock() <= 0 && $item->manage_stock) {
+                    return null;
+                }
+            }
+
             return $item->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $item->isOnSale());
         })->filter()->values();
 
@@ -251,41 +265,349 @@ trait MayBePoolProduct
         }
 
         return match ($strategy) {
-            'lowest' => $prices->min(),
-            'highest' => $prices->max(),
-            'average' => round($prices->avg()),
-            default => round($prices->avg()), // Default to average
+            PricingStrategy::LOWEST => $prices->min(),
+            PricingStrategy::HIGHEST => $prices->max(),
+            PricingStrategy::AVERAGE => round($prices->avg()),
         };
     }
 
     /**
-     * Get the pool pricing strategy from metadata
+     * Get the lowest price from available single items
      */
-    public function getPoolPricingStrategy(): string
+    public function getLowestAvailablePoolPrice(?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null, mixed $cart = null): ?float
     {
         if (!$this->isPool()) {
-            return 'average';
+            return null;
         }
 
-        $meta = $this->getMeta();
-        return $meta->pricing_strategy ?? 'average';
+        // If no cart provided, try to get the current user's cart
+        if (!$cart && auth()->check()) {
+            $cart = auth()->user()->currentCart();
+        }
+
+        // If cart is provided, use dynamic pricing based on cart state
+        if ($cart) {
+            $currentQuantityInCart = $cart->items()
+                ->where('purchasable_id', $this->getKey())
+                ->where('purchasable_type', get_class($this))
+                ->sum('quantity');
+
+            return $this->getNextAvailablePoolPrice($currentQuantityInCart, null, $from, $until);
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return null;
+        }
+
+        $prices = $singleItems->map(function ($item) use ($from, $until) {
+            // Only get price if the item is available
+            if ($from && $until) {
+                if (!$item->isAvailableForBooking($from, $until, 1)) {
+                    return null;
+                }
+            } else {
+                if ($item->getAvailableStock() <= 0 && $item->manage_stock) {
+                    return null;
+                }
+            }
+
+            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
+        })->filter()->values();
+
+        return $prices->isEmpty() ? null : $prices->min();
     }
 
     /**
-     * Set the pool pricing strategy
+     * Get the highest price from available single items
      */
-    public function setPoolPricingStrategy(string $strategy): void
+    public function getHighestAvailablePoolPrice(?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null, mixed $cart = null): ?float
+    {
+        if (!$this->isPool()) {
+            return null;
+        }
+
+        // If no cart provided, try to get the current user's cart
+        if (!$cart && auth()->check()) {
+            $cart = auth()->user()->currentCart();
+        }
+
+        // If cart is provided, get the highest price from remaining available items
+        if ($cart) {
+            $currentQuantityInCart = $cart->items()
+                ->where('purchasable_id', $this->getKey())
+                ->where('purchasable_type', get_class($this))
+                ->sum('quantity');
+
+            // Get the pool's actual pricing strategy to determine allocation order
+            $strategy = $this->getPricingStrategy();
+
+            // Get available items
+            $singleItems = $this->singleProducts;
+
+            if ($singleItems->isEmpty()) {
+                return null;
+            }
+
+            // Build a list of all available item prices with their quantities
+            $availableItems = [];
+
+            foreach ($singleItems as $item) {
+                // Check if item is available
+                $available = 0;
+
+                if ($from && $until) {
+                    if ($item->isBooking() && $item->isAvailableForBooking($from, $until, 1)) {
+                        $available = $item->getAvailableStock();
+                    } elseif (!$item->isBooking()) {
+                        $available = $item->getAvailableStock();
+                    }
+                } else {
+                    if ($item->manage_stock) {
+                        $available = $item->getAvailableStock();
+                    } else {
+                        $available = PHP_INT_MAX;
+                    }
+                }
+
+                if ($available > 0) {
+                    $price = $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
+
+                    // If no price on single item but pool has direct price, use pool's price
+                    if ($price === null && $this->hasPrice()) {
+                        $price = $this->defaultPrice()->first()?->getCurrentPrice($this->isOnSale());
+                    }
+
+                    if ($price !== null) {
+                        $availableItems[] = [
+                            'price' => $price,
+                            'quantity' => $available,
+                        ];
+                    }
+                }
+            }
+
+            if (empty($availableItems)) {
+                return null;
+            }
+
+            // Sort items based on the pool's actual pricing strategy to determine allocation order
+            usort($availableItems, function ($a, $b) use ($strategy) {
+                return match ($strategy) {
+                    PricingStrategy::LOWEST => $a['price'] <=> $b['price'],
+                    PricingStrategy::HIGHEST => $b['price'] <=> $a['price'],
+                    PricingStrategy::AVERAGE => $a['price'] <=> $b['price'],
+                };
+            });
+
+            // Skip through items based on allocation order, then get highest of remaining
+            $skipped = 0;
+            $remainingItems = [];
+
+            foreach ($availableItems as $item) {
+                if ($skipped >= $currentQuantityInCart) {
+                    // All cart items have been accounted for, these are remaining
+                    $remainingItems[] = $item;
+                } else {
+                    $skipFromThis = min($item['quantity'], $currentQuantityInCart - $skipped);
+                    $skipped += $skipFromThis;
+
+                    // If there are items left in this batch after skipping
+                    if ($item['quantity'] > $skipFromThis) {
+                        $remainingItems[] = [
+                            'price' => $item['price'],
+                            'quantity' => $item['quantity'] - $skipFromThis,
+                        ];
+                    }
+                }
+            }
+
+            // Return the highest price from remaining items
+            if (empty($remainingItems)) {
+                return null;
+            }
+
+            return max(array_column($remainingItems, 'price'));
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return null;
+        }
+
+        $prices = $singleItems->map(function ($item) use ($from, $until) {
+            // Only get price if the item is available
+            if ($from && $until) {
+                if (!$item->isAvailableForBooking($from, $until, 1)) {
+                    return null;
+                }
+            } else {
+                if ($item->getAvailableStock() <= 0 && $item->manage_stock) {
+                    return null;
+                }
+            }
+
+            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
+        })->filter()->values();
+
+        return $prices->isEmpty() ? null : $prices->max();
+    }
+
+    /**
+     * Set the pool pricing strategy (for backwards compatibility)
+     */
+    public function setPoolPricingStrategy(string|PricingStrategy $strategy): void
     {
         if (!$this->isPool()) {
             throw new \Exception('This method is only for pool products');
         }
 
-        if (!in_array($strategy, ['average', 'lowest', 'highest'])) {
-            throw new \InvalidArgumentException("Invalid pricing strategy: {$strategy}");
+        // Handle both string and enum inputs
+        if (is_string($strategy)) {
+            $strategyEnum = PricingStrategy::tryFrom($strategy);
+            if (!$strategyEnum) {
+                throw new \InvalidArgumentException("Invalid pricing strategy: {$strategy}");
+            }
+            $strategy = $strategyEnum;
         }
 
-        $this->updateMetaKey('pricing_strategy', $strategy);
-        $this->save();
+        $this->setPricingStrategy($strategy);
+    }
+
+    /**
+     * Get the price for the next available item from the pool
+     * considering how many items have already been allocated/claimed
+     * 
+     * This method simulates "picking" items from the pool in order of the pricing strategy
+     * and returns the price of the Nth item
+     * 
+     * @param int $skipQuantity How many items to skip (already allocated)
+     * @param bool|null $sales_price Whether to get sale price
+     * @param \DateTimeInterface|null $from Start date for availability check
+     * @param \DateTimeInterface|null $until End date for availability check
+     * @return float|null Price of the next available item
+     */
+    public function getNextAvailablePoolPrice(
+        int $skipQuantity = 0,
+        bool|null $sales_price = null,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
+    ): ?float {
+        if (!$this->isPool()) {
+            return null;
+        }
+
+        $strategy = $this->getPricingStrategy();
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return null;
+        }
+
+        // Build a list of all available item prices with their quantities
+        $availableItems = [];
+
+        foreach ($singleItems as $item) {
+            // Check if item is available
+            $available = 0;
+
+            if ($from && $until) {
+                if ($item->isBooking()) {
+                    // For booking items, calculate actual available quantity during the period
+                    if (!$item->manage_stock) {
+                        $available = PHP_INT_MAX;
+                    } else {
+                        // Calculate overlapping claims for this specific period
+                        $overlappingClaims = $item->stocks()
+                            ->where('type', \Blax\Shop\Enums\StockType::CLAIMED->value)
+                            ->where('status', \Blax\Shop\Enums\StockStatus::PENDING->value)
+                            ->where(function ($query) use ($from, $until) {
+                                $query->where(function ($q) use ($from, $until) {
+                                    $q->whereBetween('claimed_from', [$from, $until]);
+                                })->orWhere(function ($q) use ($from, $until) {
+                                    $q->whereBetween('expires_at', [$from, $until]);
+                                })->orWhere(function ($q) use ($from, $until) {
+                                    $q->where('claimed_from', '<=', $from)
+                                        ->where('expires_at', '>=', $until);
+                                })->orWhere(function ($q) use ($from, $until) {
+                                    $q->whereNull('claimed_from')
+                                        ->where(function ($subQ) use ($from, $until) {
+                                            $subQ->whereNull('expires_at')
+                                                ->orWhere('expires_at', '>=', $from);
+                                        });
+                                });
+                            })
+                            ->sum('quantity');
+                        
+                        $available = max(0, $item->getAvailableStock() - abs($overlappingClaims));
+                    }
+                } elseif (!$item->isBooking()) {
+                    $available = $item->getAvailableStock();
+                }
+            } else {
+                if ($item->manage_stock) {
+                    $available = $item->getAvailableStock();
+                } else {
+                    $available = PHP_INT_MAX;
+                }
+            }
+
+            if ($available > 0) {
+                $price = $item->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $item->isOnSale());
+
+                // If no price on single item but pool has direct price, use pool's price
+                if ($price === null && $this->hasPrice()) {
+                    $price = $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
+                }
+
+                if ($price !== null) {
+                    $availableItems[] = [
+                        'price' => $price,
+                        'quantity' => $available,
+                        'item' => $item,
+                    ];
+                }
+            }
+        }
+
+        if (empty($availableItems)) {
+            return null;
+        }
+
+        // For AVERAGE strategy, return the average price of all available items
+        if ($strategy === PricingStrategy::AVERAGE) {
+            $totalPrice = 0;
+            $totalQuantity = 0;
+            foreach ($availableItems as $item) {
+                $totalPrice += $item['price'] * $item['quantity'];
+                $totalQuantity += $item['quantity'];
+            }
+            return $totalQuantity > 0 ? $totalPrice / $totalQuantity : null;
+        }
+
+        // Sort items based on pricing strategy (for LOWEST and HIGHEST)
+        usort($availableItems, function ($a, $b) use ($strategy) {
+            return match ($strategy) {
+                PricingStrategy::LOWEST => $a['price'] <=> $b['price'],
+                PricingStrategy::HIGHEST => $b['price'] <=> $a['price'],
+                PricingStrategy::AVERAGE => 0, // Already handled above
+            };
+        });
+
+        // Skip through items based on $skipQuantity
+        $skipped = 0;
+        foreach ($availableItems as $item) {
+            if ($skipped + $item['quantity'] > $skipQuantity) {
+                // This is the item we want
+                return $item['price'];
+            }
+            $skipped += $item['quantity'];
+        }
+
+        // If we've skipped past all items, return null
+        return null;
     }
 
     /**
@@ -344,38 +666,16 @@ trait MayBePoolProduct
     }
 
     /**
-     * Get the highest price from single items
+     * Get the price range for pool products (from available items)
      */
-    public function getHighestPoolPrice(): ?float
+    public function getPoolPriceRange(?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null): ?array
     {
         if (!$this->isPool()) {
             return null;
         }
 
-        $singleItems = $this->singleProducts;
-
-        if ($singleItems->isEmpty()) {
-            return null;
-        }
-
-        $prices = $singleItems->map(function ($item) {
-            return $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
-        })->filter()->values();
-
-        return $prices->isEmpty() ? null : $prices->max();
-    }
-
-    /**
-     * Get the price range for pool products
-     */
-    public function getPoolPriceRange(): ?array
-    {
-        if (!$this->isPool()) {
-            return null;
-        }
-
-        $lowest = $this->getLowestPoolPrice();
-        $highest = $this->getHighestPoolPrice();
+        $lowest = $this->getLowestAvailablePoolPrice($from, $until);
+        $highest = $this->getHighestAvailablePoolPrice($from, $until);
 
         if ($lowest === null || $highest === null) {
             return null;

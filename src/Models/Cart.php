@@ -66,9 +66,7 @@ class Cart extends Model
 
     public function getTotal(): float
     {
-        return $this->items->sum(function ($item) {
-            return $item->subtotal;
-        });
+        return $this->items()->sum('subtotal');
     }
 
     public function getTotalItems(): int
@@ -209,6 +207,34 @@ class Cart extends Model
             $until = is_string($parameters['until']) ? Carbon::parse($parameters['until']) : $parameters['until'];
         }
 
+        // For pool products with quantity > 1, add them one at a time to get progressive pricing
+        if ($cartable instanceof Product && $cartable->isPool() && $quantity > 1) {
+            // Pre-validate that we have enough total availability
+            // This prevents creating partial batches when stock is insufficient
+            if ($from && $until) {
+                $available = $cartable->getPoolMaxQuantity($from, $until);
+                if ($available !== PHP_INT_MAX && $quantity > $available) {
+                    throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                        "Pool product '{$cartable->name}' has only {$available} items available for the requested period. Requested: {$quantity}"
+                    );
+                }
+            } else {
+                $available = $cartable->getPoolMaxQuantity();
+                if ($available !== PHP_INT_MAX && $quantity > $available) {
+                    throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                        "Pool product '{$cartable->name}' has only {$available} items available. Requested: {$quantity}"
+                    );
+                }
+            }
+            
+            // Add items one at a time for progressive pricing
+            $lastCartItem = null;
+            for ($i = 0; $i < $quantity; $i++) {
+                $lastCartItem = $this->addToCart($cartable, 1, $parameters, $from, $until);
+            }
+            return $lastCartItem;
+        }
+
         // Validate Product-specific requirements
         if ($cartable instanceof Product) {
             // Validate pricing before adding to cart
@@ -266,12 +292,23 @@ class Cart extends Model
             }
         }
 
+        // For pool products, calculate current quantity in cart once to ensure consistency
+        // Force fresh query to get latest cart state (important for recursive calls)
+        $currentQuantityInCart = null;
+        if ($cartable instanceof Product && $cartable->isPool()) {
+            $this->unsetRelation('items'); // Clear cached relationship
+            $currentQuantityInCart = $this->items()
+                ->where('purchasable_id', $cartable->getKey())
+                ->where('purchasable_type', get_class($cartable))
+                ->sum('quantity');
+        }
+
         // Check if item already exists in cart with same parameters, dates, AND price
         $existingItem = $this->items()
             ->where('purchasable_id', $cartable->getKey())
             ->where('purchasable_type', get_class($cartable))
             ->get()
-            ->first(function ($item) use ($parameters, $from, $until, $cartable) {
+            ->first(function ($item) use ($parameters, $from, $until, $cartable, $currentQuantityInCart) {
                 $existingParams = is_array($item->parameters)
                     ? $item->parameters
                     : (array) $item->parameters;
@@ -292,16 +329,21 @@ class Cart extends Model
                     );
                 }
 
-                // For pool products, also check if price matches
-                // Different prices mean different availability/items, so separate cart items
+                // For pool products, check pricing strategy to determine merge behavior
                 $priceMatch = true;
                 if ($cartable instanceof Product && $cartable->isPool()) {
-                    $currentPrice = $cartable->getCurrentPrice();
+                    // For pools, always check if prices match to allow merging items with same price
+                    $currentPrice = $cartable->getNextAvailablePoolPrice($currentQuantityInCart, null, $from, $until);
+                    if (!$currentPrice) {
+                        // Fallback to getCurrentPrice if getNextAvailablePoolPrice returns null (no single items)
+                        $currentPrice = $cartable->getCurrentPrice();
+                    }
                     if ($from && $until) {
                         $days = max(1, $from->diff($until)->days);
                         $currentPrice *= $days;
                     }
-                    // Compare with small delta to account for floating point precision
+
+                    // Compare prices - merge if prices match
                     $priceMatch = abs((float)$item->price - $currentPrice) < 0.01;
                 }
 
@@ -309,12 +351,30 @@ class Cart extends Model
             });
 
         // Calculate price per day (base price)
-        $pricePerDay = $cartable->getCurrentPrice();
-        $regularPricePerDay = $cartable->getCurrentPrice(false) ?? $pricePerDay;
+        // For pool products, get price based on how many items are already in cart
+        if ($cartable instanceof Product && $cartable->isPool()) {
+            // Use the quantity we calculated earlier for consistency
+            // Get price for the next available item
+            $pricePerDay = $cartable->getNextAvailablePoolPrice($currentQuantityInCart, null, $from, $until);
+            $regularPricePerDay = $cartable->getNextAvailablePoolPrice($currentQuantityInCart, false, $from, $until) ?? $pricePerDay;
+            
+            // If no price found from pool items, try the pool's direct price as fallback
+            if ($pricePerDay === null && $cartable->hasPrice()) {
+                $pricePerDay = $cartable->defaultPrice()->first()?->getCurrentPrice($cartable->isOnSale());
+                $regularPricePerDay = $cartable->defaultPrice()->first()?->getCurrentPrice(false) ?? $pricePerDay;
+            }
+        } else {
+            $pricePerDay = $cartable->getCurrentPrice();
+            $regularPricePerDay = $cartable->getCurrentPrice(false) ?? $pricePerDay;
+        }
 
         // Ensure prices are not null
         if ($pricePerDay === null) {
-            throw new \Exception("Product '{$cartable->name}' has no valid price.");
+            $debugInfo = '';
+            if ($cartable instanceof Product && $cartable->isPool()) {
+                $debugInfo = " (Pool product, currentQuantityInCart: {$currentQuantityInCart}, hasPrice: " . ($cartable->hasPrice() ? 'yes' : 'no') . ")";
+            }
+            throw new \Exception("Product '{$cartable->name}' has no valid price.{$debugInfo}");
         }
 
         // Calculate days if booking dates provided
@@ -326,6 +386,11 @@ class Cart extends Model
         // Calculate price per unit for the entire period
         $pricePerUnit = $pricePerDay * $days;
         $regularPricePerUnit = $regularPricePerDay * $days;
+
+        // Defensive check - ensure pricePerUnit is not null
+        if ($pricePerUnit === null) {
+            throw new \Exception("Cart item price calculation resulted in null for '{$cartable->name}' (pricePerDay: {$pricePerDay}, days: {$days})");
+        }
 
         // Calculate total price
         $totalPrice = $pricePerUnit * $quantity;
@@ -354,7 +419,7 @@ class Cart extends Model
             'until' => $until,
         ]);
 
-        return $cartItem->fresh();
+        return $cartItem;
     }
 
     public function removeFromCart(

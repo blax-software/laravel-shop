@@ -4,6 +4,7 @@ namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Enums\PricingStrategy;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
@@ -101,6 +102,9 @@ class PoolSeparateCartItemsTest extends TestCase
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
         $until = Carbon::now()->addDays(3)->startOfDay();
+
+        // Use AVERAGE strategy to ensure price change when single items change
+        $this->pool->setPricingStrategy(PricingStrategy::AVERAGE);
 
         // Add first item
         $item1 = $this->cart->addToCart($this->pool, 1, [], $from, $until);

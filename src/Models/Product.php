@@ -18,6 +18,7 @@ use Blax\Shop\Exceptions\InvalidBookingConfigurationException;
 use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
 use Blax\Shop\Traits\HasCategories;
 use Blax\Shop\Traits\HasPrices;
+use Blax\Shop\Traits\HasPricingStrategy;
 use Blax\Shop\Traits\HasProductRelations;
 use Blax\Shop\Traits\HasStocks;
 use Blax\Shop\Traits\MayBePoolProduct;
@@ -30,7 +31,7 @@ use Illuminate\Support\Facades\Cache;
 
 class Product extends Model implements Purchasable, Cartable
 {
-    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasCategories, HasProductRelations, MayBePoolProduct;
+    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasPricingStrategy, HasCategories, HasProductRelations, MayBePoolProduct;
 
     protected $fillable = [
         'slug',
@@ -369,11 +370,27 @@ class Product extends Model implements Purchasable, Cartable
     /**
      * Get the current price with pool product inheritance support
      */
-    public function getCurrentPrice(bool|null $sales_price = null): ?float
+    public function getCurrentPrice(bool|null $sales_price = null, mixed $cart = null): ?float
     {
-        // If this is a pool product, use the trait method
+        // If this is a pool product, use cart-aware pricing if cart is provided
         if ($this->isPool()) {
-            return $this->getPoolCurrentPrice($sales_price);
+            // If no cart provided, try to get the current user's cart
+            if (!$cart && auth()->check()) {
+                $cart = auth()->user()->currentCart();
+            }
+
+            if ($cart) {
+                // Cart-aware: Get price for next available item after what's in cart
+                $currentQuantityInCart = $cart->items()
+                    ->where('purchasable_id', $this->getKey())
+                    ->where('purchasable_type', get_class($this))
+                    ->sum('quantity');
+
+                return $this->getNextAvailablePoolPrice($currentQuantityInCart, $sales_price);
+            }
+
+            // No cart and no user: Get inherited price based on strategy (lowest/highest/average of ALL available items)
+            return $this->getInheritedPoolPrice($sales_price);
         }
 
         // For non-pool products, use the trait's default behavior
