@@ -16,6 +16,7 @@ use Blax\Shop\Exceptions\HasNoDefaultPriceException;
 use Blax\Shop\Exceptions\HasNoPriceException;
 use Blax\Shop\Exceptions\InvalidBookingConfigurationException;
 use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
+use Blax\Shop\Services\CartService;
 use Blax\Shop\Traits\HasCategories;
 use Blax\Shop\Traits\HasPrices;
 use Blax\Shop\Traits\HasPricingStrategy;
@@ -374,9 +375,22 @@ class Product extends Model implements Purchasable, Cartable
     {
         // If this is a pool product, use cart-aware pricing if cart is provided
         if ($this->isPool()) {
-            // If no cart provided, try to get the current user's cart
-            if (!$cart && auth()->check()) {
-                $cart = auth()->user()->currentCart();
+            // If no cart provided, try to get the cart from session first, then user's cart
+            if (!$cart) {
+                // Try session first
+                $cartId = session(CartService::CART_SESSION_KEY);
+                if ($cartId) {
+                    $cart = \Blax\Shop\Models\Cart::find($cartId);
+                    // Make sure the cart is valid (not expired/converted)
+                    if ($cart && ($cart->isExpired() || $cart->isConverted())) {
+                        $cart = null;
+                    }
+                }
+
+                // Fall back to authenticated user's cart if no valid session cart
+                if (!$cart && auth()->check()) {
+                    $cart = auth()->user()->currentCart();
+                }
             }
 
             if ($cart) {

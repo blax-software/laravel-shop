@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Blax\Shop\Models\CartItem|true remove(\Illuminate\Database\Eloquent\Model $product, int $quantity = 1, array $parameters = [])
  * @method static \Blax\Shop\Models\CartItem update(\Blax\Shop\Models\CartItem $cartItem, int $quantity)
  * @method static int clear(\Blax\Shop\Models\Cart|null $cart = null)
+ * @method static void clearSession()
  * @method static \Illuminate\Support\Collection|mixed checkout(\Blax\Shop\Models\Cart|null $cart = null)
  * @method static float total(\Blax\Shop\Models\Cart|null $cart = null)
  * @method static int itemCount(\Blax\Shop\Models\Cart|null $cart = null)

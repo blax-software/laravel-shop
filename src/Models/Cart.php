@@ -5,6 +5,7 @@ namespace Blax\Shop\Models;
 use Blax\Shop\Contracts\Cartable;
 use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Services\CartService;
 use Blax\Workkit\Traits\HasExpiration;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -177,6 +178,17 @@ class Cart extends Model
     }
 
     /**
+     * Store the cart ID in the session for retrieval across requests
+     * 
+     * @param Cart $cart
+     * @return void
+     */
+    public static function setSession(Cart $cart): void
+    {
+        session([CartService::CART_SESSION_KEY => $cart->id]);
+    }
+
+    /**
      * Add an item to the cart or increase quantity if it already exists.
      *
      * @param Model&Cartable $cartable The item to add to cart
@@ -226,7 +238,7 @@ class Cart extends Model
                     );
                 }
             }
-            
+
             // Add items one at a time for progressive pricing
             $lastCartItem = null;
             for ($i = 0; $i < $quantity; $i++) {
@@ -357,7 +369,7 @@ class Cart extends Model
             // Get price for the next available item
             $pricePerDay = $cartable->getNextAvailablePoolPrice($currentQuantityInCart, null, $from, $until);
             $regularPricePerDay = $cartable->getNextAvailablePoolPrice($currentQuantityInCart, false, $from, $until) ?? $pricePerDay;
-            
+
             // If no price found from pool items, try the pool's direct price as fallback
             if ($pricePerDay === null && $cartable->hasPrice()) {
                 $pricePerDay = $cartable->defaultPrice()->first()?->getCurrentPrice($cartable->isOnSale());

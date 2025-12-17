@@ -14,47 +14,83 @@ use Blax\Shop\Exceptions\NotPurchasable;
 use Blax\Shop\Models\Product;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\Auth;
 
 class CartService
 {
     /**
-     * Get current authenticated user's cart
-     * Throws exception if no user is authenticated
+     * Session key for storing the current cart ID
+     */
+    public const CART_SESSION_KEY = 'blax_shop_cart_id';
+
+    /**
+     * Get current cart from session, or fall back to authenticated user's cart
+     * Throws exception if no cart found in session and no user is authenticated
      *
      * @return Cart
      * @throws \Exception
      */
     public function current(): Cart
     {
-        $user = auth()->user();
-
-        if (!$user) {
-            throw new \Exception('No authenticated user found. Use guest() for guest carts or provide a cart ID.');
+        // Try to get cart from session first
+        $cartId = session(self::CART_SESSION_KEY);
+        if ($cartId) {
+            $cart = Cart::find($cartId);
+            if ($cart && !$cart->isExpired() && !$cart->isConverted()) {
+                // If user is authenticated and session cart is a guest cart, clear it
+                if (Auth::check() && !$cart->customer_id) {
+                    session()->forget(self::CART_SESSION_KEY);
+                } else {
+                    return $cart;
+                }
+            } else {
+                // Clear expired or converted cart from session
+                session()->forget(self::CART_SESSION_KEY);
+            }
         }
 
-        return $user->currentCart();
+        // Fall back to authenticated user's cart
+        $user = Auth::user();
+
+        if (!$user) {
+            return self::guest();
+        }
+
+        $cart = $user->currentCart();
+
+        // Store the cart ID in session for future requests
+        session([self::CART_SESSION_KEY => $cart->id]);
+
+        return $cart;
     }
 
     /**
      * Get or create a guest cart by session ID
      * If no session ID provided, uses session()->getId()
+     * Stores the cart ID in the session for future requests
      *
      * @param string|null $sessionId
      * @return Cart
      */
     public function guest(?string $sessionId = null): Cart
     {
-        $sessionId = $sessionId ?? session()->getId();
+        $sessionId = $sessionId ?? session(CartService::CART_SESSION_KEY) ?? session()->getId();
 
-        return Cart::firstOrCreate([
+        $cart = Cart::firstOrCreate([
             'session_id' => $sessionId,
             'customer_id' => null,
             'customer_type' => null,
         ]);
+
+        // Store cart ID in session
+        Cart::setSession($cart);
+
+        return $cart;
     }
 
     /**
      * Get cart for specific user
+     * Stores the cart ID in the session for future requests
      *
      * @param Authenticatable $user
      * @return Cart
@@ -65,7 +101,11 @@ class CartService
             throw new \Exception('User model must have shopping capabilities');
         }
 
-        return $user->currentCart();
+        $cart = $user->currentCart();
+        // Store cart ID in session
+        Cart::setSession($cart);
+
+        return $cart;
     }
 
     /**
@@ -80,8 +120,8 @@ class CartService
     }
 
     /**
-     * Add item to current user's cart (throws exception if no user)
-     * For guests, use guest() first: Cart::guest()->add($product)
+     * Add item to current cart (from session or authenticated user)
+     * For guests without session, use guest() first: Cart::guest()->add($product)
      *
      * @param Model&Cartable $product
      * @param int $quantity
@@ -92,23 +132,19 @@ class CartService
      */
     public function add(Model $product, int $quantity = 1, array $parameters = []): CartItem
     {
-        $user = auth()->user();
-
-        if (!$user) {
-            throw new \Exception('No authenticated user found. Use guest() for guest carts.');
-        }
+        $cart = $this->current();
 
         // Validate pricing before adding to cart
         if ($product instanceof Product) {
             $product->validatePricing(throwExceptions: true);
         }
 
-        return $user->addToCart($product, $quantity, $parameters);
+        return $cart->addToCart($product, $quantity, $parameters);
     }
 
     /**
-     * Remove item from current user's cart (throws exception if no user)
-     * For guests, use guest() first: Cart::guest()->remove($product)
+     * Remove item from current cart (from session or authenticated user)
+     * For guests without session, use guest() first: Cart::guest()->remove($product)
      *
      * @param Model&Cartable $product
      * @param int $quantity
@@ -117,13 +153,8 @@ class CartService
      */
     public function remove(Model $product, int $quantity = 1, array $parameters = [])
     {
-        $user = auth()->user();
-
-        if (!$user) {
-            throw new \Exception('No authenticated user found. Use guest() for guest carts.');
-        }
-
-        return $user->currentCart()->removeFromCart($product, $quantity, $parameters);
+        $cart = $this->current();
+        return $cart->removeFromCart($product, $quantity, $parameters);
     }
 
     /**
@@ -395,6 +426,17 @@ class CartService
     public function hasValidBookings(?Cart $cart = null): bool
     {
         return empty($this->validateBookings($cart));
+    }
+
+    /**
+     * Clear the cart from session (unlink cart from session)
+     * This does not delete the cart, just removes it from the session
+     *
+     * @return void
+     */
+    public function clearSession(): void
+    {
+        session()->forget(self::CART_SESSION_KEY);
     }
 
     /**

@@ -34,7 +34,7 @@ class CartFacadeTest extends TestCase
         auth()->logout();
 
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('No authenticated user found');
+        $this->expectExceptionMessage('No cart in session and no authenticated user found');
 
         Cart::current();
     }
