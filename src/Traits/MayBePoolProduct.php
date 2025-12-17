@@ -107,7 +107,7 @@ trait MayBePoolProduct
 
     /**
      * Claim stock for a pool product
-     * This will claim stock from the available single items
+     * This will claim stock from the available single items, respecting the pricing strategy
      * 
      * @param int $quantity Number of pool items to claim
      * @param mixed $reference Reference model
@@ -134,13 +134,28 @@ trait MayBePoolProduct
             throw new \Exception('Pool product has no single items to claim');
         }
 
-        // Get available single items for the period
+        // Get pricing strategy
+        $strategy = $this->getPricingStrategy();
+
+        // Build list of available single items with their prices
         $availableItems = [];
         foreach ($singleItems as $item) {
             if ($item->isAvailableForBooking($from, $until, 1)) {
-                $availableItems[] = $item;
+                // Get the price for this item
+                $price = $item->defaultPrice()->first()?->getCurrentPrice($item->isOnSale());
+
+                // If item has no price, use pool's fallback price
+                if ($price === null && $this->hasPrice()) {
+                    $price = $this->defaultPrice()->first()?->getCurrentPrice($this->isOnSale());
+                }
+
+                $availableItems[] = [
+                    'item' => $item,
+                    'price' => $price ?? PHP_FLOAT_MAX, // Items without prices go last
+                ];
             }
 
+            // Early exit if we have enough
             if (count($availableItems) >= $quantity) {
                 break;
             }
@@ -150,9 +165,19 @@ trait MayBePoolProduct
             throw new \Exception("Only " . count($availableItems) . " items available, but {$quantity} requested");
         }
 
-        // Claim stock from each selected single item
+        // Sort by pricing strategy
+        usort($availableItems, function ($a, $b) use ($strategy) {
+            return match ($strategy) {
+                \Blax\Shop\Enums\PricingStrategy::LOWEST => $a['price'] <=> $b['price'],
+                \Blax\Shop\Enums\PricingStrategy::HIGHEST => $b['price'] <=> $a['price'],
+                \Blax\Shop\Enums\PricingStrategy::AVERAGE => 0, // Keep original order for average
+            };
+        });
+
+        // Claim stock from selected items in order
         $claimedItems = [];
-        foreach (array_slice($availableItems, 0, $quantity) as $item) {
+        foreach (array_slice($availableItems, 0, $quantity) as $itemData) {
+            $item = $itemData['item'];
             $item->claimStock(1, $reference, $from, $until, $note);
             $claimedItems[] = $item;
         }

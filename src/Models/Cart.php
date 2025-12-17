@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Models;
 
+use Blax\Shop\Casts\HtmlDateTimeCast;
 use Blax\Shop\Contracts\Cartable;
 use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Enums\ProductType;
@@ -40,8 +41,8 @@ class Cart extends Model
         'converted_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'meta' => 'object',
-        'from_date' => 'datetime',
-        'until_date' => 'datetime',
+        'from_date' => HtmlDateTimeCast::class,
+        'until_date' => HtmlDateTimeCast::class,
     ];
 
     protected $appends = [
