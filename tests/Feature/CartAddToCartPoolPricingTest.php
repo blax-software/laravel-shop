@@ -1174,6 +1174,9 @@ class CartAddToCartPoolPricingTest extends TestCase
             $spot3->id
         ]);
 
+        $from = now()->addWeek();
+        $until = now()->addWeek()->addDays(5); // 5 days
+
         // Pool should have unlimited availability
         $this->assertEquals(6, $pool->getAvailableQuantity());
 
@@ -1192,27 +1195,32 @@ class CartAddToCartPoolPricingTest extends TestCase
             $pool,
             3,
             [],
-            now()->addWeek(),
-            now()->addWeek()->addDays(5)
+            $from,
+            $until
         );
 
         $this->assertEquals(
             (2000 * 2 * 5) + (5000 * 1 * 5),
             $cart->getTotal()
         );
+        $this->assertEquals(
+            5000,
+            $pool->getCurrentPrice()
+        );
 
         $cart->addToCart(
             $pool,
             3,
             [],
-            now()->addWeek(),
-            now()->addWeek()->addDays(5)
+            $from,
+            $until
         );
 
         $this->assertEquals(
             (2000 * 2 * 5) + (5000 * 2 * 5) + (8000 * 2 * 5),
             $cart->getTotal()
         );
+        $this->assertNull($pool->getCurrentPrice());
 
         $this->assertEquals(3, $cart->items()->count());
 
@@ -1235,8 +1243,8 @@ class CartAddToCartPoolPricingTest extends TestCase
                 $pool,
                 6,
                 [],
-                now()->addWeek(),
-                now()->addWeek()->addDays(5)
+                $from,
+                $until
             ),
             \Blax\Shop\Exceptions\NotEnoughStockException::class
         );
@@ -1245,8 +1253,79 @@ class CartAddToCartPoolPricingTest extends TestCase
             $pool,
             5,
             [],
-            now()->addWeek(),
-            now()->addWeek()->addDays(5)
+            $from,
+            $until
+        );
+
+        $this->assertEquals(
+            (2000 * 2 * 5) + (5000 * 1 * 5) + (8000 * 2 * 5),
+            $cart->getTotal()
+        );
+
+        $cart->removeFromCart($pool, 1);
+
+        $this->assertEquals(
+            (2000 * 2 * 5) + (5000 * 1 * 5) + (8000 * 1 * 5),
+            $cart->getTotal()
+        );
+        $this->assertEquals(8000, $pool->getCurrentPrice());
+
+        $cart->removeFromCart($pool, 1);
+
+        $this->assertEquals(
+            (2000 * 2 * 5) + (5000 * 1 * 5),
+            $cart->getTotal()
+        );
+
+        // Get cart item with price 2000
+        $cartItem = $cart->items()
+            ->orderBy('price', 'asc')
+            ->first();
+
+        $cart->removeFromCart($cartItem, 1);
+
+        $this->assertEquals(
+            (2000 * 1 * 5) + (5000 * 1 * 5),
+            $cart->getTotal()
+        );
+        $this->assertEquals(
+            2000,
+            $pool->getCurrentPrice()
+        );
+
+        $cart->addToCart(
+            $pool,
+            1,
+            [],
+            $from,
+            $until
+        );
+
+        $this->assertEquals(
+            (2000 * 2 * 5) + (5000 * 1 * 5),
+            $cart->getTotal()
+        );
+
+        // Get cart item with price 2000
+        $cartItem = $cart->items()
+            ->orderBy('price', 'asc')
+            ->first();
+
+        $cart->removeFromCart($cartItem, 2);
+
+        $this->assertEquals(
+            (5000 * 1 * 5),
+            $cart->getTotal()
+        );
+
+        $this->assertEquals(2000, $pool->getCurrentPrice());
+
+        $cart->addToCart(
+            $pool,
+            4,
+            [],
+            $from,
+            $until
         );
 
         $this->assertEquals(

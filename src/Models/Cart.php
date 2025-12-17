@@ -344,10 +344,10 @@ class Cart extends Model
                 // For pool products, check pricing strategy to determine merge behavior
                 $priceMatch = true;
                 if ($cartable instanceof Product && $cartable->isPool()) {
-                    // For pools, always check if prices match to allow merging items with same price
-                    $currentPrice = $cartable->getNextAvailablePoolPrice($currentQuantityInCart, null, $from, $until);
+                    // For pools, use smart pricing that considers which tiers are used
+                    $currentPrice = $cartable->getNextAvailablePoolPriceConsideringCart($this, null, $from, $until);
                     if (!$currentPrice) {
-                        // Fallback to getCurrentPrice if getNextAvailablePoolPrice returns null (no single items)
+                        // Fallback to getCurrentPrice if method returns null
                         $currentPrice = $cartable->getCurrentPrice();
                     }
                     if ($from && $until) {
@@ -365,10 +365,9 @@ class Cart extends Model
         // Calculate price per day (base price)
         // For pool products, get price based on how many items are already in cart
         if ($cartable instanceof Product && $cartable->isPool()) {
-            // Use the quantity we calculated earlier for consistency
-            // Get price for the next available item
-            $pricePerDay = $cartable->getNextAvailablePoolPrice($currentQuantityInCart, null, $from, $until);
-            $regularPricePerDay = $cartable->getNextAvailablePoolPrice($currentQuantityInCart, false, $from, $until) ?? $pricePerDay;
+            // Use smarter pricing that considers which price tiers are used
+            $pricePerDay = $cartable->getNextAvailablePoolPriceConsideringCart($this, null, $from, $until);
+            $regularPricePerDay = $cartable->getNextAvailablePoolPriceConsideringCart($this, false, $from, $until) ?? $pricePerDay;
 
             // If no price found from pool items, try the pool's direct price as fallback
             if ($pricePerDay === null && $cartable->hasPrice()) {
@@ -439,11 +438,31 @@ class Cart extends Model
         int $quantity = 1,
         array $parameters = []
     ): CartItem|true {
-        $item = $this->items()
+        // If a CartItem is passed directly, handle it
+        if ($cartable instanceof CartItem) {
+            $item = $cartable;
+
+            if ($item->quantity > $quantity) {
+                // Decrease quantity
+                $newQuantity = $item->quantity - $quantity;
+                $item->update([
+                    'quantity' => $newQuantity,
+                    'subtotal' => $item->price * $newQuantity,
+                ]);
+            } else {
+                // Remove item from cart
+                $item->delete();
+            }
+
+            return $item;
+        }
+
+        // Otherwise, find the cart item by purchasable
+        $items = $this->items()
             ->where('purchasable_id', $cartable->getKey())
             ->where('purchasable_type', get_class($cartable))
             ->get()
-            ->first(function ($item) use ($parameters) {
+            ->filter(function ($item) use ($parameters) {
                 $existingParams = is_array($item->parameters)
                     ? $item->parameters
                     : (array) $item->parameters;
@@ -452,13 +471,21 @@ class Cart extends Model
                 return $existingParams === $parameters;
             });
 
+        if ($items->isEmpty()) {
+            return true;
+        }
+
+        // For pool products with multiple cart items at different prices,
+        // remove from the highest-priced item first (LIFO behavior)
+        $item = $items->sortByDesc('price')->first();
+
         if ($item) {
             if ($item->quantity > $quantity) {
                 // Decrease quantity
                 $newQuantity = $item->quantity - $quantity;
                 $item->update([
                     'quantity' => $newQuantity,
-                    'subtotal' => ($cartable->getCurrentPrice()) * $newQuantity,
+                    'subtotal' => $item->price * $newQuantity,
                 ]);
             } else {
                 // Remove item from cart

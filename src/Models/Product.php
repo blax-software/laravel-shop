@@ -394,13 +394,8 @@ class Product extends Model implements Purchasable, Cartable
             }
 
             if ($cart) {
-                // Cart-aware: Get price for next available item after what's in cart
-                $currentQuantityInCart = $cart->items()
-                    ->where('purchasable_id', $this->getKey())
-                    ->where('purchasable_type', get_class($this))
-                    ->sum('quantity');
-
-                return $this->getNextAvailablePoolPrice($currentQuantityInCart, $sales_price);
+                // Cart-aware: Use smarter pricing that considers which price tiers are used
+                return $this->getNextAvailablePoolPriceConsideringCart($cart, $sales_price);
             }
 
             // No cart and no user: Get inherited price based on strategy (lowest/highest/average of ALL available items)
