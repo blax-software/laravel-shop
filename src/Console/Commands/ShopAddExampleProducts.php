@@ -16,9 +16,9 @@ class ShopAddExampleProducts extends Command
 {
     protected $signature = 'shop:add-example-products 
                             {--clean : Remove existing example products first}
-                            {--count=2 : Number of products per type}';
+                            {--count=3 : Number of products per type}';
 
-    protected $description = 'Adds all possible example products to the shop for demonstration purposes.';
+    protected $description = 'Adds hotel-themed example products with realistic relationships and cross-sells.';
 
     /**
      * Available product types in the shop system
@@ -52,6 +52,8 @@ class ShopAddExampleProducts extends Command
 
     protected $faker;
     protected $categories = [];
+    protected $createdProducts = [];
+    protected $productTypeIndex = [];
 
     public function handle()
     {
@@ -61,7 +63,7 @@ class ShopAddExampleProducts extends Command
             $this->cleanExampleProducts();
         }
 
-        $this->info('Creating example products for Laravel Shop Package...');
+        $this->info('Creating hotel-themed example products...');
         $this->newLine();
 
         // Create categories first
@@ -70,6 +72,11 @@ class ShopAddExampleProducts extends Command
         $count = (int) $this->option('count');
         $totalCreated = 0;
 
+        // Initialize product type index
+        foreach (array_keys(self::PRODUCT_TYPES) as $type) {
+            $this->productTypeIndex[$type] = 0;
+        }
+
         foreach (self::PRODUCT_TYPES as $type => $details) {
             $this->line("<fg=cyan>Creating {$count} {$details['name']}(s)...</>");
 
@@ -77,13 +84,16 @@ class ShopAddExampleProducts extends Command
                 $product = $this->createProduct($type, $i);
                 $totalCreated++;
 
-                $this->line("  <fg=green>✓</> {$product->slug}");
+                $this->line("  <fg=green>✓</> {$product->name}");
             }
 
             $this->newLine();
         }
 
-        $this->info("✓ Successfully created {$totalCreated} example products!");
+        // Now add relationships (cross-sells, upsells)
+        $this->addProductRelationships();
+
+        $this->info("✓ Successfully created {$totalCreated} hotel example products!");
         $this->line("  - Products: {$totalCreated}");
         $this->line("  - Categories: " . count($this->categories));
         $this->newLine();
@@ -104,11 +114,12 @@ class ShopAddExampleProducts extends Command
     protected function createCategories(): void
     {
         $categoryNames = [
-            'Electronics' => 'Electronic devices and gadgets',
-            'Clothing' => 'Apparel and fashion items',
-            'Books' => 'Books and publications',
-            'Home & Garden' => 'Home improvement and garden supplies',
-            'Sports' => 'Sports equipment and accessories',
+            'Hotel Rooms' => 'Available room types and accommodations',
+            'Room Upgrades' => 'Premium room enhancements and services',
+            'Food & Beverage' => 'In-room dining and bar selections',
+            'Spa & Wellness' => 'Spa treatments and wellness packages',
+            'Parking & Transport' => 'Parking spaces and transportation services',
+            'Activities & Tours' => 'Local tours and activities',
         ];
 
         foreach ($categoryNames as $name => $description) {
@@ -129,246 +140,429 @@ class ShopAddExampleProducts extends Command
 
     protected function createProduct(string $type, int $index): Product
     {
-        $productName = $this->generateProductName($type);
-        $slug = 'example-' . \Illuminate\Support\Str::slug($productName) . '-' . $this->faker->unique()->numberBetween(1000, 9999);
+        $productData = $this->getProductDataByType($type, $index);
+        $productName = $productData['name'];
+        $slug = 'example-' . \Illuminate\Support\Str::slug($productName) . '-' . uniqid();
 
-        // Determine pricing and sale window for the product (prices managed via ProductPrice)
-        $baseUnitAmount = $this->faker->numberBetween(1000, 50000); // cents
-        $onSale = $this->faker->boolean(30); // 30% chance of being on sale
+        // Determine pricing
+        $baseUnitAmount = $productData['price'];
+        $onSale = $productData['on_sale'] ?? false;
         $saleStart = $onSale ? now()->subDays($this->faker->numberBetween(1, 30)) : null;
         $saleEnd = $onSale ? now()->addDays($this->faker->numberBetween(7, 60)) : null;
 
         $product = Product::create([
             'slug' => $slug,
             'name' => $productName,
-            'sku' => 'EX-' . strtoupper($this->faker->bothify('??-####')),
+            'sku' => $productData['sku'],
             'type' => ProductType::from($type),
-            'status' => $this->faker->randomElement([ProductStatus::PUBLISHED, ProductStatus::PUBLISHED, ProductStatus::PUBLISHED, ProductStatus::DRAFT]),
-            'is_visible' => true,
-            'featured' => $this->faker->boolean(20),
+            'status' => ProductStatus::PUBLISHED,
+            'is_visible' => $productData['visible'] ?? true,
+            'featured' => $productData['featured'] ?? false,
             'sale_start' => $saleStart,
             'sale_end' => $saleEnd,
-            'manage_stock' => $type !== ProductType::EXTERNAL->value,
-            'low_stock_threshold' => $type !== ProductType::EXTERNAL->value ? 5 : null,
-            'weight' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 0.1, 50),
-            'length' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 5, 100),
-            'width' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 5, 100),
-            'height' => $type === 'virtual' ? null : $this->faker->randomFloat(2, 5, 100),
-            'virtual' => $type === ProductType::VARIABLE->value ? $this->faker->boolean(20) : false,
-            'downloadable' => $type === ProductType::SIMPLE->value ? $this->faker->boolean(15) : false,
+            'manage_stock' => $productData['manage_stock'] ?? ($type !== ProductType::EXTERNAL->value),
+            'low_stock_threshold' => $productData['low_stock_threshold'] ?? 5,
+            'weight' => $productData['weight'] ?? null,
+            'length' => $productData['length'] ?? null,
+            'width' => $productData['width'] ?? null,
+            'height' => $productData['height'] ?? null,
+            'virtual' => $productData['virtual'] ?? false,
+            'downloadable' => $productData['downloadable'] ?? false,
             'published_at' => now(),
             'sort_order' => $this->faker->numberBetween(0, 100),
-            'tax_class' => $this->faker->randomElement(['standard', 'reduced', 'zero']),
+            'tax_class' => 'standard',
             'meta' => [
-                'description' => $this->faker->paragraph(3),
-                'short_description' => $this->faker->sentence(10),
+                'description' => $productData['description'],
+                'short_description' => $productData['short_description'],
                 'example' => true,
             ],
         ]);
 
-        // Set localized name
+        // Set localized name and descriptions
         $product->setLocalized('name', $productName, null, true);
+        $product->setLocalized('short_description', $productData['short_description'], null, true);
+        $product->setLocalized('description', $productData['description'], null, true);
 
-        // Add to random categories
-        $randomCategories = $this->faker->randomElements($this->categories, $this->faker->numberBetween(1, 3));
-        $product->categories()->attach(collect($randomCategories)->pluck('id'));
+        // Add to appropriate categories
+        $categoryNames = $productData['categories'] ?? [];
+        $matchingCategories = collect($this->categories)->filter(function ($cat) use ($categoryNames) {
+            return in_array($cat->name, $categoryNames);
+        });
+        if ($matchingCategories->isNotEmpty()) {
+            $product->categories()->attach($matchingCategories->pluck('id'));
+        }
 
-        // Add localized fields
-        $product->setLocalized('name', $productName, null, true);
-        $product->setLocalized('short_description', $product->meta->short_description ?? '', null, true);
-        $product->setLocalized('description', $product->meta->description ?? '', null, true);
-
-        // Create default price entry (prices are morph-related)
+        // Create default price
         $product->prices()->create([
             'name' => 'Default',
             'type' => 'one_time',
             'currency' => 'EUR',
             'unit_amount' => $baseUnitAmount,
-            'sale_unit_amount' => $onSale ? (int) round($baseUnitAmount * $this->faker->randomFloat(2, 0.6, 0.9)) : null,
+            'sale_unit_amount' => $onSale ? (int) round($baseUnitAmount * 0.85) : null,
             'is_default' => true,
             'active' => true,
             'billing_scheme' => 'per_unit',
             'meta' => ['example' => true],
         ]);
 
+        // Add stock if needed
+        if ($productData['stock'] ?? 0 > 0) {
+            $product->increaseStock($productData['stock']);
+        }
+
         // Add attributes
-        $this->addAttributes($product, $type);
-
-        // Add additional prices (multi-currency or subscription)
-        if ($type === ProductType::SIMPLE->value || $type === ProductType::VARIABLE->value) {
-            $this->addAdditionalPrices($product, $baseUnitAmount);
+        if (isset($productData['attributes'])) {
+            $this->addAttributesToProduct($product, $productData['attributes']);
         }
 
-        // Add example actions
-        $this->addExampleActions($product);
+        // Store for later relationship building
+        $this->createdProducts[$type][] = $product;
 
-        // For variable products, add variations
+        // Handle type-specific creation
         if ($type === ProductType::VARIABLE->value) {
-            $this->addVariations($product, $baseUnitAmount);
-        }
-
-        // For grouped products, add child products
-        if ($type === ProductType::GROUPED->value) {
-            $this->addGroupedProducts($product);
-        }
-
-        // Special example: Booking product that includes a parking pool
-        // Create a demonstrative Hotel Room booking with 3 parking plots
-        if ($type === ProductType::BOOKING->value) {
-            try {
-                // Ensure this booking example is clearly named
-                $product->update(["name" => "Hotel Room"]);
-
-                // Ensure booking has stock (required for bookings)
-                $product->update(['manage_stock' => true]);
-                $product->increaseStock(1);
-
-                // Create a parking pool
-                $parkingPool = Product::create([
-                    'slug' => 'example-parkings-pool-' . $this->faker->unique()->numberBetween(1000, 9999),
-                    'name' => 'Parkings',
-                    'sku' => 'EX-PARK-' . strtoupper($this->faker->bothify('??-###')),
-                    'type' => ProductType::POOL,
-                    'status' => ProductStatus::PUBLISHED,
-                    'is_visible' => true,
-                    'manage_stock' => true,
-                    'published_at' => now(),
-                    'meta' => ['example' => true],
-                ]);
-
-                // Add a default pool price (optional)
-                $parkingPool->prices()->create([
-                    'name' => 'Default',
-                    'type' => 'one_time',
-                    'currency' => 'EUR',
-                    'unit_amount' => 3000, // €30 per booking/day for example
-                    'is_default' => true,
-                    'active' => true,
-                    'billing_scheme' => 'per_unit',
-                    'meta' => ['example' => true],
-                ]);
-
-                // Create 3 parking plots as booking single items and attach to pool
-                $parkingIds = [];
-                for ($p = 1; $p <= 3; $p++) {
-                    $parking = Product::create([
-                        'slug' => 'example-parking-plot-' . $p . '-' . $this->faker->unique()->numberBetween(1000, 9999),
-                        'name' => 'Parking Plot ' . $p,
-                        'sku' => 'EX-PP-' . strtoupper($this->faker->bothify('??-###')),
-                        'type' => ProductType::BOOKING,
-                        'status' => ProductStatus::PUBLISHED,
-                        'is_visible' => false,
-                        'manage_stock' => true,
-                        'published_at' => now(),
-                        'meta' => ['example' => true, 'parking_plot' => true],
-                    ]);
-
-                    // Give each parking one unit of stock so it can be claimed
-                    $parking->increaseStock(1);
-
-                    // Give each parking a price
-                    $parking->prices()->create([
-                        'name' => 'Default',
-                        'type' => 'one_time',
-                        'currency' => 'EUR',
-                        'unit_amount' => 1000 + ($p - 1) * 200, // €10, €12, €14
-                        'is_default' => true,
-                        'active' => true,
-                        'billing_scheme' => 'per_unit',
-                        'meta' => ['example' => true],
-                    ]);
-
-                    $parkingIds[] = $parking->id;
-                }
-
-                // Attach parking plots as single items to the parking pool (also creates reverse POOL relation)
-                $parkingPool->attachSingleItems($parkingIds);
-
-                // Link the parking pool to the booking as an add-on
-                $product->productRelations()->attach($parkingPool->id, ['type' => ProductRelationType::ADD_ON->value]);
-            } catch (\Throwable $e) {
-                $this->warn('Failed to create booking+parking example: ' . $e->getMessage());
+            $this->addVariationsForHotel($product, $productData, $baseUnitAmount);
+        } elseif ($type === ProductType::GROUPED->value) {
+            $this->addGroupedProductsForHotel($product, $productData);
+        } elseif ($type === ProductType::POOL->value) {
+            $this->addPoolItemsForHotel($product, $productData);
+        } elseif ($type === ProductType::BOOKING->value) {
+            // Bookings need stock to be bookable
+            if ($product->stock_quantity === 0) {
+                $product->increaseStock($productData['stock'] ?? 10);
             }
         }
 
         return $product;
     }
 
-    protected function generateProductName(string $type): string
+    protected function getProductDataByType(string $type, int $index): array
     {
-        $names = [
-            'simple' => [
-                'Premium Wireless Headphones',
-                'Organic Cotton T-Shirt',
-                'Stainless Steel Water Bottle',
-                'Leather Wallet',
-                'Bamboo Cutting Board',
-                'Yoga Mat Pro',
-                'Coffee Mug Set',
-                'Digital Course: Web Development',
-            ],
-            'variable' => [
-                'Classic Running Shoes',
-                'Designer Hoodie',
-                'Smart Watch Ultra',
-                'Backpack Collection',
-                'Sunglasses Elite',
-                'Fitness Tracker Band',
-            ],
-            'grouped' => [
-                'Home Office Starter Kit',
-                'Camping Essentials Bundle',
-                'Kitchen Utensil Set',
-                'Travel Accessories Pack',
-                'Gaming Setup Bundle',
-            ],
-            'external' => [
-                'External Brand Laptop',
-                'Partner Store Gift Card',
-                'Affiliate Product Link',
-                'Third-Party Service',
-            ],
-        ];
-
-        return $this->faker->randomElement($names[$type] ?? $names['simple']);
-    }
-
-    protected function addAttributes(Product $product, string $type): void
-    {
-        $attributes = [];
+        $data = [];
 
         switch ($type) {
-            case 'simple':
-                $attributes = [
-                    ['name' => 'Material', 'value' => $this->faker->randomElement(['Cotton', 'Polyester', 'Leather', 'Metal', 'Plastic', 'Wood'])],
-                    ['name' => 'Brand', 'value' => $this->faker->company()],
-                    ['name' => 'Country of Origin', 'value' => $this->faker->country()],
+            case ProductType::SIMPLE->value:
+                $simpleProducts = [
+                    [
+                        'name' => 'Premium Wine Bottle - Château Margaux',
+                        'sku' => 'WINE-001',
+                        'price' => 15000, // €150
+                        'description' => 'Exceptional French Bordeaux wine from the renowned Château Margaux estate. Perfect complement to your stay.',
+                        'short_description' => 'Premium French Bordeaux wine',
+                        'categories' => ['Food & Beverage'],
+                        'attributes' => [
+                            ['name' => 'Type', 'value' => 'Red Wine'],
+                            ['name' => 'Region', 'value' => 'Bordeaux, France'],
+                            ['name' => 'Vintage', 'value' => '2015'],
+                            ['name' => 'Volume', 'value' => '750ml'],
+                        ],
+                        'stock' => 12,
+                        'featured' => true,
+                    ],
+                    [
+                        'name' => 'Single Malt Whiskey - Lagavulin 16',
+                        'sku' => 'WHISK-002',
+                        'price' => 12000, // €120
+                        'description' => 'Award-winning Islay single malt whiskey with rich, peaty flavors. Delivered to your room with complimentary glassware.',
+                        'short_description' => 'Premium Islay single malt whiskey',
+                        'categories' => ['Food & Beverage'],
+                        'attributes' => [
+                            ['name' => 'Type', 'value' => 'Single Malt Whiskey'],
+                            ['name' => 'Region', 'value' => 'Islay, Scotland'],
+                            ['name' => 'Age', 'value' => '16 Years'],
+                            ['name' => 'Volume', 'value' => '700ml'],
+                        ],
+                        'stock' => 8,
+                    ],
+                    [
+                        'name' => 'Champagne - Dom Pérignon',
+                        'sku' => 'CHAMP-003',
+                        'price' => 25000, // €250
+                        'description' => 'Luxury champagne from the prestigious Dom Pérignon house. Celebrate your special occasion in style.',
+                        'short_description' => 'Luxury vintage champagne',
+                        'categories' => ['Food & Beverage'],
+                        'attributes' => [
+                            ['name' => 'Type', 'value' => 'Champagne'],
+                            ['name' => 'Region', 'value' => 'Épernay, France'],
+                            ['name' => 'Vintage', 'value' => '2012'],
+                            ['name' => 'Volume', 'value' => '750ml'],
+                        ],
+                        'stock' => 6,
+                        'featured' => true,
+                        'on_sale' => true,
+                    ],
                 ];
+                $data = $simpleProducts[$index - 1] ?? $simpleProducts[0];
                 break;
 
-            case 'variable':
-                $attributes = [
-                    ['name' => 'Size', 'value' => $this->faker->randomElement(['S, M, L, XL', 'One Size', '6-12'])],
-                    ['name' => 'Color', 'value' => $this->faker->randomElement(['Red, Blue, Green', 'Black, White', 'Multi-Color'])],
-                    ['name' => 'Material', 'value' => $this->faker->randomElement(['Cotton', 'Polyester', 'Blend'])],
+            case ProductType::VARIABLE->value:
+                $variableProducts = [
+                    [
+                        'name' => 'In-Room Breakfast Service',
+                        'sku' => 'BREAK-001',
+                        'price' => 2500, // €25 base
+                        'description' => 'Start your day with a delicious breakfast delivered to your room. Choose from Continental, American, or Full English breakfast options.',
+                        'short_description' => 'Breakfast delivered to your room',
+                        'categories' => ['Food & Beverage'],
+                        'variations' => ['Continental', 'American', 'Full English'],
+                        'variation_prices' => [2500, 3200, 3800],
+                        'attributes' => [
+                            ['name' => 'Service Time', 'value' => '7:00 AM - 11:00 AM'],
+                            ['name' => 'Delivery', 'value' => 'Room Service'],
+                        ],
+                    ],
+                    [
+                        'name' => 'Spa Treatment Package',
+                        'sku' => 'SPA-001',
+                        'price' => 8000, // €80 base
+                        'description' => 'Relax and rejuvenate with our professional spa treatments. Available in 60, 90, or 120-minute sessions.',
+                        'short_description' => 'Professional spa and massage treatments',
+                        'categories' => ['Spa & Wellness'],
+                        'variations' => ['60 Minutes', '90 Minutes', '120 Minutes'],
+                        'variation_prices' => [8000, 11000, 14000],
+                        'attributes' => [
+                            ['name' => 'Location', 'value' => 'Hotel Spa - 2nd Floor'],
+                            ['name' => 'Booking Required', 'value' => 'Yes'],
+                        ],
+                    ],
+                    [
+                        'name' => 'Airport Transfer Service',
+                        'sku' => 'TRANS-001',
+                        'price' => 4500, // €45 base
+                        'description' => 'Convenient airport transfer service with professional drivers. Choose your vehicle type for comfort.',
+                        'short_description' => 'Professional airport transfer',
+                        'categories' => ['Parking & Transport'],
+                        'variations' => ['Standard Sedan', 'Luxury Sedan', 'SUV'],
+                        'variation_prices' => [4500, 7500, 9500],
+                        'attributes' => [
+                            ['name' => 'Notice Required', 'value' => '24 hours'],
+                            ['name' => 'Distance', 'value' => 'Up to 50km'],
+                        ],
+                    ],
                 ];
+                $data = $variableProducts[$index - 1] ?? $variableProducts[0];
                 break;
 
-            case 'grouped':
-                $attributes = [
-                    ['name' => 'Items Included', 'value' => $this->faker->numberBetween(3, 10) . ' pieces'],
-                    ['name' => 'Bundle Type', 'value' => 'Curated Collection'],
+            case ProductType::GROUPED->value:
+                $groupedProducts = [
+                    [
+                        'name' => 'Romantic Package',
+                        'sku' => 'PKG-ROM-001',
+                        'price' => 0, // Calculated from children
+                        'description' => 'Complete romantic experience including champagne, chocolate-covered strawberries, rose petals, and spa voucher.',
+                        'short_description' => 'Complete romantic experience package',
+                        'categories' => ['Room Upgrades'],
+                        'manage_stock' => false,
+                        'grouped_items' => [
+                            ['name' => 'Champagne Bottle', 'price' => 8000, 'sku' => 'ROM-CHAMP'],
+                            ['name' => 'Chocolate Strawberries', 'price' => 3500, 'sku' => 'ROM-STRAW'],
+                            ['name' => 'Rose Petal Decoration', 'price' => 4000, 'sku' => 'ROM-ROSE'],
+                            ['name' => 'Spa Voucher (€50)', 'price' => 5000, 'sku' => 'ROM-SPA'],
+                        ],
+                    ],
+                    [
+                        'name' => 'Business Traveler Package',
+                        'sku' => 'PKG-BIZ-001',
+                        'price' => 0,
+                        'description' => 'Everything a business traveler needs: high-speed WiFi upgrade, printing credits, meeting room hour, and premium coffee.',
+                        'short_description' => 'Essential business traveler amenities',
+                        'categories' => ['Room Upgrades'],
+                        'manage_stock' => false,
+                        'grouped_items' => [
+                            ['name' => 'Premium WiFi (100Mbps)', 'price' => 1500, 'sku' => 'BIZ-WIFI'],
+                            ['name' => 'Printing Credits (50 pages)', 'price' => 1000, 'sku' => 'BIZ-PRINT'],
+                            ['name' => 'Meeting Room (1 hour)', 'price' => 5000, 'sku' => 'BIZ-MEET'],
+                            ['name' => 'Premium Coffee Service', 'price' => 2000, 'sku' => 'BIZ-COFFEE'],
+                        ],
+                    ],
+                    [
+                        'name' => 'Family Fun Package',
+                        'sku' => 'PKG-FAM-001',
+                        'price' => 0,
+                        'description' => 'Family-friendly package with kids activities, snacks, games, and access to family entertainment.',
+                        'short_description' => 'Complete family entertainment package',
+                        'categories' => ['Room Upgrades'],
+                        'manage_stock' => false,
+                        'grouped_items' => [
+                            ['name' => 'Kids Activity Book Set', 'price' => 1500, 'sku' => 'FAM-BOOK'],
+                            ['name' => 'Snack Box', 'price' => 2500, 'sku' => 'FAM-SNACK'],
+                            ['name' => 'Board Games Collection', 'price' => 3000, 'sku' => 'FAM-GAMES'],
+                            ['name' => 'Pool & Playroom Access', 'price' => 4000, 'sku' => 'FAM-ACCESS'],
+                        ],
+                    ],
                 ];
+                $data = $groupedProducts[$index - 1] ?? $groupedProducts[0];
                 break;
 
-            case 'external':
-                $attributes = [
-                    ['name' => 'External URL', 'value' => 'https://example.com/product'],
-                    ['name' => 'Affiliate Link', 'value' => 'Yes'],
+            case ProductType::EXTERNAL->value:
+                $externalProducts = [
+                    [
+                        'name' => 'City Tour Bus Tickets',
+                        'sku' => 'EXT-TOUR-001',
+                        'price' => 3500, // €35
+                        'description' => 'Hop-on hop-off city tour tickets. Book through our partner for the best rates. External booking required.',
+                        'short_description' => 'Hop-on hop-off city tour',
+                        'categories' => ['Activities & Tours'],
+                        'manage_stock' => false,
+                        'attributes' => [
+                            ['name' => 'External URL', 'value' => 'https://citytours.example.com'],
+                            ['name' => 'Duration', 'value' => '24 hours unlimited'],
+                            ['name' => 'Provider', 'value' => 'City Tours Inc.'],
+                        ],
+                    ],
+                    [
+                        'name' => 'Museum Pass (3-Day)',
+                        'sku' => 'EXT-MUS-001',
+                        'price' => 4500, // €45
+                        'description' => 'Access to all major museums for 3 days. Purchase through official museum portal with our special hotel rate.',
+                        'short_description' => '3-day all-museum access pass',
+                        'categories' => ['Activities & Tours'],
+                        'manage_stock' => false,
+                        'attributes' => [
+                            ['name' => 'External URL', 'value' => 'https://museumpass.example.com'],
+                            ['name' => 'Validity', 'value' => '3 consecutive days'],
+                            ['name' => 'Museums Included', 'value' => '15+ venues'],
+                        ],
+                    ],
+                    [
+                        'name' => 'Theater Show Tickets',
+                        'sku' => 'EXT-SHOW-001',
+                        'price' => 8500, // €85
+                        'description' => 'Premium theater show tickets for the best productions in town. Booked via our entertainment partner.',
+                        'short_description' => 'Premium theater tickets',
+                        'categories' => ['Activities & Tours'],
+                        'manage_stock' => false,
+                        'attributes' => [
+                            ['name' => 'External URL', 'value' => 'https://theater.example.com'],
+                            ['name' => 'Seating', 'value' => 'Premium seats'],
+                            ['name' => 'Provider', 'value' => 'City Theater Box Office'],
+                        ],
+                    ],
                 ];
+                $data = $externalProducts[$index - 1] ?? $externalProducts[0];
+                break;
+
+            case ProductType::BOOKING->value:
+                $bookingProducts = [
+                    [
+                        'name' => 'Standard Double Room',
+                        'sku' => 'ROOM-STD-001',
+                        'price' => 12000, // €120/night
+                        'description' => 'Comfortable double room with modern amenities, city view, private bathroom, and complimentary WiFi. Perfect for couples or solo travelers.',
+                        'short_description' => 'Comfortable double room with city view',
+                        'categories' => ['Hotel Rooms'],
+                        'stock' => 15,
+                        'manage_stock' => true,
+                        'featured' => true,
+                        'attributes' => [
+                            ['name' => 'Bed Type', 'value' => 'Queen Bed'],
+                            ['name' => 'Room Size', 'value' => '25 m²'],
+                            ['name' => 'View', 'value' => 'City View'],
+                            ['name' => 'Max Guests', 'value' => '2'],
+                        ],
+                    ],
+                    [
+                        'name' => 'Deluxe Suite',
+                        'sku' => 'ROOM-DLX-001',
+                        'price' => 22000, // €220/night
+                        'description' => 'Spacious suite with separate living area, king bed, luxurious bathroom with jacuzzi, and panoramic city views. Includes access to executive lounge.',
+                        'short_description' => 'Luxury suite with panoramic views',
+                        'categories' => ['Hotel Rooms'],
+                        'stock' => 8,
+                        'manage_stock' => true,
+                        'featured' => true,
+                        'attributes' => [
+                            ['name' => 'Bed Type', 'value' => 'King Bed'],
+                            ['name' => 'Room Size', 'value' => '45 m²'],
+                            ['name' => 'View', 'value' => 'Panoramic City View'],
+                            ['name' => 'Max Guests', 'value' => '2-3'],
+                            ['name' => 'Special Features', 'value' => 'Jacuzzi, Executive Lounge Access'],
+                        ],
+                    ],
+                    [
+                        'name' => 'Presidential Suite',
+                        'sku' => 'ROOM-PRES-001',
+                        'price' => 45000, // €450/night
+                        'description' => 'Ultimate luxury accommodation with 2 bedrooms, private terrace, premium butler service, and exclusive amenities. The pinnacle of comfort and elegance.',
+                        'short_description' => 'Ultimate luxury presidential suite',
+                        'categories' => ['Hotel Rooms'],
+                        'stock' => 2,
+                        'manage_stock' => true,
+                        'featured' => true,
+                        'attributes' => [
+                            ['name' => 'Bedrooms', 'value' => '2 (King + Queen)'],
+                            ['name' => 'Room Size', 'value' => '120 m²'],
+                            ['name' => 'View', 'value' => '360° City View + Terrace'],
+                            ['name' => 'Max Guests', 'value' => '4-6'],
+                            ['name' => 'Special Features', 'value' => 'Butler Service, Private Terrace, Premium Bar'],
+                        ],
+                    ],
+                ];
+                $data = $bookingProducts[$index - 1] ?? $bookingProducts[0];
+                break;
+
+            case ProductType::POOL->value:
+                $poolProducts = [
+                    [
+                        'name' => 'Parking Spaces - North Garage',
+                        'sku' => 'PARK-NORTH-POOL',
+                        'price' => 2500, // €25/day base
+                        'description' => 'Secure covered parking in our North Garage. Multiple spots available with 24/7 surveillance and easy hotel access.',
+                        'short_description' => 'Secure North Garage parking',
+                        'categories' => ['Parking & Transport'],
+                        'visible' => true,
+                        'manage_stock' => true,
+                        'pool_items' => [
+                            ['name' => 'Spot A3', 'stock' => 1, 'price' => 2500],
+                            ['name' => 'Spot A7', 'stock' => 1, 'price' => 2500],
+                            ['name' => 'Spot B12', 'stock' => 1, 'price' => 2800],
+                            ['name' => 'Spot C5', 'stock' => 1, 'price' => 2800],
+                            ['name' => 'Spot D9', 'stock' => 1, 'price' => 3000],
+                        ],
+                    ],
+                    [
+                        'name' => 'Parking Spaces - South Area',
+                        'sku' => 'PARK-SOUTH-POOL',
+                        'price' => 2000, // €20/day base
+                        'description' => 'Open-air parking in our South Area. Well-lit and monitored spaces near the main entrance.',
+                        'short_description' => 'Outdoor South Area parking',
+                        'categories' => ['Parking & Transport'],
+                        'visible' => true,
+                        'manage_stock' => true,
+                        'pool_items' => [
+                            ['name' => 'South Area Zone 1', 'stock' => 5, 'price' => 2000],
+                            ['name' => 'South Area Zone 2', 'stock' => 5, 'price' => 2000],
+                            ['name' => 'South Area Zone 3', 'stock' => 5, 'price' => 1800],
+                        ],
+                    ],
+                    [
+                        'name' => 'VIP Parking Spaces - Underground',
+                        'sku' => 'PARK-VIP-POOL',
+                        'price' => 4000, // €40/day base
+                        'description' => 'Premium underground parking with direct elevator access to hotel lobby. Reserved for suite guests and VIP members.',
+                        'short_description' => 'Premium underground VIP parking',
+                        'categories' => ['Parking & Transport'],
+                        'visible' => true,
+                        'manage_stock' => true,
+                        'featured' => true,
+                        'pool_items' => [
+                            ['name' => 'VIP-1', 'stock' => 1, 'price' => 5000],
+                            ['name' => 'VIP-2', 'stock' => 1, 'price' => 5000],
+                            ['name' => 'VIP-3', 'stock' => 1, 'price' => 4500],
+                            ['name' => 'VIP-4', 'stock' => 1, 'price' => 4500],
+                            ['name' => 'Executive E1', 'stock' => 1, 'price' => 4000],
+                            ['name' => 'Executive E2', 'stock' => 1, 'price' => 4000],
+                        ],
+                    ],
+                ];
+                $data = $poolProducts[$index - 1] ?? $poolProducts[0];
                 break;
         }
 
+        return $data;
+    }
+
+    protected function addAttributesToProduct(Product $product, array $attributes): void
+    {
         foreach ($attributes as $index => $attr) {
             ProductAttribute::create([
                 'product_id' => $product->id,
@@ -380,88 +574,19 @@ class ShopAddExampleProducts extends Command
         }
     }
 
-    protected function addAdditionalPrices(Product $product, int $baseUnitAmount): void
+    protected function addVariationsForHotel(Product $product, array $productData, int $basePrice): void
     {
-        // Add a subscription price option
-        if ($this->faker->boolean(30)) {
-            $product->prices()->create([
-                'active' => true,
-                'name' => 'Monthly Subscription',
-                'type' => 'recurring',
-                'unit_amount' => (int) round($baseUnitAmount * 0.3), // ~30% monthly
-                'billing_scheme' => 'per_unit',
-                'interval' => 'month',
-                'interval_count' => 1,
-                'trial_period_days' => $this->faker->randomElement([0, 7, 14, 30]),
-                'currency' => 'EUR',
-                'is_default' => false,
-                'meta' => ['example' => true],
-            ]);
+        if (!isset($productData['variations'])) {
+            return;
         }
 
-        // Add USD price variant
-        if ($this->faker->boolean(40)) {
-            $product->prices()->create([
-                'active' => true,
-                'name' => 'USD Price',
-                'type' => 'one_time',
-                'unit_amount' => (int) round($baseUnitAmount * 1.08), // approx conversion
-                'billing_scheme' => 'per_unit',
-                'currency' => 'USD',
-                'is_default' => false,
-                'meta' => ['example' => true],
-            ]);
-        }
-    }
-
-    protected function addExampleActions(Product $product): void
-    {
-        $namespace = config('shop.actions.namespace', 'App\\Jobs\\ProductAction');
-        $actions = [
-            [
-                'events' => ['purchased'],
-                'class' => $namespace . '\\SendThankYouEmail',
-                'method' => null,
-                'parameters' => ['template' => 'thank-you', 'delay' => 0],
-                'defer' => true,
-            ],
-            [
-                'events' => ['purchased'],
-                'class' => $namespace . '\\UpdateCustomerStats',
-                'method' => null,
-                'parameters' => ['increment' => 'total_purchases'],
-                'defer' => true,
-            ],
-            [
-                'events' => ['low_stock'],
-                'class' => $namespace . '\\NotifyAdmin',
-                'method' => null,
-                'parameters' => ['threshold' => 5],
-                'defer' => true,
-            ],
-        ];
-
-        foreach ($actions as $index => $actionData) {
-            $product->actions()->create([
-                'events' => $actionData['events'],
-                'class' => $actionData['class'],
-                'method' => $actionData['method'],
-                'parameters' => $actionData['parameters'],
-                'defer' => $actionData['defer'],
-                'active' => $this->faker->boolean(70),
-                'sort_order' => $index,
-            ]);
-        }
-    }
-
-    protected function addVariations(Product $product, int $baseUnitAmount): void
-    {
-        $variations = ['Small', 'Medium', 'Large'];
+        $variations = $productData['variations'];
+        $prices = $productData['variation_prices'] ?? [];
 
         foreach ($variations as $index => $variation) {
             $variationProduct = Product::create([
                 'slug' => $product->slug . '-' . \Illuminate\Support\Str::slug($variation),
-                'sku' => $product->sku . '-' . strtoupper(substr($variation, 0, 1)),
+                'sku' => $product->sku . '-' . strtoupper(substr($variation, 0, 3)),
                 'type' => 'simple',
                 'parent_id' => $product->id,
                 'status' => 'published',
@@ -473,8 +598,7 @@ class ShopAddExampleProducts extends Command
 
             $variationProduct->setLocalized('name', ($product->getLocalized('name') ?: 'Product') . ' - ' . $variation, null, true);
 
-            // Create a slightly adjusted default price for the variation
-            $variationAmount = $baseUnitAmount + ($index * 500); // +5.00 per size
+            $variationAmount = $prices[$index] ?? ($basePrice + ($index * 500));
             $variationProduct->prices()->create([
                 'name' => 'Default',
                 'type' => 'one_time',
@@ -488,7 +612,7 @@ class ShopAddExampleProducts extends Command
 
             ProductAttribute::create([
                 'product_id' => $variationProduct->id,
-                'key' => 'Size',
+                'key' => 'Option',
                 'value' => $variation,
                 'sort_order' => 0,
                 'meta' => null,
@@ -496,14 +620,16 @@ class ShopAddExampleProducts extends Command
         }
     }
 
-    protected function addGroupedProducts(Product $product): void
+    protected function addGroupedProductsForHotel(Product $product, array $productData): void
     {
-        $groupSize = $this->faker->numberBetween(2, 4);
+        if (!isset($productData['grouped_items'])) {
+            return;
+        }
 
-        for ($i = 0; $i < $groupSize; $i++) {
+        foreach ($productData['grouped_items'] as $i => $item) {
             $childProduct = Product::create([
                 'slug' => $product->slug . '-item-' . ($i + 1),
-                'sku' => $product->sku . '-' . ($i + 1),
+                'sku' => $item['sku'],
                 'type' => 'simple',
                 'parent_id' => $product->id,
                 'status' => 'published',
@@ -513,20 +639,121 @@ class ShopAddExampleProducts extends Command
                 'meta' => ['grouped_item' => true, 'example' => true],
             ]);
 
-            $childProduct->setLocalized('name', $this->faker->words(3, true), null, true);
+            $childProduct->setLocalized('name', $item['name'], null, true);
 
-            // Create a standalone default price for the child item
-            $childAmount = $this->faker->numberBetween(1000, 10000);
             $childProduct->prices()->create([
                 'name' => 'Default',
                 'type' => 'one_time',
                 'currency' => 'EUR',
-                'unit_amount' => $childAmount,
+                'unit_amount' => $item['price'],
                 'is_default' => true,
                 'active' => true,
                 'billing_scheme' => 'per_unit',
                 'meta' => ['example' => true, 'grouped_item' => true],
             ]);
         }
+    }
+
+    protected function addPoolItemsForHotel(Product $pool, array $productData): void
+    {
+        if (!isset($productData['pool_items'])) {
+            return;
+        }
+
+        $parkingIds = [];
+        foreach ($productData['pool_items'] as $i => $item) {
+            $parking = Product::create([
+                'slug' => $pool->slug . '-' . \Illuminate\Support\Str::slug($item['name']),
+                'name' => $item['name'],
+                'sku' => $pool->sku . '-' . str_pad($i + 1, 2, '0', STR_PAD_LEFT),
+                'type' => ProductType::BOOKING,
+                'status' => ProductStatus::PUBLISHED,
+                'is_visible' => false,
+                'manage_stock' => true,
+                'parent_id' => $pool->id, // Set pool as parent so it's not counted as a parent product
+                'published_at' => now(),
+                'meta' => ['example' => true, 'pool_item' => true, 'parent_pool' => $pool->name],
+            ]);
+
+            // Set stock for the parking spot
+            $parking->increaseStock($item['stock']);
+
+            // Create price for individual parking spot
+            $parking->prices()->create([
+                'name' => 'Default',
+                'type' => 'one_time',
+                'currency' => 'EUR',
+                'unit_amount' => $item['price'],
+                'is_default' => true,
+                'active' => true,
+                'billing_scheme' => 'per_unit',
+                'meta' => ['example' => true],
+            ]);
+
+            $parkingIds[] = $parking->id;
+        }
+
+        // Attach all parking spots to the pool
+        $pool->attachSingleItems($parkingIds);
+    }
+
+    protected function addProductRelationships(): void
+    {
+        $this->info('Adding product relationships (cross-sells, upsells)...');
+
+        // Get rooms
+        $rooms = $this->createdProducts[ProductType::BOOKING->value] ?? [];
+        
+        // Get simple products (beverages)
+        $beverages = $this->createdProducts[ProductType::SIMPLE->value] ?? [];
+        
+        // Get parking pools
+        $parkingPools = $this->createdProducts[ProductType::POOL->value] ?? [];
+
+        // Add cross-sells to each room (beverages and parking)
+        foreach ($rooms as $room) {
+            // Add all beverages as cross-sell
+            foreach ($beverages as $beverage) {
+                // Use syncWithoutDetaching to avoid duplicate constraint violations
+                $room->productRelations()->syncWithoutDetaching([
+                    $beverage->id => ['type' => ProductRelationType::CROSS_SELL->value]
+                ]);
+            }
+
+            // Add all parking pools as cross-sell
+            foreach ($parkingPools as $parking) {
+                $room->productRelations()->syncWithoutDetaching([
+                    $parking->id => ['type' => ProductRelationType::CROSS_SELL->value]
+                ]);
+            }
+        }
+
+        // Add upsells: Standard -> Deluxe -> Presidential
+        if (count($rooms) >= 2) {
+            // Standard room can upsell to Deluxe
+            $rooms[0]->productRelations()->syncWithoutDetaching([
+                $rooms[1]->id => ['type' => ProductRelationType::UPSELL->value]
+            ]);
+            
+            if (count($rooms) >= 3) {
+                // Standard can also upsell to Presidential
+                $rooms[0]->productRelations()->syncWithoutDetaching([
+                    $rooms[2]->id => ['type' => ProductRelationType::UPSELL->value]
+                ]);
+                
+                // Deluxe can upsell to Presidential
+                $rooms[1]->productRelations()->syncWithoutDetaching([
+                    $rooms[2]->id => ['type' => ProductRelationType::UPSELL->value]
+                ]);
+            }
+        }
+
+        $this->line('  <fg=green>✓</> Cross-sells and upsells added');
+    }
+
+    protected function generateProductName(string $type): string
+    {
+        // This method is deprecated - kept for compatibility
+        return 'Example Product';
     }
 }

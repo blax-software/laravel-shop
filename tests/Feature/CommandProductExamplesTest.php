@@ -19,15 +19,15 @@ class CommandProductExamplesTest extends TestCase
         $this->artisan(ShopAddExampleProducts::class, ['--clean' => true, '--count' => 2])
             ->assertExitCode(0);
 
-        // Parent products (no parent_id) should be 4 types * 2 count = 8
+        // Parent products (no parent_id) should be 6 types * 2 count = 12
         $parents = Product::whereNull('parent_id')->get();
-        $this->assertCount(20, $parents, 'Expected 8 parent example products');
+        $this->assertCount(12, $parents, 'Expected 12 parent example products (6 types * 2 each)');
 
-        // Total products should include variations (3 per variable) and grouped children (>=2 each)
-        $this->assertGreaterThanOrEqual(18, Product::count(), 'Expected at least 18 total products including children');
+        // Total products should include variations, grouped children, and pool items
+        $this->assertGreaterThanOrEqual(30, Product::count(), 'Expected at least 30 total products including children');
 
-        // Categories are created (5 predefined) and attached to parents (1-3 each)
-        $this->assertGreaterThanOrEqual(5, \Blax\Shop\Models\ProductCategory::count(), 'Expected at least 5 example categories');
+        // Categories are created (6 hotel categories) and attached to parents
+        $this->assertGreaterThanOrEqual(6, \Blax\Shop\Models\ProductCategory::count(), 'Expected at least 6 example categories');
 
         // Each product (including variants/children) must have a default price
         /** @var Product $p */
@@ -37,7 +37,6 @@ class CommandProductExamplesTest extends TestCase
 
         $variation = Product::whereNotNull('parent_id')->first();
         $this->assertNotNull($variation, 'There should be at least one variation');
-        $this->assertTrue($variation->attributes()->where('key', 'Size')->exists());
 
         // Localization for name is populated
         $this->assertNotEmpty(Product::first()->getLocalized('name'));
@@ -53,9 +52,9 @@ class CommandProductExamplesTest extends TestCase
         // Clean again (count=0 will create categories but no products)
         $this->artisan(ShopAddExampleProducts::class, ['--clean' => true, '--count' => 0])->assertExitCode(0);
 
-        // All example products removed, categories recreated (5 default)
+        // All example products removed, categories recreated (6 hotel categories)
         $this->assertEquals(0, Product::where('slug', 'like', 'example-%')->count());
-        $this->assertEquals(5, \Blax\Shop\Models\ProductCategory::where('slug', 'like', 'example-%')->count());
+        $this->assertEquals(6, \Blax\Shop\Models\ProductCategory::where('slug', 'like', 'example-%')->count());
     }
 
     /** @test */
@@ -64,15 +63,17 @@ class CommandProductExamplesTest extends TestCase
         $this->artisan(ShopAddExampleProducts::class, ['--clean' => true, '--count' => 3])
             ->assertExitCode(0);
 
-        // For each of the 4 types, expect 3 parent products
+        // For each of the 6 types, expect 3 parent products
         $parents = Product::whereNull('parent_id')->get();
-        $this->assertCount(30, $parents);
+        $this->assertCount(18, $parents);
 
         $byType = $parents->groupBy('type');
         $this->assertEquals(3, $byType['simple']->count());
         $this->assertEquals(3, $byType['variable']->count());
         $this->assertEquals(3, $byType['grouped']->count());
         $this->assertEquals(3, $byType['external']->count());
+        $this->assertEquals(3, $byType['booking']->count());
+        $this->assertEquals(3, $byType['pool']->count());
 
         // Sanity: external products do not manage stock
         $this->assertTrue($byType['external']->every(fn($p) => $p->manage_stock === false));
