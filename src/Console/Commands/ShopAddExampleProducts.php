@@ -8,6 +8,7 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductAction;
 use Blax\Shop\Models\ProductAttribute;
 use Blax\Shop\Models\ProductCategory;
+use Blax\Shop\Enums\ProductRelationType;
 use Illuminate\Console\Command;
 use Faker\Factory as Faker;
 
@@ -23,21 +24,29 @@ class ShopAddExampleProducts extends Command
      * Available product types in the shop system
      */
     const PRODUCT_TYPES = [
-        'simple' => [
+        ProductType::SIMPLE->value => [
             'name' => 'Simple Product',
             'description' => 'A standalone product with no variations (e.g., a book, a service)',
         ],
-        'variable' => [
+        ProductType::VARIABLE->value => [
             'name' => 'Variable Product',
             'description' => 'A product with variations/options (e.g., a t-shirt with different sizes and colors)',
         ],
-        'grouped' => [
+        ProductType::GROUPED->value => [
             'name' => 'Grouped Product',
             'description' => 'A collection of related products sold together (e.g., a product bundle)',
         ],
-        'external' => [
+        ProductType::EXTERNAL->value => [
             'name' => 'External Product',
             'description' => 'A product that links to an external site for purchase',
+        ],
+        ProductType::BOOKING->value => [
+            'name' => 'Booking Product',
+            'description' => 'A product that represents a bookable service or appointment',
+        ],
+        ProductType::POOL->value => [
+            'name' => 'Pool Product',
+            'description' => 'A product that offers dynamic pricing based on availability (e.g., event tickets)',
         ],
     ];
 
@@ -201,6 +210,85 @@ class ShopAddExampleProducts extends Command
         // For grouped products, add child products
         if ($type === ProductType::GROUPED->value) {
             $this->addGroupedProducts($product);
+        }
+
+        // Special example: Booking product that includes a parking pool
+        // Create a demonstrative Hotel Room booking with 3 parking plots
+        if ($type === ProductType::BOOKING->value) {
+            try {
+                // Ensure this booking example is clearly named
+                $product->update(["name" => "Hotel Room"]);
+
+                // Ensure booking has stock (required for bookings)
+                $product->update(['manage_stock' => true]);
+                $product->increaseStock(1);
+
+                // Create a parking pool
+                $parkingPool = Product::create([
+                    'slug' => 'example-parkings-pool-' . $this->faker->unique()->numberBetween(1000, 9999),
+                    'name' => 'Parkings',
+                    'sku' => 'EX-PARK-' . strtoupper($this->faker->bothify('??-###')),
+                    'type' => ProductType::POOL,
+                    'status' => ProductStatus::PUBLISHED,
+                    'is_visible' => true,
+                    'manage_stock' => true,
+                    'published_at' => now(),
+                    'meta' => ['example' => true],
+                ]);
+
+                // Add a default pool price (optional)
+                $parkingPool->prices()->create([
+                    'name' => 'Default',
+                    'type' => 'one_time',
+                    'currency' => 'EUR',
+                    'unit_amount' => 3000, // €30 per booking/day for example
+                    'is_default' => true,
+                    'active' => true,
+                    'billing_scheme' => 'per_unit',
+                    'meta' => ['example' => true],
+                ]);
+
+                // Create 3 parking plots as booking single items and attach to pool
+                $parkingIds = [];
+                for ($p = 1; $p <= 3; $p++) {
+                    $parking = Product::create([
+                        'slug' => 'example-parking-plot-' . $p . '-' . $this->faker->unique()->numberBetween(1000, 9999),
+                        'name' => 'Parking Plot ' . $p,
+                        'sku' => 'EX-PP-' . strtoupper($this->faker->bothify('??-###')),
+                        'type' => ProductType::BOOKING,
+                        'status' => ProductStatus::PUBLISHED,
+                        'is_visible' => false,
+                        'manage_stock' => true,
+                        'published_at' => now(),
+                        'meta' => ['example' => true, 'parking_plot' => true],
+                    ]);
+
+                    // Give each parking one unit of stock so it can be claimed
+                    $parking->increaseStock(1);
+
+                    // Give each parking a price
+                    $parking->prices()->create([
+                        'name' => 'Default',
+                        'type' => 'one_time',
+                        'currency' => 'EUR',
+                        'unit_amount' => 1000 + ($p - 1) * 200, // €10, €12, €14
+                        'is_default' => true,
+                        'active' => true,
+                        'billing_scheme' => 'per_unit',
+                        'meta' => ['example' => true],
+                    ]);
+
+                    $parkingIds[] = $parking->id;
+                }
+
+                // Attach parking plots as single items to the parking pool (also creates reverse POOL relation)
+                $parkingPool->attachSingleItems($parkingIds);
+
+                // Link the parking pool to the booking as an add-on
+                $product->productRelations()->attach($parkingPool->id, ['type' => ProductRelationType::ADD_ON->value]);
+            } catch (\Throwable $e) {
+                $this->warn('Failed to create booking+parking example: ' . $e->getMessage());
+            }
         }
 
         return $product;
