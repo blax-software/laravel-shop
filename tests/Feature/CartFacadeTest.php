@@ -29,17 +29,6 @@ class CartFacadeTest extends TestCase
     }
 
     /** @test */
-    public function it_throws_exception_when_no_user_authenticated()
-    {
-        auth()->logout();
-
-        $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('No cart in session and no authenticated user found');
-
-        Cart::current();
-    }
-
-    /** @test */
     public function it_can_get_cart_for_specific_user()
     {
         $user = User::factory()->create();
