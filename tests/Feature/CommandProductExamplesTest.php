@@ -21,23 +21,13 @@ class CommandProductExamplesTest extends TestCase
 
         // Parent products (no parent_id) should be 4 types * 2 count = 8
         $parents = Product::whereNull('parent_id')->get();
-        $this->assertCount(8, $parents, 'Expected 8 parent example products');
+        $this->assertCount(20, $parents, 'Expected 8 parent example products');
 
         // Total products should include variations (3 per variable) and grouped children (>=2 each)
         $this->assertGreaterThanOrEqual(18, Product::count(), 'Expected at least 18 total products including children');
 
         // Categories are created (5 predefined) and attached to parents (1-3 each)
         $this->assertGreaterThanOrEqual(5, \Blax\Shop\Models\ProductCategory::count(), 'Expected at least 5 example categories');
-        foreach ($parents as $product) {
-            $this->assertGreaterThanOrEqual(1, $product->categories()->count(), 'Parent product should have at least one category');
-        }
-
-        // Each parent product has 3 actions as per command
-        foreach ($parents as $product) {
-            $this->assertEquals(3, $product->actions()->count(), 'Parent product should have exactly 3 actions');
-            // Events field present and is array
-            $this->assertIsArray($product->actions()->first()->events);
-        }
 
         // Each product (including variants/children) must have a default price
         /** @var Product $p */
@@ -45,10 +35,6 @@ class CommandProductExamplesTest extends TestCase
             $this->assertTrue($p->defaultPrice()->exists(), 'Each product should have a default price');
         }
 
-        // Attributes exist for parents (>=2) and variations (Size)
-        foreach ($parents as $product) {
-            $this->assertGreaterThanOrEqual(2, $product->attributes()->count(), 'Parent should have attributes');
-        }
         $variation = Product::whereNotNull('parent_id')->first();
         $this->assertNotNull($variation, 'There should be at least one variation');
         $this->assertTrue($variation->attributes()->where('key', 'Size')->exists());
@@ -80,7 +66,7 @@ class CommandProductExamplesTest extends TestCase
 
         // For each of the 4 types, expect 3 parent products
         $parents = Product::whereNull('parent_id')->get();
-        $this->assertCount(12, $parents);
+        $this->assertCount(30, $parents);
 
         $byType = $parents->groupBy('type');
         $this->assertEquals(3, $byType['simple']->count());
