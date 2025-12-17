@@ -5,6 +5,8 @@ namespace Blax\Shop\Models;
 use Blax\Shop\Contracts\Cartable;
 use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Exceptions\InvalidDateRangeException;
+use Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException;
 use Blax\Shop\Services\CartService;
 use Blax\Workkit\Traits\HasExpiration;
 use Carbon\Carbon;
@@ -28,6 +30,8 @@ class Cart extends Model
         'expires_at',
         'converted_at',
         'meta',
+        'from_date',
+        'until_date',
     ];
 
     protected $casts = [
@@ -36,6 +40,13 @@ class Cart extends Model
         'converted_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'meta' => 'object',
+        'from_date' => 'datetime',
+        'until_date' => 'datetime',
+    ];
+
+    protected $appends = [
+        'is_full_booking',
+        'is_ready_to_checkout',
     ];
 
     public function __construct(array $attributes = [])
@@ -76,6 +87,61 @@ class Cart extends Model
     }
 
     /**
+     * Check if all cart items are booking products
+     */
+    public function getIsFullBookingAttribute(): bool
+    {
+        if ($this->items->isEmpty()) {
+            return false;
+        }
+
+        return $this->items->every(fn($item) => $item->is_booking);
+    }
+
+    /**
+     * Get count of booking items in the cart
+     */
+    public function bookingItems(): int
+    {
+        return $this->items->filter(fn($item) => $item->is_booking)->count();
+    }
+
+    /**
+     * Get array of stripe_price_id from each cart item's price.
+     * Returns array with nulls for items without stripe_price_id.
+     * 
+     * @return array<string|null>
+     */
+    public function stripePriceIds(): array
+    {
+        return $this->items->map(function ($item) {
+            if (!$item->price_id) {
+                return null;
+            }
+
+            // Use the relationship method, not property access
+            $price = $item->price()->first();
+            return $price ? $price->stripe_price_id : null;
+        })->toArray();
+    }
+
+    /**
+     * Check if cart is ready for checkout.
+     * 
+     * Returns true if all cart items are ready for checkout.
+     * 
+     * @return bool
+     */
+    public function getIsReadyToCheckoutAttribute(): bool
+    {
+        if ($this->items->isEmpty()) {
+            return false;
+        }
+
+        return $this->items->every(fn($item) => $item->is_ready_to_checkout);
+    }
+
+    /**
      * Get all cart items that require adjustments before checkout.
      * 
      * This method checks all cart items and returns a collection of items
@@ -113,6 +179,155 @@ class Cart extends Model
     public function isReadyForCheckout(): bool
     {
         return $this->getItemsRequiringAdjustments()->isEmpty();
+    }
+
+    /**
+     * Set the default date range for the cart.
+     * Items without specific dates will use these as fallback.
+     * 
+     * @param \DateTimeInterface $from Start date
+     * @param \DateTimeInterface $until End date
+     * @param bool $validateAvailability Whether to validate product availability for the timespan
+     * @return $this
+     * @throws InvalidDateRangeException
+     * @throws NotEnoughAvailableInTimespanException
+     */
+    public function setDates(\DateTimeInterface $from, \DateTimeInterface $until, bool $validateAvailability = true): self
+    {
+        if ($from >= $until) {
+            throw new InvalidDateRangeException();
+        }
+
+        if ($validateAvailability) {
+            $this->validateDateAvailability($from, $until);
+        }
+
+        $this->update([
+            'from_date' => $from,
+            'until_date' => $until,
+        ]);
+
+        return $this->fresh();
+    }
+
+    /**
+     * Set the 'from' date for the cart.
+     * 
+     * @param \DateTimeInterface $from Start date
+     * @param bool $validateAvailability Whether to validate product availability for the timespan
+     * @return $this
+     * @throws InvalidDateRangeException
+     * @throws NotEnoughAvailableInTimespanException
+     */
+    public function setFromDate(\DateTimeInterface $from, bool $validateAvailability = true): self
+    {
+        if ($this->until_date && $from >= $this->until_date) {
+            throw new InvalidDateRangeException();
+        }
+
+        if ($validateAvailability && $this->until_date) {
+            $this->validateDateAvailability($from, $this->until_date);
+        }
+
+        $this->update(['from_date' => $from]);
+
+        return $this->fresh();
+    }
+
+    /**
+     * Set the 'until' date for the cart.
+     * 
+     * @param \DateTimeInterface $until End date
+     * @param bool $validateAvailability Whether to validate product availability for the timespan
+     * @return $this
+     * @throws InvalidDateRangeException
+     * @throws NotEnoughAvailableInTimespanException
+     */
+    public function setUntilDate(\DateTimeInterface $until, bool $validateAvailability = true): self
+    {
+        if ($this->from_date && $this->from_date >= $until) {
+            throw new InvalidDateRangeException();
+        }
+
+        if ($validateAvailability && $this->from_date) {
+            $this->validateDateAvailability($this->from_date, $until);
+        }
+
+        $this->update(['until_date' => $until]);
+
+        return $this->fresh();
+    }
+
+    /**
+     * Apply cart dates to all items that don't have their own dates set.
+     * 
+     * @param bool $validateAvailability Whether to validate product availability for the timespan
+     * @return $this
+     * @throws NotEnoughAvailableInTimespanException
+     */
+    public function applyDatesToItems(bool $validateAvailability = true): self
+    {
+        if (!$this->from_date || !$this->until_date) {
+            return $this;
+        }
+
+        foreach ($this->items as $item) {
+            // Only apply to items without dates that are booking products
+            if ($item->is_booking && (!$item->from || !$item->until)) {
+                if ($validateAvailability) {
+                    $product = $item->purchasable;
+                    if ($product && !$product->isAvailableForBooking($this->from_date, $this->until_date, $item->quantity)) {
+                        throw new NotEnoughAvailableInTimespanException(
+                            productName: $product->name ?? 'Product',
+                            requested: $item->quantity,
+                            available: 0, // Could calculate actual available amount
+                            from: $this->from_date,
+                            until: $this->until_date
+                        );
+                    }
+                }
+
+                $item->updateDates($this->from_date, $this->until_date);
+            }
+        }
+
+        return $this->fresh();
+    }
+
+    /**
+     * Validate that all booking items in the cart are available for the given timespan.
+     * 
+     * @param \DateTimeInterface $from Start date
+     * @param \DateTimeInterface $until End date
+     * @return void
+     * @throws NotEnoughAvailableInTimespanException
+     */
+    protected function validateDateAvailability(\DateTimeInterface $from, \DateTimeInterface $until): void
+    {
+        foreach ($this->items as $item) {
+            if (!$item->is_booking) {
+                continue;
+            }
+
+            $product = $item->purchasable;
+            if (!$product) {
+                continue;
+            }
+
+            // Use item's specific dates if set, otherwise use the dates being validated
+            $checkFrom = $item->from ?? $from;
+            $checkUntil = $item->until ?? $until;
+
+            if (!$product->isAvailableForBooking($checkFrom, $checkUntil, $item->quantity)) {
+                throw new NotEnoughAvailableInTimespanException(
+                    productName: $product->name ?? 'Product',
+                    requested: $item->quantity,
+                    available: 0, // Could calculate actual available amount
+                    from: $checkFrom,
+                    until: $checkUntil
+                );
+            }
+        }
     }
 
     public function getUnpaidAmount(): float
@@ -252,7 +467,7 @@ class Cart extends Model
             // Validate pricing before adding to cart
             $cartable->validatePricing(throwExceptions: true);
 
-            // Validate dates if both are provided (optional for cart, required at checkout)
+            // Validate dates if both are provided
             if ($from && $until) {
                 // Validate from is before until
                 if ($from >= $until) {
@@ -269,7 +484,7 @@ class Cart extends Model
                 // Check pool product availability if dates are provided
                 if ($cartable->isPool()) {
                     $maxQuantity = $cartable->getPoolMaxQuantity($from, $until);
-                    // Only validate if pool has limited availability
+                    // Only validate if pool has limited availability AND quantity exceeds it
                     if ($maxQuantity !== PHP_INT_MAX && $quantity > $maxQuantity) {
                         throw new \Blax\Shop\Exceptions\NotEnoughStockException(
                             "Pool product '{$cartable->name}' has only {$maxQuantity} items available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')}). Requested: {$quantity}"
@@ -417,10 +632,22 @@ class Cart extends Model
             return $existingItem->fresh();
         }
 
+        // Determine price_id for the cart item
+        $priceId = null;
+        if ($cartable instanceof Product) {
+            // Get the default price for the product
+            $defaultPrice = $cartable->defaultPrice()->first();
+            $priceId = $defaultPrice?->id;
+        } elseif ($cartable instanceof \Blax\Shop\Models\ProductPrice) {
+            // If adding a ProductPrice directly, use its ID
+            $priceId = $cartable->id;
+        }
+
         // Create new cart item
         $cartItem = $this->items()->create([
             'purchasable_id' => $cartable->getKey(),
             'purchasable_type' => get_class($cartable),
+            'price_id' => $priceId,
             'quantity' => $quantity,
             'price' => $pricePerUnit,  // Price per unit for the period
             'regular_price' => $regularPricePerUnit,
@@ -639,30 +866,36 @@ class Cart extends Model
         // Validate cart before proceeding (doesn't convert it)
         $this->validateForCheckout();
 
+        // Get all stripe price IDs and validate they exist
+        $stripePriceIds = $this->stripePriceIds();
+
+        // Check if any stripe_price_id is null
+        $nullPriceIndexes = [];
+        foreach ($stripePriceIds as $index => $priceId) {
+            if ($priceId === null) {
+                $nullPriceIndexes[] = $index;
+            }
+        }
+
+        if (!empty($nullPriceIndexes)) {
+            // Get item names for better error message
+            $itemNames = [];
+            foreach ($nullPriceIndexes as $index) {
+                $item = $this->items[$index];
+                $itemNames[] = $item->purchasable->name ?? "Item {$index}";
+            }
+            throw new \Exception(
+                "Cannot create checkout session: The following items have no Stripe price ID: " .
+                    implode(', ', $itemNames)
+            );
+        }
+
         $syncService = new \Blax\Shop\Services\StripeSyncService();
         $lineItems = [];
 
-        foreach ($this->items as $item) {
-            $purchasable = $item->purchasable;
-
-            // Get the price model
-            if ($purchasable instanceof Product) {
-                $price = $purchasable->defaultPrice()->first();
-                $product = $purchasable;
-            } elseif ($purchasable instanceof \Blax\Shop\Models\ProductPrice) {
-                $price = $purchasable;
-                $product = $purchasable->purchasable;
-            } else {
-                throw new \Exception("Item has no valid price");
-            }
-
-            if (!$price) {
-                $name = $purchasable->name ?? 'Unknown item';
-                throw new \Exception("Item '{$name}' has no default price");
-            }
-
-            // Sync product and price to Stripe
-            $stripePriceId = $syncService->syncPrice($price, $product);
+        foreach ($this->items as $index => $item) {
+            // Use the pre-fetched stripe price ID
+            $stripePriceId = $stripePriceIds[$index];
 
             // Build line item with description including booking dates if applicable
             $lineItem = [
