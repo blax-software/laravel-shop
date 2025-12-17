@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * Cast for datetime fields that:
- * - Accepts string, DateTimeInterface, or Carbon as input
- * - Stores as Unix timestamp in database (integer)
+ * - Accepts string, DateTimeInterface, Carbon, or Unix timestamp as input
+ * - Stores as datetime string in database (for timestamp columns)
  * - Returns Carbon instance on get
  * 
  * Usage for HTML5 datetime-local inputs:
@@ -28,8 +28,8 @@ class HtmlDateTimeCast implements CastsAttributes
             return null;
         }
 
-        // Convert timestamp to Carbon
-        return Carbon::createFromTimestamp($value);
+        // Handle datetime strings from database
+        return Carbon::parse($value);
     }
 
     /**
@@ -37,7 +37,7 @@ class HtmlDateTimeCast implements CastsAttributes
      *
      * @param  array<string, mixed>  $attributes
      */
-    public function set(Model $model, string $key, mixed $value, array $attributes): ?int
+    public function set(Model $model, string $key, mixed $value, array $attributes): ?string
     {
         if ($value === null) {
             return null;
@@ -45,22 +45,22 @@ class HtmlDateTimeCast implements CastsAttributes
 
         // Handle Carbon instances
         if ($value instanceof Carbon) {
-            return $value->timestamp;
+            return $value->format('Y-m-d H:i:s');
         }
 
         // Handle DateTimeInterface
         if ($value instanceof \DateTimeInterface) {
-            return Carbon::instance($value)->timestamp;
+            return Carbon::instance($value)->format('Y-m-d H:i:s');
         }
 
         // Handle string input (including HTML5 datetime-local format)
         if (is_string($value)) {
-            return Carbon::parse($value)->timestamp;
+            return Carbon::parse($value)->format('Y-m-d H:i:s');
         }
 
-        // Handle numeric timestamp
+        // Handle numeric timestamp (Unix timestamp)
         if (is_numeric($value)) {
-            return (int) $value;
+            return Carbon::createFromTimestamp($value)->format('Y-m-d H:i:s');
         }
 
         throw new \InvalidArgumentException(
