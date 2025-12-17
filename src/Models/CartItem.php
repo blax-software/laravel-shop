@@ -2,7 +2,6 @@
 
 namespace Blax\Shop\Models;
 
-use Blax\Shop\Casts\HtmlDateTimeCast;
 use Blax\Shop\Exceptions\InvalidDateRangeException;
 use Blax\Workkit\Traits\HasMeta;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -36,8 +35,8 @@ class CartItem extends Model
         'subtotal' => 'decimal:2',
         'parameters' => 'array',
         'meta' => 'array',
-        'from' => HtmlDateTimeCast::class,
-        'until' => HtmlDateTimeCast::class,
+        'from' => 'datetime',
+        'until' => 'datetime',
     ];
 
     protected $appends = [
