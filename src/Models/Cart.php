@@ -193,13 +193,16 @@ class Cart extends Model
      * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
-    public function setDates(\DateTimeInterface|string $from, \DateTimeInterface|string $until, bool $validateAvailability = true): self
-    {
+    public function setDates(
+        \DateTimeInterface|string|int|float $from,
+        \DateTimeInterface|string|int|float $until,
+        bool $validateAvailability = true
+    ): self {
         // Parse string dates using Carbon
-        if (is_string($from)) {
+        if (is_string($from) || is_numeric($from)) {
             $from = Carbon::parse($from);
         }
-        if (is_string($until)) {
+        if (is_string($until) || is_numeric($until)) {
             $until = Carbon::parse($until);
         }
 
@@ -228,10 +231,12 @@ class Cart extends Model
      * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
-    public function setFromDate(\DateTimeInterface|string $from, bool $validateAvailability = true): self
-    {
+    public function setFromDate(
+        \DateTimeInterface|string|int|float $from,
+        bool $validateAvailability = true
+    ): self {
         // Parse string dates using Carbon
-        if (is_string($from)) {
+        if (is_string($from) || is_numeric($from)) {
             $from = Carbon::parse($from);
         }
 
@@ -257,10 +262,10 @@ class Cart extends Model
      * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
-    public function setUntilDate(\DateTimeInterface|string $until, bool $validateAvailability = true): self
+    public function setUntilDate(\DateTimeInterface|string|int|float $until, bool $validateAvailability = true): self
     {
         // Parse string dates using Carbon
-        if (is_string($until)) {
+        if (is_string($until) || is_numeric($until)) {
             $until = Carbon::parse($until);
         }
 

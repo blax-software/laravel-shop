@@ -432,10 +432,10 @@ class CartItem extends Model
      * @return $this
      * @throws InvalidDateRangeException
      */
-    public function setFromDate(\DateTimeInterface|string $from): self
+    public function setFromDate(\DateTimeInterface|string|int|float $from): self
     {
         // Parse string dates using Carbon
-        if (is_string($from)) {
+        if (is_string($from) || is_numeric($from)) {
             $from = \Carbon\Carbon::parse($from);
         }
 
@@ -464,10 +464,10 @@ class CartItem extends Model
      * @return $this
      * @throws InvalidDateRangeException
      */
-    public function setUntilDate(\DateTimeInterface|string $until): self
+    public function setUntilDate(\DateTimeInterface|string|int|float $until): self
     {
         // Parse string dates using Carbon
-        if (is_string($until)) {
+        if (is_string($until) || is_numeric($until)) {
             $until = \Carbon\Carbon::parse($until);
         }
 
