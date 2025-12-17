@@ -473,19 +473,19 @@ class CartAddToCartPoolPricingTest extends TestCase
         ProductPrice::factory()->create([
             'purchasable_id' => $this->poolProduct->id,
             'purchasable_type' => Product::class,
-            'unit_amount' => 3000,
+            'unit_amount' => 30,
             'currency' => 'USD',
             'is_default' => true,
         ]);
 
-        // Same day booking (0 days diff)
+        // Same day booking (4 hours)
         $from = Carbon::now()->addDays(1)->setTime(10, 0);
         $until = Carbon::now()->addDays(1)->setTime(14, 0);
 
         $cartItem = $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
 
-        // Should treat as minimum 1 day
-        $this->assertEquals(3000, $cartItem->price); // 30.00 × 1 day
+        // 4 hours = 0.1667 days, 30 * 0.1667 = 5.00 (rounded to 2 decimals)
+        $this->assertEquals('5.00', $cartItem->price);
     }
 
     /** @test */
@@ -1199,9 +1199,10 @@ class CartAddToCartPoolPricingTest extends TestCase
             $until
         );
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (2000 * 2 * 5) + (5000 * 1 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01 // Allow 1 cent tolerance for floating point errors
         );
         $this->assertEquals(
             5000,
@@ -1216,9 +1217,10 @@ class CartAddToCartPoolPricingTest extends TestCase
             $until
         );
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (2000 * 2 * 5) + (5000 * 2 * 5) + (8000 * 2 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01
         );
         $this->assertNull($pool->getCurrentPrice());
 
@@ -1257,24 +1259,27 @@ class CartAddToCartPoolPricingTest extends TestCase
             $until
         );
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (2000 * 2 * 5) + (5000 * 1 * 5) + (8000 * 2 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01
         );
 
         $cart->removeFromCart($pool, 1);
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (2000 * 2 * 5) + (5000 * 1 * 5) + (8000 * 1 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01
         );
         $this->assertEquals(8000, $pool->getCurrentPrice());
 
         $cart->removeFromCart($pool, 1);
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (2000 * 2 * 5) + (5000 * 1 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01
         );
 
         // Get cart item with price 2000
@@ -1284,9 +1289,10 @@ class CartAddToCartPoolPricingTest extends TestCase
 
         $cart->removeFromCart($cartItem, 1);
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (2000 * 1 * 5) + (5000 * 1 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01
         );
         $this->assertEquals(
             2000,
@@ -1301,9 +1307,10 @@ class CartAddToCartPoolPricingTest extends TestCase
             $until
         );
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (2000 * 2 * 5) + (5000 * 1 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01
         );
 
         // Get cart item with price 2000
@@ -1313,9 +1320,10 @@ class CartAddToCartPoolPricingTest extends TestCase
 
         $cart->removeFromCart($cartItem, 2);
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (5000 * 1 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01
         );
 
         $this->assertEquals(2000, $pool->getCurrentPrice());
@@ -1328,9 +1336,10 @@ class CartAddToCartPoolPricingTest extends TestCase
             $until
         );
 
-        $this->assertEquals(
+        $this->assertEqualsWithDelta(
             (2000 * 2 * 5) + (5000 * 1 * 5) + (8000 * 2 * 5),
-            $cart->getTotal()
+            $cart->getTotal(),
+            0.01
         );
     }
 }

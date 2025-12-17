@@ -11,6 +11,7 @@ use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
 
 trait MayBePoolProduct
 {
+    use HasBookingPriceCalculation;
     /**
      * Check if this is a pool product
      */
@@ -702,7 +703,7 @@ trait MayBePoolProduct
         // Calculate days for price normalization
         $days = 1;
         if ($from && $until) {
-            $days = max(1, $from->diff($until)->days);
+            $days = $this->calculateBookingDays($from, $until);
         }
 
         // Build usage map: price => quantity used

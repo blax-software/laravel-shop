@@ -3,6 +3,7 @@
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Exceptions\InvalidDateRangeException;
+use Blax\Shop\Traits\HasBookingPriceCalculation;
 use Blax\Workkit\Traits\HasMeta;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CartItem extends Model
 {
-    use HasUuids, HasMeta;
+    use HasUuids, HasMeta, HasBookingPriceCalculation;
 
     protected $fillable = [
         'cart_id',
@@ -401,8 +402,8 @@ class CartItem extends Model
             throw new \Exception("Cannot update dates for non-product items.");
         }
 
-        // Calculate days
-        $days = max(1, $from->diff($until)->days);
+        // Calculate days using per-minute precision
+        $days = $this->calculateBookingDays($from, $until);
 
         // Get current price per day
         $pricePerDay = $product->getCurrentPrice();

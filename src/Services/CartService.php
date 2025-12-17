@@ -12,12 +12,14 @@ use Blax\Shop\Exceptions\InvalidBookingConfigurationException;
 use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
 use Blax\Shop\Exceptions\NotPurchasable;
 use Blax\Shop\Models\Product;
+use Blax\Shop\Traits\HasBookingPriceCalculation;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Auth;
 
 class CartService
 {
+    use HasBookingPriceCalculation;
     /**
      * Session key for storing the current cart ID
      */
@@ -535,7 +537,7 @@ class CartService
 
         // Calculate price based on days for booking products
         if ($product instanceof Product && ($product->isBooking() || $product->isPool())) {
-            $days = $from->diff($until)->days;
+            $days = $this->calculateBookingDays($from, $until);
             $pricePerUnit = $pricePerDay * $days;  // Price for one unit for the entire period
             $totalPrice = $pricePerUnit * $quantity;  // Total for all units
         } else {

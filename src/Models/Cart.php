@@ -8,6 +8,7 @@ use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Exceptions\InvalidDateRangeException;
 use Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException;
 use Blax\Shop\Services\CartService;
+use Blax\Shop\Traits\HasBookingPriceCalculation;
 use Blax\Workkit\Traits\HasExpiration;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Cart extends Model
 {
-    use HasUuids, HasExpiration, HasFactory;
+    use HasUuids, HasExpiration, HasFactory, HasBookingPriceCalculation;
 
     protected $fillable = [
         'session_id',
@@ -589,7 +590,7 @@ class Cart extends Model
                         $currentPrice = $cartable->getCurrentPrice();
                     }
                     if ($from && $until) {
-                        $days = max(1, $from->diff($until)->days);
+                        $days = $this->calculateBookingDays($from, $until);
                         $currentPrice *= $days;
                     }
 
@@ -629,7 +630,7 @@ class Cart extends Model
         // Calculate days if booking dates provided
         $days = 1;
         if ($from && $until) {
-            $days = max(1, $from->diff($until)->days);
+            $days = $this->calculateBookingDays($from, $until);
         }
 
         // Calculate price per unit for the entire period
@@ -929,10 +930,11 @@ class Cart extends Model
             // Add description with booking dates if available
             $description = null;
             if ($item->from && $item->until) {
-                $days = max(1, $item->from->diffInDays($item->until));
-                $fromFormatted = $item->from->format('M j, Y');
-                $untilFormatted = $item->until->format('M j, Y');
-                $description = "Period: {$fromFormatted} to {$untilFormatted} ({$days} day" . ($days > 1 ? 's' : '') . ")";
+                $days = $this->calculateBookingDays($item->from, $item->until);
+                $fromFormatted = $item->from->format('M j, Y H:i');
+                $untilFormatted = $item->until->format('M j, Y H:i');
+                $daysText = number_format($days, 2) . ' day' . ($days != 1 ? 's' : '');
+                $description = "Period: {$fromFormatted} to {$untilFormatted} ({$daysText})";
             }
 
             if ($description) {
