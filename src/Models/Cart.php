@@ -603,15 +603,30 @@ class Cart extends Model
 
         // Calculate price per day (base price)
         // For pool products, get price based on how many items are already in cart
+        $poolSingleItem = null;
+        $poolPriceId = null;
         if ($cartable instanceof Product && $cartable->isPool()) {
             // Use smarter pricing that considers which price tiers are used
-            $pricePerDay = $cartable->getNextAvailablePoolPriceConsideringCart($this, null, $from, $until);
-            $regularPricePerDay = $cartable->getNextAvailablePoolPriceConsideringCart($this, false, $from, $until) ?? $pricePerDay;
+            $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);
+
+            if ($poolItemData) {
+                $pricePerDay = $poolItemData['price'];
+                $poolSingleItem = $poolItemData['item'];
+                $poolPriceId = $poolItemData['price_id'];
+            } else {
+                $pricePerDay = null;
+            }
+
+            // Get regular price (non-sale) for comparison
+            $regularPoolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, false, $from, $until);
+            $regularPricePerDay = $regularPoolItemData['price'] ?? $pricePerDay;
 
             // If no price found from pool items, try the pool's direct price as fallback
             if ($pricePerDay === null && $cartable->hasPrice()) {
-                $pricePerDay = $cartable->defaultPrice()->first()?->getCurrentPrice($cartable->isOnSale());
-                $regularPricePerDay = $cartable->defaultPrice()->first()?->getCurrentPrice(false) ?? $pricePerDay;
+                $priceModel = $cartable->defaultPrice()->first();
+                $pricePerDay = $priceModel?->getCurrentPrice($cartable->isOnSale());
+                $regularPricePerDay = $priceModel?->getCurrentPrice(false) ?? $pricePerDay;
+                $poolPriceId = $priceModel?->id;
             }
         } else {
             $pricePerDay = $cartable->getCurrentPrice();
@@ -659,9 +674,14 @@ class Cart extends Model
         // Determine price_id for the cart item
         $priceId = null;
         if ($cartable instanceof Product) {
-            // Get the default price for the product
-            $defaultPrice = $cartable->defaultPrice()->first();
-            $priceId = $defaultPrice?->id;
+            // For pool products, use the single item's price_id
+            if ($cartable->isPool() && $poolPriceId) {
+                $priceId = $poolPriceId;
+            } else {
+                // Get the default price for the product
+                $defaultPrice = $cartable->defaultPrice()->first();
+                $priceId = $defaultPrice?->id;
+            }
         } elseif ($cartable instanceof \Blax\Shop\Models\ProductPrice) {
             // If adding a ProductPrice directly, use its ID
             $priceId = $cartable->id;
@@ -680,6 +700,12 @@ class Cart extends Model
             'from' => $from,
             'until' => $until,
         ]);
+
+        // For pool products, store which single item is being used in meta
+        if ($cartable instanceof Product && $cartable->isPool() && $poolSingleItem) {
+            $cartItem->updateMetaKey('allocated_single_item_id', $poolSingleItem->id);
+            $cartItem->updateMetaKey('allocated_single_item_name', $poolSingleItem->name);
+        }
 
         return $cartItem;
     }
@@ -870,15 +896,15 @@ class Cart extends Model
      * 
      * This method:
      * - Validates the cart (doesn't convert it)
-     * - Syncs products/prices to Stripe (creates them if they don't exist)
+     * - Uses dynamic price_data for each cart item (no pre-created Stripe prices needed)
      * - Creates line items with descriptions including booking dates
      * - Returns the Stripe checkout session
      * 
      * @param array $options Optional session parameters (success_url, cancel_url, etc.)
-     * @return \Stripe\Checkout\Session
+     * @return mixed Stripe\Checkout\Session instance
      * @throws \Exception
      */
-    public function checkoutSession(array $options = []): \Stripe\Checkout\Session
+    public function checkoutSession(array $options = [])
     {
         if (!config('shop.stripe.enabled')) {
             throw new \Exception('Stripe is not enabled');
@@ -890,56 +916,36 @@ class Cart extends Model
         // Validate cart before proceeding (doesn't convert it)
         $this->validateForCheckout();
 
-        // Get all stripe price IDs and validate they exist
-        $stripePriceIds = $this->stripePriceIds();
-
-        // Check if any stripe_price_id is null
-        $nullPriceIndexes = [];
-        foreach ($stripePriceIds as $index => $priceId) {
-            if ($priceId === null) {
-                $nullPriceIndexes[] = $index;
-            }
-        }
-
-        if (!empty($nullPriceIndexes)) {
-            // Get item names for better error message
-            $itemNames = [];
-            foreach ($nullPriceIndexes as $index) {
-                $item = $this->items[$index];
-                $itemNames[] = $item->purchasable->name ?? "Item {$index}";
-            }
-            throw new \Exception(
-                "Cannot create checkout session: The following items have no Stripe price ID: " .
-                    implode(', ', $itemNames)
-            );
-        }
-
-        $syncService = new \Blax\Shop\Services\StripeSyncService();
         $lineItems = [];
 
-        foreach ($this->items as $index => $item) {
-            // Use the pre-fetched stripe price ID
-            $stripePriceId = $stripePriceIds[$index];
+        foreach ($this->items as $item) {
+            $product = $item->purchasable;
 
-            // Build line item with description including booking dates if applicable
-            $lineItem = [
-                'price' => $stripePriceId,
-                'quantity' => $item->quantity,
-            ];
+            // Get product name (use short_description if available, otherwise name)
+            $productName = $product->short_description ?? $product->name ?? 'Product';
 
-            // Add description with booking dates if available
-            $description = null;
+            // Build description with booking dates if available
             if ($item->from && $item->until) {
-                $days = $this->calculateBookingDays($item->from, $item->until);
                 $fromFormatted = $item->from->format('M j, Y H:i');
                 $untilFormatted = $item->until->format('M j, Y H:i');
-                $daysText = number_format($days, 2) . ' day' . ($days != 1 ? 's' : '');
-                $description = "Period: {$fromFormatted} to {$untilFormatted} ({$daysText})";
+                $productName .= " from {$fromFormatted} to {$untilFormatted}";
             }
 
-            if ($description) {
-                $lineItem['description'] = $description;
-            }
+            // Convert price to cents (Stripe expects smallest currency unit)
+            // Cart item price is already per unit for the entire period
+            $unitAmountCents = (int) round($item->price * 100);
+
+            // Build line item using price_data for dynamic pricing
+            $lineItem = [
+                'price_data' => [
+                    'currency' => config('shop.currency', 'usd'),
+                    'product_data' => [
+                        'name' => $productName,
+                    ],
+                    'unit_amount' => $unitAmountCents,
+                ],
+                'quantity' => $item->quantity,
+            ];
 
             $lineItems[] = $lineItem;
         }

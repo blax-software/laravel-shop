@@ -64,6 +64,9 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    // Currency configuration
+    'currency' => env('SHOP_CURRENCY', 'usd'),
+
     // Cache configuration
     'cache' => [
         'enabled' => env('SHOP_CACHE_ENABLED', true),

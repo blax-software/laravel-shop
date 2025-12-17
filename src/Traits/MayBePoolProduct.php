@@ -223,6 +223,65 @@ trait MayBePoolProduct
     }
 
     /**
+     * Calculate available quantity for a single item considering booking dates
+     * This is a DRY helper method used by multiple pool pricing methods
+     * 
+     * @param Product $item The single item to check
+     * @param \DateTimeInterface|null $from Start date for availability check
+     * @param \DateTimeInterface|null $until End date for availability check
+     * @return int Available quantity (PHP_INT_MAX for unlimited)
+     */
+    protected function calculateSingleItemAvailability(
+        $item,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
+    ): int {
+        $available = 0;
+
+        if ($from && $until) {
+            if ($item->isBooking()) {
+                if (!$item->manage_stock) {
+                    $available = PHP_INT_MAX;
+                } else {
+                    // Calculate overlapping claims for this specific period
+                    $overlappingClaims = $item->stocks()
+                        ->where('type', \Blax\Shop\Enums\StockType::CLAIMED->value)
+                        ->where('status', \Blax\Shop\Enums\StockStatus::PENDING->value)
+                        ->where(function ($query) use ($from, $until) {
+                            $query->where(function ($q) use ($from, $until) {
+                                $q->whereBetween('claimed_from', [$from, $until]);
+                            })->orWhere(function ($q) use ($from, $until) {
+                                $q->whereBetween('expires_at', [$from, $until]);
+                            })->orWhere(function ($q) use ($from, $until) {
+                                $q->where('claimed_from', '<=', $from)
+                                    ->where('expires_at', '>=', $until);
+                            })->orWhere(function ($q) use ($from, $until) {
+                                $q->whereNull('claimed_from')
+                                    ->where(function ($subQ) use ($from, $until) {
+                                        $subQ->whereNull('expires_at')
+                                            ->orWhere('expires_at', '>=', $from);
+                                    });
+                            });
+                        })
+                        ->sum('quantity');
+
+                    $available = max(0, $item->getAvailableStock() - abs($overlappingClaims));
+                }
+            } elseif (!$item->isBooking()) {
+                $available = $item->getAvailableStock();
+            }
+        } else {
+            if ($item->manage_stock) {
+                $available = $item->getAvailableStock();
+            } else {
+                $available = PHP_INT_MAX;
+            }
+        }
+
+        return $available;
+    }
+
+    /**
      * Check if any single item in pool is a booking product
      */
     public function hasBookingSingleItems(): bool
@@ -558,49 +617,8 @@ trait MayBePoolProduct
         $availableItems = [];
 
         foreach ($singleItems as $item) {
-            // Check if item is available
-            $available = 0;
-
-            if ($from && $until) {
-                if ($item->isBooking()) {
-                    // For booking items, calculate actual available quantity during the period
-                    if (!$item->manage_stock) {
-                        $available = PHP_INT_MAX;
-                    } else {
-                        // Calculate overlapping claims for this specific period
-                        $overlappingClaims = $item->stocks()
-                            ->where('type', \Blax\Shop\Enums\StockType::CLAIMED->value)
-                            ->where('status', \Blax\Shop\Enums\StockStatus::PENDING->value)
-                            ->where(function ($query) use ($from, $until) {
-                                $query->where(function ($q) use ($from, $until) {
-                                    $q->whereBetween('claimed_from', [$from, $until]);
-                                })->orWhere(function ($q) use ($from, $until) {
-                                    $q->whereBetween('expires_at', [$from, $until]);
-                                })->orWhere(function ($q) use ($from, $until) {
-                                    $q->where('claimed_from', '<=', $from)
-                                        ->where('expires_at', '>=', $until);
-                                })->orWhere(function ($q) use ($from, $until) {
-                                    $q->whereNull('claimed_from')
-                                        ->where(function ($subQ) use ($from, $until) {
-                                            $subQ->whereNull('expires_at')
-                                                ->orWhere('expires_at', '>=', $from);
-                                        });
-                                });
-                            })
-                            ->sum('quantity');
-
-                        $available = max(0, $item->getAvailableStock() - abs($overlappingClaims));
-                    }
-                } elseif (!$item->isBooking()) {
-                    $available = $item->getAvailableStock();
-                }
-            } else {
-                if ($item->manage_stock) {
-                    $available = $item->getAvailableStock();
-                } else {
-                    $available = PHP_INT_MAX;
-                }
-            }
+            // Check if item is available using DRY helper method
+            $available = $this->calculateSingleItemAvailability($item, $from, $until);
 
             if ($available > 0) {
                 $price = $item->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $item->isOnSale());
@@ -659,21 +677,21 @@ trait MayBePoolProduct
     }
 
     /**
-     * Get next available pool price considering which specific price tiers are already in the cart
+     * Get next available pool item with price considering which specific price tiers are already in the cart
      * This is smarter than getNextAvailablePoolPrice because it tracks usage by price point
      * 
      * @param \Blax\Shop\Models\Cart $cart The cart to check
      * @param bool|null $sales_price Whether to get sale price
      * @param \DateTimeInterface|null $from Start date for availability check
      * @param \DateTimeInterface|null $until End date for availability check
-     * @return float|null
+     * @return array|null ['price' => float, 'item' => Product, 'price_id' => string|null]
      */
-    public function getNextAvailablePoolPriceConsideringCart(
+    public function getNextAvailablePoolItemWithPrice(
         \Blax\Shop\Models\Cart $cart,
         bool|null $sales_price = null,
         ?\DateTimeInterface $from = null,
         ?\DateTimeInterface $until = null
-    ): ?float {
+    ): ?array {
         if (!$this->isPool()) {
             return null;
         }
@@ -717,53 +735,17 @@ trait MayBePoolProduct
         // Build available items list
         $availableItems = [];
         foreach ($singleItems as $item) {
-            $available = 0;
-
-            if ($from && $until) {
-                if ($item->isBooking()) {
-                    if (!$item->manage_stock) {
-                        $available = PHP_INT_MAX;
-                    } else {
-                        // Calculate overlapping claims
-                        $overlappingClaims = $item->stocks()
-                            ->where('type', \Blax\Shop\Enums\StockType::CLAIMED->value)
-                            ->where('status', \Blax\Shop\Enums\StockStatus::PENDING->value)
-                            ->where(function ($query) use ($from, $until) {
-                                $query->where(function ($q) use ($from, $until) {
-                                    $q->whereBetween('claimed_from', [$from, $until]);
-                                })->orWhere(function ($q) use ($from, $until) {
-                                    $q->whereBetween('expires_at', [$from, $until]);
-                                })->orWhere(function ($q) use ($from, $until) {
-                                    $q->where('claimed_from', '<=', $from)
-                                        ->where('expires_at', '>=', $until);
-                                })->orWhere(function ($q) use ($from, $until) {
-                                    $q->whereNull('claimed_from')
-                                        ->where(function ($subQ) use ($from, $until) {
-                                            $subQ->whereNull('expires_at')
-                                                ->orWhere('expires_at', '>=', $from);
-                                        });
-                                });
-                            })
-                            ->sum('quantity');
-
-                        $available = max(0, $item->getAvailableStock() - abs($overlappingClaims));
-                    }
-                } elseif (!$item->isBooking()) {
-                    $available = $item->getAvailableStock();
-                }
-            } else {
-                if ($item->manage_stock) {
-                    $available = $item->getAvailableStock();
-                } else {
-                    $available = PHP_INT_MAX;
-                }
-            }
+            // Check if item is available using DRY helper method
+            $available = $this->calculateSingleItemAvailability($item, $from, $until);
 
             if ($available > 0) {
-                $price = $item->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $item->isOnSale());
+                $priceModel = $item->defaultPrice()->first();
+                $price = $priceModel?->getCurrentPrice($sales_price ?? $item->isOnSale());
 
+                // If single item has no price, use pool's price as fallback
                 if ($price === null && $this->hasPrice()) {
-                    $price = $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
+                    $priceModel = $this->defaultPrice()->first();
+                    $price = $priceModel?->getCurrentPrice($sales_price ?? $this->isOnSale());
                 }
 
                 if ($price !== null) {
@@ -778,6 +760,7 @@ trait MayBePoolProduct
                             'price' => $price,
                             'quantity' => $availableAtThisPrice,
                             'item' => $item,
+                            'price_id' => $priceModel?->id,
                         ];
                     }
                 }
@@ -786,7 +769,8 @@ trait MayBePoolProduct
 
         // Also add pool's direct price if it has one
         if ($this->hasPrice()) {
-            $poolPrice = $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
+            $poolPriceModel = $this->defaultPrice()->first();
+            $poolPrice = $poolPriceModel?->getCurrentPrice($sales_price ?? $this->isOnSale());
             if ($poolPrice !== null) {
                 $poolPriceRounded = round($poolPrice, 2);
                 $usedAtPoolPrice = $priceUsage[$poolPriceRounded] ?? 0;
@@ -797,6 +781,7 @@ trait MayBePoolProduct
                         'price' => $poolPrice,
                         'quantity' => PHP_INT_MAX,
                         'item' => $this,
+                        'price_id' => $poolPriceModel?->id,
                     ];
                 }
             }
@@ -806,7 +791,9 @@ trait MayBePoolProduct
             return null;
         }
 
-        // For AVERAGE strategy, calculate weighted average of available items
+        // For AVERAGE strategy, we need to return a representative item
+        // In this case, we'll return the first available item for simplicity
+        // since all items contribute to the average price equally
         if ($strategy === \Blax\Shop\Enums\PricingStrategy::AVERAGE) {
             $totalPrice = 0;
             $totalQuantity = 0;
@@ -815,7 +802,19 @@ trait MayBePoolProduct
                 $totalPrice += $item['price'] * $qty;
                 $totalQuantity += $qty;
             }
-            return $totalQuantity > 0 ? $totalPrice / $totalQuantity : null;
+            $averagePrice = $totalQuantity > 0 ? $totalPrice / $totalQuantity : null;
+
+            if ($averagePrice === null) {
+                return null;
+            }
+
+            // Return the first item but with average price
+            // Note: price_id should still be from the actual item being allocated
+            return [
+                'price' => $averagePrice,
+                'item' => $availableItems[0]['item'],
+                'price_id' => $availableItems[0]['price_id'],
+            ];
         }
 
         // Sort by strategy
@@ -827,8 +826,32 @@ trait MayBePoolProduct
             };
         });
 
-        // Return the first available item's price
-        return $availableItems[0]['price'] ?? null;
+        // Return the first available item with its price and price_id
+        return [
+            'price' => $availableItems[0]['price'],
+            'item' => $availableItems[0]['item'],
+            'price_id' => $availableItems[0]['price_id'],
+        ];
+    }
+
+    /**
+     * Get next available pool price considering which specific price tiers are already in the cart
+     * This method wraps getNextAvailablePoolItemWithPrice for backwards compatibility
+     * 
+     * @param \Blax\Shop\Models\Cart $cart The cart to check
+     * @param bool|null $sales_price Whether to get sale price
+     * @param \DateTimeInterface|null $from Start date for availability check
+     * @param \DateTimeInterface|null $until End date for availability check
+     * @return float|null
+     */
+    public function getNextAvailablePoolPriceConsideringCart(
+        \Blax\Shop\Models\Cart $cart,
+        bool|null $sales_price = null,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
+    ): ?float {
+        $result = $this->getNextAvailablePoolItemWithPrice($cart, $sales_price, $from, $until);
+        return $result['price'] ?? null;
     }
 
     /**
