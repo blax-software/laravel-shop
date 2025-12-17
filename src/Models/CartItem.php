@@ -376,15 +376,22 @@ class CartItem extends Model
      * NOTE: This method allows setting any dates, even if they're not available.
      * Use the is_ready_to_checkout attribute to check if the dates are valid.
      * 
-     * @param \DateTimeInterface|null $from Start date
-     * @param \DateTimeInterface|null $until End date
+     * @param \DateTimeInterface|string|null $from Start date (DateTimeInterface or parsable string)
+     * @param \DateTimeInterface|string|null $until End date (DateTimeInterface or parsable string)
      * @return $this
      * @throws \Exception If dates are invalid
      */
     public function updateDates(
-        \DateTimeInterface|null $from = null,
-        \DateTimeInterface|null $until = null
+        \DateTimeInterface|string|null $from = null,
+        \DateTimeInterface|string|null $until = null
     ): self {
+        // Parse string dates using Carbon
+        if (is_string($from)) {
+            $from = \Carbon\Carbon::parse($from);
+        }
+        if (is_string($until)) {
+            $until = \Carbon\Carbon::parse($until);
+        }
         if ($from >= $until && $until) {
             throw new \Exception("The 'from' date must be before the 'until' date.");
         }
@@ -421,12 +428,17 @@ class CartItem extends Model
     /**
      * Set the 'from' date for this cart item.
      * 
-     * @param \DateTimeInterface $from Start date
+     * @param \DateTimeInterface|string $from Start date (DateTimeInterface or parsable string)
      * @return $this
      * @throws InvalidDateRangeException
      */
-    public function setFromDate(\DateTimeInterface $from): self
+    public function setFromDate(\DateTimeInterface|string $from): self
     {
+        // Parse string dates using Carbon
+        if (is_string($from)) {
+            $from = \Carbon\Carbon::parse($from);
+        }
+
         if ($this->until && $from >= $this->until) {
             throw new InvalidDateRangeException();
         }
@@ -448,12 +460,17 @@ class CartItem extends Model
     /**
      * Set the 'until' date for this cart item.
      * 
-     * @param \DateTimeInterface $until End date
+     * @param \DateTimeInterface|string $until End date (DateTimeInterface or parsable string)
      * @return $this
      * @throws InvalidDateRangeException
      */
-    public function setUntilDate(\DateTimeInterface $until): self
+    public function setUntilDate(\DateTimeInterface|string $until): self
     {
+        // Parse string dates using Carbon
+        if (is_string($until)) {
+            $until = \Carbon\Carbon::parse($until);
+        }
+
         if ($this->from && $this->from >= $until) {
             throw new InvalidDateRangeException();
         }

@@ -186,15 +186,23 @@ class Cart extends Model
      * Set the default date range for the cart.
      * Items without specific dates will use these as fallback.
      * 
-     * @param \DateTimeInterface $from Start date
-     * @param \DateTimeInterface $until End date
+     * @param \DateTimeInterface|string $from Start date (DateTimeInterface or parsable string)
+     * @param \DateTimeInterface|string $until End date (DateTimeInterface or parsable string)
      * @param bool $validateAvailability Whether to validate product availability for the timespan
      * @return $this
      * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
-    public function setDates(\DateTimeInterface $from, \DateTimeInterface $until, bool $validateAvailability = true): self
+    public function setDates(\DateTimeInterface|string $from, \DateTimeInterface|string $until, bool $validateAvailability = true): self
     {
+        // Parse string dates using Carbon
+        if (is_string($from)) {
+            $from = Carbon::parse($from);
+        }
+        if (is_string($until)) {
+            $until = Carbon::parse($until);
+        }
+
         if ($from >= $until) {
             throw new InvalidDateRangeException();
         }
@@ -214,14 +222,19 @@ class Cart extends Model
     /**
      * Set the 'from' date for the cart.
      * 
-     * @param \DateTimeInterface $from Start date
+     * @param \DateTimeInterface|string $from Start date (DateTimeInterface or parsable string)
      * @param bool $validateAvailability Whether to validate product availability for the timespan
      * @return $this
      * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
-    public function setFromDate(\DateTimeInterface $from, bool $validateAvailability = true): self
+    public function setFromDate(\DateTimeInterface|string $from, bool $validateAvailability = true): self
     {
+        // Parse string dates using Carbon
+        if (is_string($from)) {
+            $from = Carbon::parse($from);
+        }
+
         if ($this->until_date && $from >= $this->until_date) {
             throw new InvalidDateRangeException();
         }
@@ -238,14 +251,19 @@ class Cart extends Model
     /**
      * Set the 'until' date for the cart.
      * 
-     * @param \DateTimeInterface $until End date
+     * @param \DateTimeInterface|string $until End date (DateTimeInterface or parsable string)
      * @param bool $validateAvailability Whether to validate product availability for the timespan
      * @return $this
      * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
-    public function setUntilDate(\DateTimeInterface $until, bool $validateAvailability = true): self
+    public function setUntilDate(\DateTimeInterface|string $until, bool $validateAvailability = true): self
     {
+        // Parse string dates using Carbon
+        if (is_string($until)) {
+            $until = Carbon::parse($until);
+        }
+
         if ($this->from_date && $this->from_date >= $until) {
             throw new InvalidDateRangeException();
         }
@@ -597,11 +615,11 @@ class Cart extends Model
 
         // Ensure prices are not null
         if ($pricePerDay === null) {
-            $debugInfo = '';
             if ($cartable instanceof Product && $cartable->isPool()) {
-                $debugInfo = " (Pool product, currentQuantityInCart: {$currentQuantityInCart}, hasPrice: " . ($cartable->hasPrice() ? 'yes' : 'no') . ")";
+                // For pool products, throw specific error when neither pool nor single items have prices
+                throw \Blax\Shop\Exceptions\HasNoPriceException::poolProductNoPriceAndNoSingleItemPrices($cartable->name);
             }
-            throw new \Exception("Product '{$cartable->name}' has no valid price.{$debugInfo}");
+            throw new \Exception("Product '{$cartable->name}' has no valid price.");
         }
 
         // Calculate days if booking dates provided

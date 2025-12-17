@@ -207,8 +207,8 @@ class ProductPricingValidationTest extends TestCase
         ]);
 
         $this->expectException(HasNoPriceException::class);
-        $this->expectExceptionMessage('Pool product');
-        $this->expectExceptionMessage('has no pricing configured');
+        $this->expectExceptionMessage('Cannot add pool product');
+        $this->expectExceptionMessage('No pricing available');
 
         Cart::add($pool, 1);
     }

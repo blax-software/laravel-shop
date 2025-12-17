@@ -266,6 +266,10 @@ trait MayBePoolProduct
         $singleItems = $this->singleProducts;
 
         if ($singleItems->isEmpty()) {
+            // No single items, fall back to pool's direct price if available
+            if ($this->hasPrice()) {
+                return $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
+            }
             return null;
         }
 
@@ -286,6 +290,24 @@ trait MayBePoolProduct
         })->filter()->values();
 
         if ($prices->isEmpty()) {
+            // Single items exist but either:
+            // 1. None are available (sold out) - return null
+            // 2. None have prices configured - fall back to pool's direct price
+
+            // Check if any items are available but just missing prices
+            $hasAvailableItemsWithoutPrices = $singleItems->contains(function ($item) use ($from, $until) {
+                if ($from && $until) {
+                    return $item->isAvailableForBooking($from, $until, 1);
+                }
+                return $item->getAvailableStock() > 0 || !$item->manage_stock;
+            });
+
+            // If items are available but have no prices, use pool's direct price as fallback
+            if ($hasAvailableItemsWithoutPrices && $this->hasPrice()) {
+                return $this->defaultPrice()->first()?->getCurrentPrice($sales_price ?? $this->isOnSale());
+            }
+
+            // Items are sold out or pool has no fallback price
             return null;
         }
 

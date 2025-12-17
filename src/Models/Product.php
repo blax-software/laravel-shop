@@ -395,10 +395,12 @@ class Product extends Model implements Purchasable, Cartable
 
             if ($cart) {
                 // Cart-aware: Use smarter pricing that considers which price tiers are used
+                // This returns null if no items are available (all sold out)
                 return $this->getNextAvailablePoolPriceConsideringCart($cart, $sales_price);
             }
 
-            // No cart and no user: Get inherited price based on strategy (lowest/highest/average of ALL available items)
+            // No cart: Get inherited price from single items
+            // This returns null if no items are available OR if items exist but have no prices
             return $this->getInheritedPoolPrice($sales_price);
         }
 
@@ -471,10 +473,13 @@ class Product extends Model implements Purchasable, Cartable
                 });
 
                 if ($singleItemsWithPrices->isEmpty()) {
-                    $errors[] = "Pool product has no pricing (direct or inherited)";
-                    if ($throwExceptions) {
-                        throw HasNoPriceException::poolProductNoPriceAndNoSingleItemPrices($this->name);
-                    }
+                    // Pool has no direct price AND no single items with prices
+                    // This is only an error if we're actually trying to use the price
+                    // So we don't throw here - let the actual usage point handle it
+                    $warnings[] = "Pool product has no pricing (direct or inherited). Price will be needed when adding to cart.";
+                } else {
+                    // Pool has single items with prices - this is valid
+                    $warnings[] = "Pool product uses inherited pricing from single items";
                 }
             }
 
@@ -483,7 +488,7 @@ class Product extends Model implements Purchasable, Cartable
                 return $this->validateDirectPricing($throwExceptions);
             }
 
-            // Pool with inherited pricing is valid
+            // Pool without direct pricing is valid as long as it has single items with prices
             return [
                 'valid' => empty($errors),
                 'errors' => $errors,
