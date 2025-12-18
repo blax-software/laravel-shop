@@ -369,10 +369,45 @@ class Product extends Model implements Purchasable, Cartable
     }
 
     /**
-     * Get the current price with pool product inheritance support
+     * Get the current price with pool product inheritance support and cart-aware pricing.
+     * 
+     * IMPORTANT: This method handles cart-aware pricing automatically!
+     * 
+     * For pool products, this method:
+     * - Automatically retrieves the cart from session or authenticated user if not provided
+     * - Considers which price tiers are already used in the cart
+     * - Returns the next available price based on the pricing strategy (LOWEST, HIGHEST, AVERAGE)
+     * 
+     * ⚠️ COMMON MISTAKE: Do NOT call getNextAvailablePoolPriceConsideringCart() directly!
+     * Always use this method instead, as it handles cart resolution and edge cases properly.
+     * 
+     * Example usage:
+     * ```php
+     * ✅ CORRECT: Let getCurrentPrice handle cart resolution
+     * $price = $product->getCurrentPrice();
+     * 
+     * ✅ CORRECT: Pass cart explicitly if you have it
+     * $price = $product->getCurrentPrice(null, $cart);
+     * 
+     * ✅ CORRECT: Pass dates for booking calculations
+     * $price = $product->getCurrentPrice(null, $cart, $fromDate, $untilDate);
+     * 
+     * ❌ WRONG: Bypasses cart resolution and session handling
+     * $price = $product->getNextAvailablePoolPriceConsideringCart($cart, null);
+     * ```
+     * 
+     * @param bool|null $sales_price Whether to get sale price (null = auto-detect)
+     * @param mixed $cart Optional cart instance (auto-resolved from session/user if not provided)
+     * @param \DateTimeInterface|null $from Optional start date for booking calculations
+     * @param \DateTimeInterface|null $until Optional end date for booking calculations
+     * @return float|null The current price, or null if unavailable
      */
-    public function getCurrentPrice(bool|null $sales_price = null, mixed $cart = null): ?float
-    {
+    public function getCurrentPrice(
+        bool|null $sales_price = null,
+        mixed $cart = null,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
+    ): ?float {
         // If this is a pool product, use cart-aware pricing if cart is provided
         if ($this->isPool()) {
             // If no cart provided, try to get the cart from session first, then user's cart
@@ -396,7 +431,7 @@ class Product extends Model implements Purchasable, Cartable
             if ($cart) {
                 // Cart-aware: Use smarter pricing that considers which price tiers are used
                 // This returns null if no items are available (all sold out)
-                return $this->getNextAvailablePoolPriceConsideringCart($cart, $sales_price);
+                return $this->getNextAvailablePoolPriceConsideringCart($cart, $sales_price, $from, $until);
             }
 
             // No cart: Get inherited price from single items

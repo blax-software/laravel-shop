@@ -373,6 +373,16 @@ class CartItem extends Model
      * Update the booking dates for this cart item.
      * Automatically recalculates price based on the new date range.
      * 
+     * IMPORTANT: This method uses cart-aware pricing!
+     * For pool products, it automatically considers which price tiers are already
+     * used in the cart to determine the next available price based on the pricing
+     * strategy (LOWEST, HIGHEST, AVERAGE).
+     * 
+     * The method passes the NEW dates to getCurrentPrice() to ensure accurate
+     * pricing calculations. Without passing dates, the pricing logic would use
+     * stale dates from the cart item before the update, potentially selecting
+     * the wrong price tier.
+     * 
      * NOTE: This method allows setting any dates, even if they're not available.
      * Use the is_ready_to_checkout attribute to check if the dates are valid.
      * 
@@ -392,7 +402,14 @@ class CartItem extends Model
         if (is_string($until)) {
             $until = \Carbon\Carbon::parse($until);
         }
-        if ($from >= $until && $until) {
+
+        // Validate that both dates are provided
+        if (!$from || !$until) {
+            throw new \Exception("Both 'from' and 'until' dates are required.");
+        }
+
+        // Validate date order
+        if ($from >= $until) {
             throw new \Exception("The 'from' date must be before the 'until' date.");
         }
 
@@ -406,8 +423,9 @@ class CartItem extends Model
         $days = $this->calculateBookingDays($from, $until);
 
         // Get current price per day
-        $pricePerDay = $product->getCurrentPrice();
-        $regularPricePerDay = $product->getCurrentPrice(false) ?? $pricePerDay;
+        // Pass dates to ensure accurate pricing for pool products during date updates
+        $pricePerDay = $product->getCurrentPrice(null, $this->cart, $from, $until);
+        $regularPricePerDay = $product->getCurrentPrice(false, $this->cart, $from, $until) ?? $pricePerDay;
 
         // Calculate new prices
         $pricePerUnit = $pricePerDay * $days;
@@ -439,22 +457,24 @@ class CartItem extends Model
             $from = \Carbon\Carbon::parse($from);
         }
 
+        // Refresh to get current state
+        $this->refresh();
+
         if ($this->until && $from >= $this->until) {
             throw new InvalidDateRangeException();
         }
 
-        // Refresh to get current state before checking
-        $this->refresh();
+        // Get the current until date before updating
+        $currentUntil = $this->until;
 
-        $this->update(['from' => $from]);
-        $this->refresh();
-
-        // If both dates are now set, recalculate pricing
-        if ($this->until) {
-            return $this->updateDates($this->from, $this->until);
+        // If both dates are set, use updateDates to recalculate pricing
+        if ($currentUntil) {
+            return $this->updateDates($from, $currentUntil);
         }
 
-        return $this;
+        // Otherwise just update the from date
+        $this->update(['from' => $from]);
+        return $this->fresh();
     }
 
     /**
@@ -471,21 +491,23 @@ class CartItem extends Model
             $until = \Carbon\Carbon::parse($until);
         }
 
+        // Refresh to get current state
+        $this->refresh();
+
         if ($this->from && $this->from >= $until) {
             throw new InvalidDateRangeException();
         }
 
-        // Refresh to get current state before checking
-        $this->refresh();
+        // Get the current from date before updating
+        $currentFrom = $this->from;
 
-        $this->update(['until' => $until]);
-        $this->refresh();
-
-        // If both dates are now set, recalculate pricing
-        if ($this->from) {
-            return $this->updateDates($this->from, $this->until);
+        // If both dates are set, use updateDates to recalculate pricing
+        if ($currentFrom) {
+            return $this->updateDates($currentFrom, $until);
         }
 
-        return $this;
+        // Otherwise just update the until date
+        $this->update(['until' => $until]);
+        return $this->fresh();
     }
 }

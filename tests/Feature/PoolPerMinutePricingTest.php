@@ -361,8 +361,9 @@ class PoolPerMinutePricingTest extends TestCase
     /** @test */
     public function it_updates_pool_cart_item_from_date_recalculates_per_minute_price()
     {
-        $from = Carbon::now()->addDays(5)->setTime(12, 0, 0);
-        $until = Carbon::now()->addDays(6)->setTime(12, 0, 0); // 24 hours
+        $now = Carbon::now();
+        $from = $now->copy()->addDays(5)->setTime(12, 0, 0);
+        $until = $now->copy()->addDays(6)->setTime(12, 0, 0); // 24 hours
 
         $cart = \Blax\Shop\Models\Cart::factory()->create([
             'customer_id' => $this->user->id,
@@ -374,7 +375,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(30.00, $cartItem->price);
 
         // Update from date to make it 30 hours (1.25 days)
-        $newFrom = Carbon::now()->addDays(5)->setTime(6, 0, 0);
+        $newFrom = $now->copy()->addDays(5)->setTime(6, 0, 0);
         $cartItem->setFromDate($newFrom);
 
         // Price should be $30 * 1.25 = $37.50
