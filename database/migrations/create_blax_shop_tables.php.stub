@@ -131,7 +131,7 @@ return new class extends Migration
                 $table->timestamps();
 
                 $table->index('currency');
-                $table->index(['purchasable_type', 'purchasable_id', 'is_default', 'active']);
+                $table->index(['purchasable_type', 'purchasable_id', 'is_default', 'active'], 'pp_purchasable_default_active_idx');
             });
         }
 
