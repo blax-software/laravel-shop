@@ -39,7 +39,7 @@ if (config('shop.stripe.enabled', false) && !Route::has('shop.stripe.checkout'))
     Route::prefix($config['prefix'])
         ->middleware($config['middleware'])
         ->name($config['name_prefix'])
-        ->group(function () {
+        ->group(function () use ($config) {
             // Stripe Checkout
             Route::post('stripe/checkout/{cartId}', [StripeCheckoutController::class, 'createCheckoutSession'])
                 ->name('stripe.checkout');
