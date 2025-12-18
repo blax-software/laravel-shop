@@ -221,10 +221,14 @@ class Cart extends Model
             $this->validateDateAvailability($from, $until);
         }
 
+        // Update cart with from/until
         $this->update([
             'from_date' => $from,
             'until_date' => $until,
         ]);
+
+        // Update cart items with from/until
+        $this->applyDatesToItems($validateAvailability);
 
         return $this->fresh();
     }
@@ -792,14 +796,18 @@ class Cart extends Model
      * 
      * @throws \Exception
      */
-    public function validateForCheckout(): void
+    public function validateForCheckout(bool $throws = true): bool
     {
         $items = $this->items()
             ->with('purchasable')
             ->get();
 
         if ($items->isEmpty()) {
-            throw new \Exception("Cart is empty");
+            if ($throws) {
+                throw new \Exception("Cart is empty");
+            } else {
+                return false;
+            }
         }
 
         // Validate that all items have required information before checkout
@@ -809,9 +817,16 @@ class Cart extends Model
                 $product = $item->purchasable;
                 $productName = $product ? $product->name : 'Unknown Product';
                 $missingFields = implode(', ', array_keys($adjustments));
-                throw new \Exception("Cart item '{$productName}' is missing required information: {$missingFields}");
+
+                if ($throws) {
+                    throw new \Exception("Cart item '{$productName}' is missing required information: {$missingFields}");
+                } else {
+                    return false;
+                }
             }
         }
+
+        return true;
     }
 
     public function checkout(): static
@@ -926,10 +941,12 @@ class Cart extends Model
      * - Returns the Stripe checkout session
      * 
      * @param array $options Optional session parameters (success_url, cancel_url, etc.)
+     * @param string|null $url Optional fullPath URL for success and cancel URLs
+     * 
      * @return mixed Stripe\Checkout\Session instance
      * @throws \Exception
      */
-    public function checkoutSession(array $options = [])
+    public function checkoutSession(array $options = [], ?string $url = null)
     {
         if (!config('shop.stripe.enabled')) {
             throw new \Exception('Stripe is not enabled');
@@ -974,13 +991,24 @@ class Cart extends Model
             $lineItems[] = $lineItem;
         }
 
+        $success_url = $url ?? $options['success_url'] ?? route('shop.stripe.success');
+        $cancel_url = $url ?? $options['cancel_url'] ?? route('shop.stripe.cancel');
+
+        $success_url = (strpos($success_url, '?'))
+            ? $success_url . '&session_id={CHECKOUT_SESSION_ID}&cart_id=' . $this->id
+            : $success_url . '?session_id={CHECKOUT_SESSION_ID}&cart_id=' . $this->id;
+
+        $cancel_url = (strpos($cancel_url, '?'))
+            ? $cancel_url . '&cart_id=' . $this->id
+            : $cancel_url . '?cart_id=' . $this->id;
+
         // Prepare session parameters
         $sessionParams = [
             'payment_method_types' => ['card'],
             'line_items' => $lineItems,
             'mode' => 'payment',
-            'success_url' => $options['success_url'] ?? route('shop.stripe.success') . '?session_id={CHECKOUT_SESSION_ID}&cart_id=' . $this->id,
-            'cancel_url' => $options['cancel_url'] ?? route('shop.stripe.cancel') . '?cart_id=' . $this->id,
+            'success_url' => $success_url,
+            'cancel_url' => $cancel_url,
             'client_reference_id' => $this->id,
             'metadata' => array_merge([
                 'cart_id' => $this->id,
@@ -1038,56 +1066,25 @@ class Cart extends Model
      * 
      * @return string|null|false
      */
-    public function checkoutSessionLink(): string|null|false
+    public function checkoutSessionLink(array $option = [], ?string $url = null): string|null|false
     {
-        // Check if Stripe is enabled
-        if (!config('shop.stripe.enabled')) {
+        if (! @$this->validateForCheckout(false)) {
             return null;
         }
 
-        // Check if cart has a stored session ID in meta
-        $meta = $this->meta;
-        if (is_array($meta)) {
-            $meta = (object)$meta;
-        }
+        $checkoutSession = $this->checkoutSession($option, $url);
 
-        if (!isset($meta->stripe_session_id)) {
-            return null;
-        }
-
-        $sessionId = $meta->stripe_session_id;
-
-        try {
-            // Ensure Stripe is initialized
-            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
-
-            // Retrieve the session from Stripe
-            $session = \Stripe\Checkout\Session::retrieve($sessionId);
-
-            // Check if session is still valid (not expired)
-            // Stripe sessions expire after 24 hours
-            if (isset($session->expires_at) && $session->expires_at < time()) {
-                return null;
+        if ($checkoutSession) {
+            if (
+                isset($checkoutSession->url)
+                && !empty($checkoutSession->url)
+            ) {
+                return $checkoutSession->url;
             }
 
-            // Return the session URL
-            return $session->url ?? null;
-        } catch (\Stripe\Exception\InvalidRequestException $e) {
-            // Session not found or invalid
-            \Illuminate\Support\Facades\Log::warning('Stripe session not found', [
-                'cart_id' => $this->id,
-                'session_id' => $sessionId,
-                'error' => $e->getMessage(),
-            ]);
-            return null;
-        } catch (\Exception $e) {
-            // Other errors
-            \Illuminate\Support\Facades\Log::error('Error retrieving Stripe checkout session', [
-                'cart_id' => $this->id,
-                'session_id' => $sessionId,
-                'error' => $e->getMessage(),
-            ]);
             return false;
         }
+
+        return null;
     }
 }

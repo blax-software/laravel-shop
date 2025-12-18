@@ -234,15 +234,13 @@ class CartTest extends TestCase
     }
 
     /** @test */
-    public function checkout_session_link_returns_null_when_stripe_disabled()
+    public function checkout_session_link_is_null_when_stripe_disabled()
     {
         config(['shop.stripe.enabled' => false]);
 
         $cart = Cart::create();
 
-        $link = $cart->checkoutSessionLink();
-
-        $this->assertNull($link);
+        $this->assertNull($cart->checkoutSessionLink());
     }
 
     /** @test */
