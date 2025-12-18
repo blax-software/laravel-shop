@@ -17,6 +17,7 @@ use Blax\Shop\Exceptions\HasNoPriceException;
 use Blax\Shop\Exceptions\InvalidBookingConfigurationException;
 use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
 use Blax\Shop\Services\CartService;
+use Blax\Shop\Traits\ChecksIfBooking;
 use Blax\Shop\Traits\HasCategories;
 use Blax\Shop\Traits\HasPrices;
 use Blax\Shop\Traits\HasPricingStrategy;
@@ -32,7 +33,7 @@ use Illuminate\Support\Facades\Cache;
 
 class Product extends Model implements Purchasable, Cartable
 {
-    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasPricingStrategy, HasCategories, HasProductRelations, MayBePoolProduct;
+    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasPricingStrategy, HasCategories, HasProductRelations, MayBePoolProduct, ChecksIfBooking;
 
     protected $fillable = [
         'slug',
@@ -317,7 +318,7 @@ class Product extends Model implements Purchasable, Cartable
      */
     public function isBooking(): bool
     {
-        return $this->type === ProductType::BOOKING;
+        return $this->checkProductIsBooking($this);
     }
 
     /**

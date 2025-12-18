@@ -8,6 +8,7 @@ use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Exceptions\InvalidDateRangeException;
 use Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException;
 use Blax\Shop\Services\CartService;
+use Blax\Shop\Traits\ChecksIfBooking;
 use Blax\Shop\Traits\HasBookingPriceCalculation;
 use Blax\Workkit\Traits\HasExpiration;
 use Carbon\Carbon;
@@ -19,7 +20,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Cart extends Model
 {
-    use HasUuids, HasExpiration, HasFactory, HasBookingPriceCalculation;
+    use HasUuids, HasExpiration, HasFactory, HasBookingPriceCalculation, ChecksIfBooking;
 
     protected $fillable = [
         'session_id',
@@ -104,6 +105,18 @@ class Cart extends Model
         }
 
         return $this->items->every(fn($item) => $item->is_booking);
+    }
+
+    /**
+     * Check if the cart contains at least one booking item
+     */
+    public function isBooking(): bool
+    {
+        if ($this->items->isEmpty()) {
+            return false;
+        }
+
+        return $this->items->contains(fn($item) => $item->is_booking);
     }
 
     /**
@@ -513,7 +526,7 @@ class Cart extends Model
                 }
 
                 // Check booking product availability if dates are provided
-                if ($cartable->isBooking() && !$cartable->isAvailableForBooking($from, $until, $quantity)) {
+                if ($cartable->isBooking() && !$cartable->isPool() && !$cartable->isAvailableForBooking($from, $until, $quantity)) {
                     throw new \Blax\Shop\Exceptions\NotEnoughStockException(
                         "Product '{$cartable->name}' is not available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')})."
                     );
@@ -901,7 +914,7 @@ class Cart extends Model
                 }
 
                 // Validate booking products have required dates
-                if ($product instanceof Product && $product->isBooking() && (!$from || !$until)) {
+                if ($product instanceof Product && $product->isBooking() && !$product->isPool() && (!$from || !$until)) {
                     throw new \Exception("Booking product '{$product->name}' requires a timespan (from/until dates).");
                 }
 

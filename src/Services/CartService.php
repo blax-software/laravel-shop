@@ -382,7 +382,7 @@ class CartService
             }
 
             // Check if booking product has timespan
-            if ($product->isBooking() && (!$item->from || !$item->until)) {
+            if ($product->isBooking() && !$product->isPool() && (!$item->from || !$item->until)) {
                 $errors[] = "Booking product '{$product->name}' requires a timespan (from/until dates).";
                 continue;
             }
@@ -408,7 +408,7 @@ class CartService
             }
 
             // Validate stock availability for booking period
-            if ($product->isBooking() && $item->from && $item->until) {
+            if ($product->isBooking() && !$product->isPool() && $item->from && $item->until) {
                 if (!$product->isAvailableForBooking($item->from, $item->until, $item->quantity)) {
                     $errors[] = "'{$product->name}' is not available for the selected period (insufficient stock).";
                 }
@@ -493,8 +493,8 @@ class CartService
             // Validate pricing before adding to cart
             $product->validatePricing(throwExceptions: true);
 
-            // Validate booking product configuration
-            if ($product->isBooking()) {
+            // Validate booking product configuration (but not for pools)
+            if ($product->isBooking() && !$product->isPool()) {
                 $product->validateBookingConfiguration();
             }
 
@@ -503,7 +503,7 @@ class CartService
                 $product->validatePoolConfiguration();
             }
         }        // Check availability
-        if ($product instanceof Product && $product->isBooking()) {
+        if ($product instanceof Product && $product->isBooking() && !$product->isPool()) {
             if (!$product->isAvailableForBooking($from, $until, $quantity)) {
                 $available = $product->getAvailableStock();
                 throw InvalidBookingConfigurationException::notAvailableForPeriod(

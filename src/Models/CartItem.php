@@ -3,6 +3,7 @@
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Exceptions\InvalidDateRangeException;
+use Blax\Shop\Traits\ChecksIfBooking;
 use Blax\Shop\Traits\HasBookingPriceCalculation;
 use Blax\Workkit\Traits\HasMeta;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CartItem extends Model
 {
-    use HasUuids, HasMeta, HasBookingPriceCalculation;
+    use HasUuids, HasMeta, HasBookingPriceCalculation, ChecksIfBooking;
 
     protected $fillable = [
         'cart_id',
@@ -128,7 +129,7 @@ class CartItem extends Model
             // Fallback: check purchasable directly if no price_id
             if ($this->purchasable_type === config('shop.models.product', Product::class)) {
                 $product = $this->purchasable;
-                return $product && $product->isBooking();
+                return $product && $this->checkProductIsBooking($product);
             }
             return false;
         }
@@ -144,7 +145,15 @@ class CartItem extends Model
             return false;
         }
 
-        return $product->isBooking();
+        return $this->checkProductIsBooking($product);
+    }
+
+    /**
+     * Check if this cart item is for a booking product (method alias)
+     */
+    public function isBooking(): bool
+    {
+        return $this->is_booking;
     }
 
     /**
