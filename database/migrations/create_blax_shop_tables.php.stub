@@ -170,7 +170,7 @@ return new class extends Migration
                 $table->index(['product_id', 'status']);
                 $table->index(['reference_type', 'reference_id']);
                 $table->index(['claimed_from', 'expires_at']);
-                $table->index(['product_id', 'type', 'status', 'claimed_from', 'expires_at']);
+                $table->index(['product_id', 'type', 'status', 'claimed_from', 'expires_at'], 'ps_product_type_status_dates_idx');
                 $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
             });
         }
@@ -295,7 +295,7 @@ return new class extends Migration
                 $table->timestamps();
 
                 $table->index(['cart_id', 'purchasable_id']);
-                $table->index(['cart_id', 'purchasable_type', 'purchasable_id']);
+                $table->index(['cart_id', 'purchasable_type', 'purchasable_id'], 'ci_cart_purchasable_idx');
                 $table->index(['from', 'until']);
                 $table->foreign('cart_id')->references('id')->on(config('shop.tables.carts', 'carts'))->onDelete('cascade');
             });
@@ -328,8 +328,8 @@ return new class extends Migration
                 $table->json('meta')->nullable();
                 $table->timestamps();
 
-                $table->index(['customer_type', 'customer_id', 'provider_name'], 'ppi_customer_provider_index');
-                $table->unique(['customer_type', 'customer_id', 'provider_name'], 'ppi_customer_provider_unique');
+                $table->index(['customer_type', 'customer_id', 'provider_name'], 'ppi_cust_provider_idx');
+                $table->unique(['customer_type', 'customer_id', 'provider_name'], 'ppi_cust_provider_unq');
             });
         }
 
@@ -352,8 +352,8 @@ return new class extends Migration
                 $table->json('meta')->nullable();
                 $table->timestamps();
 
-                $table->index(['payment_provider_identity_id', 'is_active']);
-                $table->foreign('payment_provider_identity_id', 'payment_methods_provider_identity_foreign')
+                $table->index(['payment_provider_identity_id', 'is_active'], 'pm_provider_identity_active_idx');
+                $table->foreign('payment_provider_identity_id', 'pm_provider_identity_fk')
                     ->references('id')
                     ->on(config('shop.tables.payment_provider_identities', 'payment_provider_identities'))
                     ->onDelete('cascade');
