@@ -48,6 +48,7 @@ return new class extends Migration
 
                 $table->index(['slug', 'status']);
                 $table->index(['featured', 'is_visible', 'status']);
+                $table->index(['type', 'status', 'is_visible']);
                 $table->index('parent_id');
                 $table->foreign('parent_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
             });
@@ -130,6 +131,7 @@ return new class extends Migration
                 $table->timestamps();
 
                 $table->index('currency');
+                $table->index(['purchasable_type', 'purchasable_id', 'is_default', 'active']);
             });
         }
 
@@ -168,6 +170,7 @@ return new class extends Migration
                 $table->index(['product_id', 'status']);
                 $table->index(['reference_type', 'reference_id']);
                 $table->index(['claimed_from', 'expires_at']);
+                $table->index(['product_id', 'type', 'status', 'claimed_from', 'expires_at']);
                 $table->foreign('product_id')->references('id')->on(config('shop.tables.products', 'products'))->onDelete('cascade');
             });
         }
@@ -268,6 +271,7 @@ return new class extends Migration
 
                 $table->index(['session_id', 'status']);
                 $table->index(['customer_type', 'customer_id', 'status']);
+                $table->index(['status', 'last_activity_at']);
             });
         }
 
@@ -280,9 +284,10 @@ return new class extends Migration
                 $table->foreignUuid('purchase_id')->nullable()->constrained(config('shop.tables.product_purchases', 'product_purchases'))->nullOnDelete();
                 $table->foreignUuid('price_id')->nullable()->constrained(config('shop.tables.product_prices', 'product_prices'))->nullOnDelete();
                 $table->integer('quantity')->default(1);
-                $table->decimal('price', 10, 2)->default(0);
-                $table->decimal('regular_price', 10, 2)->nullable();
-                $table->decimal('subtotal', 10, 2);
+                $table->integer('price')->default(0); // Stored in cents
+                $table->integer('regular_price')->nullable(); // Stored in cents
+                $table->integer('unit_amount')->nullable(); // Base unit price for 1 quantity, 1 day (in cents)
+                $table->integer('subtotal'); // Stored in cents
                 $table->json('parameters')->nullable();
                 $table->json('meta')->nullable();
                 $table->timestamp('from')->nullable();
@@ -290,6 +295,8 @@ return new class extends Migration
                 $table->timestamps();
 
                 $table->index(['cart_id', 'purchasable_id']);
+                $table->index(['cart_id', 'purchasable_type', 'purchasable_id']);
+                $table->index(['from', 'until']);
                 $table->foreign('cart_id')->references('id')->on(config('shop.tables.carts', 'carts'))->onDelete('cascade');
             });
         }

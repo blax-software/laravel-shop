@@ -56,6 +56,13 @@ class Cart extends Model
         $this->table = config('shop.tables.carts', 'carts');
     }
 
+    protected static function booted()
+    {
+        static::deleting(function ($cart) {
+            $cart->items()->delete();
+        });
+    }
+
     public function customer(): MorphTo
     {
         return $this->morphTo();
@@ -354,6 +361,16 @@ class Cart extends Model
         }
     }
 
+    /**
+     * Scope to find abandoned carts
+     * Carts that are active but haven't been updated recently
+     */
+    public function scopeAbandoned($query, $inactiveMinutes = 60)
+    {
+        return $query->where('status', CartStatus::ACTIVE)
+            ->where('last_activity_at', '<', now()->subMinutes($inactiveMinutes));
+    }
+
     public function getUnpaidAmount(): float
     {
         $paidAmount = $this->purchases()
@@ -406,13 +423,6 @@ class Cart extends Model
     {
         return $query->whereDoesntHave('purchases', function ($q) {
             $q->whereColumn('total_amount', '!=', 'amount_paid');
-        });
-    }
-
-    protected static function booted()
-    {
-        static::deleting(function ($cart) {
-            $cart->items()->delete();
         });
     }
 
@@ -657,6 +667,9 @@ class Cart extends Model
             throw new \Exception("Cart item price calculation resulted in null for '{$cartable->name}' (pricePerDay: {$pricePerDay}, days: {$days})");
         }
 
+        // Store the base unit_amount (price for 1 quantity, 1 day) in cents
+        $unitAmount = (int) round($pricePerDay);
+
         // Calculate total price
         $totalPrice = $pricePerUnit * $quantity;
 
@@ -695,6 +708,7 @@ class Cart extends Model
             'quantity' => $quantity,
             'price' => $pricePerUnit,  // Price per unit for the period
             'regular_price' => $regularPricePerUnit,
+            'unit_amount' => $unitAmount,  // Base price for 1 quantity, 1 day (in cents)
             'subtotal' => $totalPrice,  // Total for all units
             'parameters' => $parameters,
             'from' => $from,
@@ -802,93 +816,104 @@ class Cart extends Model
 
     public function checkout(): static
     {
-        // Validate cart before proceeding
-        $this->validateForCheckout();
+        return \DB::transaction(function () {
+            // Lock the cart to prevent concurrent checkouts
+            $this->lockForUpdate();
 
-        $items = $this->items()
-            ->with('purchasable')
-            ->get();
+            // Validate cart before proceeding
+            $this->validateForCheckout();
 
-        // Create ProductPurchase for each cart item
-        foreach ($items as $item) {
-            $product = $item->purchasable;
-            $quantity = $item->quantity;
+            $items = $this->items()
+                ->with('purchasable')
+                ->get();
 
-            // Get booking dates from cart item directly (preferred) or from parameters (legacy)
-            $from = $item->from;
-            $until = $item->until;
+            // Create ProductPurchase for each cart item
+            foreach ($items as $item) {
+                $product = $item->purchasable;
 
-            if (!$from || !$until) {
-                if (($product->type === ProductType::BOOKING || $product->type === ProductType::POOL) && $item->parameters) {
-                    $params = is_array($item->parameters) ? $item->parameters : (array) $item->parameters;
-                    $from = $params['from'] ?? null;
-                    $until = $params['until'] ?? null;
-
-                    // Convert to Carbon instances if they're strings
-                    if ($from && is_string($from)) {
-                        $from = \Carbon\Carbon::parse($from);
-                    }
-                    if ($until && is_string($until)) {
-                        $until = \Carbon\Carbon::parse($until);
-                    }
-                }
-            }
-
-            // Handle pool products with booking single items
-            if ($product instanceof Product && $product->isPool()) {
-                // Check if pool with booking items requires timespan
-                if ($product->hasBookingSingleItems() && (!$from || !$until)) {
-                    throw new \Exception("Pool product '{$product->name}' with booking items requires a timespan (from/until dates).");
+                // Lock the product to prevent race conditions on stock
+                if ($product instanceof Product && method_exists($product, 'lockForUpdate')) {
+                    $product = $product->lockForUpdate()->find($product->id);
                 }
 
-                // If pool has timespan and has booking single items, claim stock from single items
-                if ($from && $until && $product->hasBookingSingleItems()) {
-                    try {
-                        $claimedItems = $product->claimPoolStock(
-                            $quantity,
-                            $this,
-                            $from,
-                            $until,
-                            "Checkout from cart {$this->id}"
-                        );
+                $quantity = $item->quantity;
 
-                        // Store claimed items info in purchase meta
-                        $item->updateMetaKey('claimed_single_items', array_map(fn($i) => $i->id, $claimedItems));
-                        $item->save();
-                    } catch (\Exception $e) {
-                        throw new \Exception("Failed to checkout pool product '{$product->name}': " . $e->getMessage());
+                // Get booking dates from cart item directly (preferred) or from parameters (legacy)
+                $from = $item->from;
+                $until = $item->until;
+
+                if (!$from || !$until) {
+                    if (($product->type === ProductType::BOOKING || $product->type === ProductType::POOL) && $item->parameters) {
+                        $params = is_array($item->parameters) ? $item->parameters : (array) $item->parameters;
+                        $from = $params['from'] ?? null;
+                        $until = $params['until'] ?? null;
+
+                        // Convert to Carbon instances if they're strings
+                        if ($from && is_string($from)) {
+                            $from = \Carbon\Carbon::parse($from);
+                        }
+                        if ($until && is_string($until)) {
+                            $until = \Carbon\Carbon::parse($until);
+                        }
                     }
                 }
+
+                // Handle pool products with booking single items
+                if ($product instanceof Product && $product->isPool()) {
+                    // Check if pool with booking items requires timespan
+                    if ($product->hasBookingSingleItems() && (!$from || !$until)) {
+                        throw new \Exception("Pool product '{$product->name}' with booking items requires a timespan (from/until dates).");
+                    }
+
+                    // If pool has timespan and has booking single items, claim stock from single items
+                    if ($from && $until && $product->hasBookingSingleItems()) {
+                        try {
+                            $claimedItems = $product->claimPoolStock(
+                                $quantity,
+                                $this,
+                                $from,
+                                $until,
+                                "Checkout from cart {$this->id}"
+                            );
+
+                            // Store claimed items info in purchase meta
+                            $item->updateMetaKey('claimed_single_items', array_map(fn($i) => $i->id, $claimedItems));
+                            $item->save();
+                        } catch (\Exception $e) {
+                            throw new \Exception("Failed to checkout pool product '{$product->name}': " . $e->getMessage());
+                        }
+                    }
+                }
+
+                // Validate booking products have required dates
+                if ($product instanceof Product && $product->isBooking() && (!$from || !$until)) {
+                    throw new \Exception("Booking product '{$product->name}' requires a timespan (from/until dates).");
+                }
+
+                $purchase = $this->customer->purchase(
+                    $product->prices()->first(),
+                    $quantity,
+                    null,
+                    $from,
+                    $until
+                );
+
+                $purchase->update([
+                    'cart_id' => $item->cart_id,
+                ]);
+
+                // Remove item from cart
+                $item->update([
+                    'purchase_id' => $purchase->id,
+                ]);
             }
 
-            // Validate booking products have required dates
-            if ($product instanceof Product && $product->isBooking() && (!$from || !$until)) {
-                throw new \Exception("Booking product '{$product->name}' requires a timespan (from/until dates).");
-            }
-
-            $purchase = $this->customer->purchase(
-                $product->prices()->first(),
-                $quantity,
-                null,
-                $from,
-                $until
-            );
-
-            $purchase->update([
-                'cart_id' => $item->cart_id,
+            $this->update([
+                'converted_at' => now(),
             ]);
 
-            // Remove item from cart
-            $item->update([
-                'purchase_id' => $purchase->id,
-            ]);
-        }
-
-        $this->update([
-            'converted_at' => now(),
-        ]);
-
-        return $this;
+            return $this;
+        });
     }
 
     /**
@@ -1000,6 +1025,69 @@ class Cart extends Model
             ]);
 
             throw $e;
+        }
+    }
+
+    /**
+     * Get the checkout session link for this cart.
+     * 
+     * This method returns:
+     * - string: The checkout session URL if a session exists and is valid
+     * - null: If no session exists or Stripe is not enabled
+     * - false: If an error occurred while retrieving the session
+     * 
+     * @return string|null|false
+     */
+    public function checkoutSessionLink(): string|null|false
+    {
+        // Check if Stripe is enabled
+        if (!config('shop.stripe.enabled')) {
+            return null;
+        }
+
+        // Check if cart has a stored session ID in meta
+        $meta = $this->meta;
+        if (is_array($meta)) {
+            $meta = (object)$meta;
+        }
+
+        if (!isset($meta->stripe_session_id)) {
+            return null;
+        }
+
+        $sessionId = $meta->stripe_session_id;
+
+        try {
+            // Ensure Stripe is initialized
+            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+
+            // Retrieve the session from Stripe
+            $session = \Stripe\Checkout\Session::retrieve($sessionId);
+
+            // Check if session is still valid (not expired)
+            // Stripe sessions expire after 24 hours
+            if (isset($session->expires_at) && $session->expires_at < time()) {
+                return null;
+            }
+
+            // Return the session URL
+            return $session->url ?? null;
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            // Session not found or invalid
+            \Illuminate\Support\Facades\Log::warning('Stripe session not found', [
+                'cart_id' => $this->id,
+                'session_id' => $sessionId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        } catch (\Exception $e) {
+            // Other errors
+            \Illuminate\Support\Facades\Log::error('Error retrieving Stripe checkout session', [
+                'cart_id' => $this->id,
+                'session_id' => $sessionId,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
         }
     }
 }

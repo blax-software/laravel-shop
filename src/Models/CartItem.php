@@ -21,6 +21,7 @@ class CartItem extends Model
         'quantity',
         'price',
         'regular_price',
+        'unit_amount',
         'subtotal',
         'parameters',
         'purchase_id',
@@ -33,6 +34,7 @@ class CartItem extends Model
         'quantity' => 'integer',
         'price' => 'integer',
         'regular_price' => 'integer',
+        'unit_amount' => 'integer',
         'subtotal' => 'integer',
         'parameters' => 'array',
         'meta' => 'array',
@@ -427,6 +429,9 @@ class CartItem extends Model
         $pricePerDay = $product->getCurrentPrice(null, $this->cart, $from, $until);
         $regularPricePerDay = $product->getCurrentPrice(false, $this->cart, $from, $until) ?? $pricePerDay;
 
+        // Store the base unit_amount (price for 1 quantity, 1 day) in cents
+        $unitAmount = (int) round($pricePerDay);
+
         // Calculate new prices and round to nearest cent for consistency
         $pricePerUnit = (int) round($pricePerDay * $days);
         $regularPricePerUnit = (int) round($regularPricePerDay * $days);
@@ -436,6 +441,7 @@ class CartItem extends Model
             'until' => $until,
             'price' => $pricePerUnit,
             'regular_price' => $regularPricePerUnit,
+            'unit_amount' => $unitAmount,
             'subtotal' => $pricePerUnit * $this->quantity,
         ]);
 
