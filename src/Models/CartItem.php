@@ -31,9 +31,9 @@ class CartItem extends Model
 
     protected $casts = [
         'quantity' => 'integer',
-        'price' => 'decimal:2',
-        'regular_price' => 'decimal:2',
-        'subtotal' => 'decimal:2',
+        'price' => 'integer',
+        'regular_price' => 'integer',
+        'subtotal' => 'integer',
         'parameters' => 'array',
         'meta' => 'array',
         'from' => 'datetime',
@@ -427,9 +427,9 @@ class CartItem extends Model
         $pricePerDay = $product->getCurrentPrice(null, $this->cart, $from, $until);
         $regularPricePerDay = $product->getCurrentPrice(false, $this->cart, $from, $until) ?? $pricePerDay;
 
-        // Calculate new prices
-        $pricePerUnit = $pricePerDay * $days;
-        $regularPricePerUnit = $regularPricePerDay * $days;
+        // Calculate new prices and round to nearest cent for consistency
+        $pricePerUnit = (int) round($pricePerDay * $days);
+        $regularPricePerUnit = (int) round($regularPricePerDay * $days);
 
         $this->update([
             'from' => $from,

@@ -42,7 +42,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->price = ProductPrice::factory()->create([
             'purchasable_id' => $this->bookingProduct->id,
             'purchasable_type' => Product::class,
-            'unit_amount' => 100, // $100.00 per day
+            'unit_amount' => 10000, // $100 per day
             'currency' => 'USD',
             'is_default' => true,
         ]);
@@ -57,8 +57,8 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // Expecting exactly 100.00 for 1 day
-        $this->assertEquals('100.00', $cartItem->price);
-        $this->assertEquals(100.00, $cartItem->subtotal);
+        $this->assertEquals('10000', $cartItem->price);
+        $this->assertEquals(10000, $cartItem->subtotal);
     }
 
     /** @test */
@@ -70,8 +70,8 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // Expecting 50.00 for 0.5 days (12 hours)
-        $this->assertEquals('50.00', $cartItem->price);
-        $this->assertEquals(50.00, $cartItem->subtotal);
+        $this->assertEquals('5000', $cartItem->price);
+        $this->assertEquals(5000, $cartItem->subtotal);
     }
 
     /** @test */
@@ -83,8 +83,8 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // Expecting 150.00 for 1.5 days (36 hours)
-        $this->assertEquals('150.00', $cartItem->price);
-        $this->assertEquals(150.00, $cartItem->subtotal);
+        $this->assertEquals('15000', $cartItem->price);
+        $this->assertEquals(15000, $cartItem->subtotal);
     }
 
     /** @test */
@@ -96,8 +96,8 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // Expecting 25.00 for 0.25 days (6 hours)
-        $this->assertEquals('25.00', $cartItem->price);
-        $this->assertEquals(25.00, $cartItem->subtotal);
+        $this->assertEquals('2500', $cartItem->price);
+        $this->assertEquals(2500, $cartItem->subtotal);
     }
 
     /** @test */
@@ -110,8 +110,8 @@ class BookingPerMinutePricingTest extends TestCase
 
         // 90 minutes = 1.5 hours = 0.0625 days
         // Price: 100.00 * 0.0625 = 6.25
-        $this->assertEquals('6.25', $cartItem->price);
-        $this->assertEquals(6.25, $cartItem->subtotal);
+        $this->assertEquals('625', $cartItem->price);
+        $this->assertEquals(625, $cartItem->subtotal);
     }
 
     /** @test */
@@ -124,8 +124,8 @@ class BookingPerMinutePricingTest extends TestCase
 
         // 51 hours = 2.125 days
         // Price: 100.00 * 2.125 = 212.50
-        $this->assertEquals('212.50', $cartItem->price);
-        $this->assertEquals(212.50, $cartItem->subtotal);
+        $this->assertEquals('21250', $cartItem->price);
+        $this->assertEquals(21250, $cartItem->subtotal);
     }
 
     /** @test */
@@ -138,8 +138,8 @@ class BookingPerMinutePricingTest extends TestCase
 
         // 0.5 days * 100.00 = 50.00 per unit
         // 3 units * 50.00 = 150.00 total
-        $this->assertEquals('50.00', $cartItem->price); // price per unit
-        $this->assertEquals(150.00, $cartItem->subtotal); // total for 3 units
+        $this->assertEquals('5000', $cartItem->price); // price per unit
+        $this->assertEquals(15000, $cartItem->subtotal); // total for 3 units
     }
 
     /** @test */
@@ -151,15 +151,15 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // Initial price for 1 day
-        $this->assertEquals('100.00', $cartItem->price);
+        $this->assertEquals('10000', $cartItem->price);
 
         // Update to 18 hours (0.75 days)
         $newUntil = Carbon::now()->addDays(6)->setTime(3, 0, 0);
         $cartItem->updateDates($from, $newUntil);
 
         // Price should now be 75.00 for 0.75 days
-        $this->assertEquals(75.00, $cartItem->fresh()->price);
-        $this->assertEquals(75.00, $cartItem->fresh()->subtotal);
+        $this->assertEquals(7500, $cartItem->fresh()->price);
+        $this->assertEquals(7500, $cartItem->fresh()->subtotal);
     }
 
     /** @test */
@@ -172,7 +172,7 @@ class BookingPerMinutePricingTest extends TestCase
 
         // 45 minutes = 0.75 hours = 0.03125 days
         // Price: 100.00 * 0.03125 = 3.125
-        $this->assertEquals(3.13, round($cartItem->price, 2)); // Rounded due to decimal precision
+        $this->assertEquals(313, round($cartItem->price, 2)); // Rounded due to decimal precision
     }
 
     /** @test */
@@ -210,14 +210,14 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = $cart->addToCart($this->bookingProduct, 1, [], $from, $until);
 
         // Initial: 1 day = 100.00
-        $this->assertEquals('100.00', $cartItem->price);
+        $this->assertEquals('10000', $cartItem->price);
 
         // Update from date to make it 30 hours (1.25 days)
         $newFrom = Carbon::now()->addDays(5)->setTime(6, 0, 0);
         $cartItem->setFromDate($newFrom);
 
         // Price should be 125.00 for 1.25 days
-        $this->assertEquals(125.00, $cartItem->fresh()->price);
+        $this->assertEquals(12500, $cartItem->fresh()->price);
     }
 
     /** @test */
@@ -233,14 +233,14 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = $cart->addToCart($this->bookingProduct, 1, [], $from, $until);
 
         // Initial: 0.5 days = 50.00
-        $this->assertEquals('50.00', $cartItem->price);
+        $this->assertEquals('5000', $cartItem->price);
 
         // Update until date to make it 18 hours (0.75 days)
         $newUntil = Carbon::now()->addDays(6)->setTime(4, 0, 0);
         $cartItem->setUntilDate($newUntil);
 
         // Price should be 75.00 for 0.75 days
-        $this->assertEquals(75.00, $cartItem->fresh()->price);
+        $this->assertEquals(7500, $cartItem->fresh()->price);
     }
 
     /** @test */
@@ -254,7 +254,7 @@ class BookingPerMinutePricingTest extends TestCase
 
         // 64 hours = 2.6667 days (rounded)
         // Price: 100.00 * 2.6667 = 266.67
-        $expectedPrice = round(100.00 * (64 / 24), 2);
+        $expectedPrice = round(10000 * (64 / 24), 0);
         $this->assertEquals($expectedPrice, $cartItem->price);
     }
 
@@ -276,11 +276,11 @@ class BookingPerMinutePricingTest extends TestCase
         $until2 = Carbon::now()->addDays(10)->setTime(16, 0, 0);
         $item2 = $cart->addToCart($this->bookingProduct, 1, [], $from2, $until2);
 
-        $this->assertEquals('50.00', $item1->price); // 12 hours = 0.5 days
-        $this->assertEquals('25.00', $item2->price); // 6 hours = 0.25 days
+        $this->assertEquals('5000', $item1->price); // 12 hours = 0.5 days
+        $this->assertEquals('2500', $item2->price); // 6 hours = 0.25 days
 
         // Total cart should be 75.00
-        $this->assertEquals(75.00, $cart->getTotal());
+        $this->assertEquals(7500, $cart->getTotal());
     }
 
     /** @test */
@@ -288,11 +288,11 @@ class BookingPerMinutePricingTest extends TestCase
     {
         // Test various odd time spans
         $testCases = [
-            ['hours' => 1, 'expectedDays' => 1 / 24, 'expectedPrice' => 4.17], // 1 hour
-            ['hours' => 3, 'expectedDays' => 3 / 24, 'expectedPrice' => 12.50], // 3 hours
-            ['hours' => 7, 'expectedDays' => 7 / 24, 'expectedPrice' => 29.17], // 7 hours
-            ['hours' => 13, 'expectedDays' => 13 / 24, 'expectedPrice' => 54.17], // 13 hours
-            ['hours' => 25, 'expectedDays' => 25 / 24, 'expectedPrice' => 104.17], // 25 hours
+            ['hours' => 1, 'expectedDays' => 1 / 24, 'expectedPrice' => 417], // 1 hour
+            ['hours' => 3, 'expectedDays' => 3 / 24, 'expectedPrice' => 1250], // 3 hours
+            ['hours' => 7, 'expectedDays' => 7 / 24, 'expectedPrice' => 2917], // 7 hours
+            ['hours' => 13, 'expectedDays' => 13 / 24, 'expectedPrice' => 5417], // 13 hours
+            ['hours' => 25, 'expectedDays' => 25 / 24, 'expectedPrice' => 10417], // 25 hours
         ];
 
         foreach ($testCases as $testCase) {
@@ -321,9 +321,9 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 2, $from, $until);
 
         // Verify per-minute pricing is correct
-        $this->assertEquals('25.00', $cartItem->price);
+        $this->assertEquals('2500', $cartItem->price);
         $this->assertEquals(2, $cartItem->quantity);
-        $this->assertEquals(50.00, $cartItem->subtotal);
+        $this->assertEquals(5000, $cartItem->subtotal);
 
         // Remove item
         $cartItemId = $cartItem->id;
@@ -334,20 +334,20 @@ class BookingPerMinutePricingTest extends TestCase
 
         // Re-add with different quantity - price calculation should be consistent
         $cartItem2 = Cart::addBooking($this->bookingProduct, 3, $from, $until);
-        $this->assertEquals('25.00', $cartItem2->price);
+        $this->assertEquals('2500', $cartItem2->price);
         $this->assertEquals(3, $cartItem2->quantity);
-        $this->assertEquals(75.00, $cartItem2->subtotal);
+        $this->assertEquals(7500, $cartItem2->subtotal);
     }
 
     /** @test */
     public function it_calculates_price_for_half_hour_increments()
     {
         $testCases = [
-            ['minutes' => 30, 'expectedPrice' => '2.08'],   // 0.5 hours
-            ['minutes' => 90, 'expectedPrice' => '6.25'],   // 1.5 hours
-            ['minutes' => 150, 'expectedPrice' => '10.42'],  // 2.5 hours
-            ['minutes' => 210, 'expectedPrice' => '14.58'],  // 3.5 hours
-            ['minutes' => 270, 'expectedPrice' => '18.75'],  // 4.5 hours
+            ['minutes' => 30, 'expectedPrice' => '208'],   // 0.5 hours
+            ['minutes' => 90, 'expectedPrice' => '625'],   // 1.5 hours
+            ['minutes' => 150, 'expectedPrice' => '1042'],  // 2.5 hours
+            ['minutes' => 210, 'expectedPrice' => '1458'],  // 3.5 hours
+            ['minutes' => 270, 'expectedPrice' => '1875'],  // 4.5 hours
         ];
 
         foreach ($testCases as $testCase) {
@@ -377,7 +377,7 @@ class BookingPerMinutePricingTest extends TestCase
             $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
             $expectedDays = $hours / 24;
-            $expectedPrice = number_format(100 * $expectedDays, 2, '.', '');
+            $expectedPrice = number_format(10000 * $expectedDays, 0, '.', '');
 
             $this->assertEquals(
                 $expectedPrice,
@@ -406,14 +406,14 @@ class BookingPerMinutePricingTest extends TestCase
 
         // Get cart total
         $total = $cart->getTotal();
-        $this->assertEquals(25.00, $total);
+        $this->assertEquals(2500, $total);
 
         // Add more quantity
         $cart->addToCart($this->bookingProduct, 1, [], $from, $until);
         $cart->refresh();
 
         // Total should double
-        $this->assertEquals(50.00, $cart->getTotal());
+        $this->assertEquals(5000, $cart->getTotal());
     }
 
     /** @test */
@@ -426,8 +426,8 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // 7 days * $100 = $700.00
-        $this->assertEquals('700.00', $cartItem->price);
-        $this->assertEquals(700.00, $cartItem->subtotal);
+        $this->assertEquals('70000', $cartItem->price);
+        $this->assertEquals(70000, $cartItem->subtotal);
     }
 
     /** @test */
@@ -439,7 +439,7 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // 7.5 hours = 0.3125 days, $100 * 0.3125 = $31.25
-        $this->assertEquals('31.25', $cartItem->price);
+        $this->assertEquals('3125', $cartItem->price);
     }
 
     /** @test */
@@ -452,7 +452,7 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // 4 hours = 0.166667 days, $100 * 0.166667 = $16.67
-        $this->assertEquals('16.67', $cartItem->price);
+        $this->assertEquals('1667', $cartItem->price);
     }
 
     /** @test */
@@ -465,10 +465,10 @@ class BookingPerMinutePricingTest extends TestCase
         $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
         // 2 minutes = 0.001389 days, $100 * 0.001389 = $0.1389, rounds to $0.14
-        $this->assertEquals('0.14', $cartItem->price);
+        $this->assertEquals('14', $cartItem->price);
 
         // Should still be less than 1 dollar
-        $this->assertLessThan(1.0, (float)$cartItem->price);
+        $this->assertLessThan(100, (float)$cartItem->price);
     }
 
     /** @test */
@@ -483,7 +483,7 @@ class BookingPerMinutePricingTest extends TestCase
             $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
 
             $expectedDays = $minutes / 1440;
-            $expectedPrice = number_format(100 * $expectedDays, 2, '.', '');
+            $expectedPrice = number_format(10000 * $expectedDays, 0, '.', '');
 
             $this->assertEquals(
                 $expectedPrice,

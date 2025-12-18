@@ -648,9 +648,9 @@ class Cart extends Model
             $days = $this->calculateBookingDays($from, $until);
         }
 
-        // Calculate price per unit for the entire period
-        $pricePerUnit = $pricePerDay * $days;
-        $regularPricePerUnit = $regularPricePerDay * $days;
+        // Calculate price per unit for the entire period and round to nearest cent for consistency
+        $pricePerUnit = (int) round($pricePerDay * $days);
+        $regularPricePerUnit = (int) round($regularPricePerDay * $days);
 
         // Defensive check - ensure pricePerUnit is not null
         if ($pricePerUnit === null) {
@@ -931,9 +931,8 @@ class Cart extends Model
                 $productName .= " from {$fromFormatted} to {$untilFormatted}";
             }
 
-            // Convert price to cents (Stripe expects smallest currency unit)
-            // Cart item price is already per unit for the entire period
-            $unitAmountCents = (int) round($item->price * 100);
+            // Price is already stored in cents, Stripe expects smallest currency unit
+            $unitAmountCents = (int) $item->price;
 
             // Build line item using price_data for dynamic pricing
             $lineItem = [

@@ -204,8 +204,8 @@ class CartCheckoutSessionTest extends TestCase
             'cancel_url' => 'https://example.com/cancel',
         ]);
 
-        // Cart stores price as decimal (25.50), Stripe needs cents (2550)
-        $this->assertEquals(255000, $sessionParams['line_items'][0]['price_data']['unit_amount']);
+        // Price is stored in cents (2550), Stripe expects cents (2550)
+        $this->assertEquals(2550, $sessionParams['line_items'][0]['price_data']['unit_amount']);
     }
 
     /** @test */
@@ -252,9 +252,8 @@ class CartCheckoutSessionTest extends TestCase
         // The cart item should have calculated the fractional day price
         $cartItem = $this->cart->items->first();
 
-        // Price should be rounded appropriately and converted to cents
-        $expectedCents = (int) round($cartItem->price * 100);
-        $this->assertEquals($expectedCents, $sessionParams['line_items'][0]['price_data']['unit_amount']);
+        // Price is already in cents, no conversion needed
+        $this->assertEquals($cartItem->price, $sessionParams['line_items'][0]['price_data']['unit_amount']);
     }
 
     /** @test */

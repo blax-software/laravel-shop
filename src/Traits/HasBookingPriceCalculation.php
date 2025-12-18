@@ -57,6 +57,7 @@ trait HasBookingPriceCalculation
         \DateTimeInterface $until
     ): float {
         $days = $this->calculateBookingDays($from, $until);
-        return $pricePerDay * $days;
+        // Round to nearest cent for consistency and to avoid floating-point precision errors
+        return (int) round($pricePerDay * $days);
     }
 }

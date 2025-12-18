@@ -538,7 +538,7 @@ class CartService
         // Calculate price based on days for booking products
         if ($product instanceof Product && ($product->isBooking() || $product->isPool())) {
             $days = $this->calculateBookingDays($from, $until);
-            $pricePerUnit = $pricePerDay * $days;  // Price for one unit for the entire period
+            $pricePerUnit = (int) round($pricePerDay * $days);  // Price for one unit for the entire period
             $totalPrice = $pricePerUnit * $quantity;  // Total for all units
         } else {
             $pricePerUnit = $pricePerDay;
