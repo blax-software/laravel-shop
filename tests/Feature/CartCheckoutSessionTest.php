@@ -33,7 +33,7 @@ class CartCheckoutSessionTest extends TestCase
     {
         config(['shop.stripe.enabled' => false]);
 
-        $product = Product::factory()->create();
+        $product = Product::factory()->create(['manage_stock' => false]);
         ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
             'purchasable_type' => Product::class,
@@ -61,6 +61,7 @@ class CartCheckoutSessionTest extends TestCase
         $product = Product::factory()->create([
             'name' => 'Test Product',
             'short_description' => 'Short desc',
+            'manage_stock' => false,
         ]);
 
         ProductPrice::factory()->create([
@@ -95,6 +96,7 @@ class CartCheckoutSessionTest extends TestCase
         $product = Product::factory()->create([
             'name' => 'Very Long Product Name That Would Be Too Long',
             'short_description' => 'Short Name',
+            'manage_stock' => false,
         ]);
 
         ProductPrice::factory()->create([
@@ -178,7 +180,7 @@ class CartCheckoutSessionTest extends TestCase
         config(['shop.stripe.enabled' => true]);
         config(['services.stripe.secret' => 'sk_test_fake']);
 
-        $product = Product::factory()->create(['name' => 'Test Product']);
+        $product = Product::factory()->create(['name' => 'Test Product', 'manage_stock' => false]);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
@@ -262,8 +264,8 @@ class CartCheckoutSessionTest extends TestCase
         config(['shop.stripe.enabled' => true]);
         config(['services.stripe.secret' => 'sk_test_fake']);
 
-        $product1 = Product::factory()->create(['name' => 'Product 1']);
-        $product2 = Product::factory()->create(['name' => 'Product 2']);
+        $product1 = Product::factory()->create(['name' => 'Product 1', 'manage_stock' => false]);
+        $product2 = Product::factory()->create(['name' => 'Product 2', 'manage_stock' => false]);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $product1->id,
@@ -310,7 +312,7 @@ class CartCheckoutSessionTest extends TestCase
         config(['shop.currency' => 'eur']);
         config(['services.stripe.secret' => 'sk_test_fake']);
 
-        $product = Product::factory()->create(['name' => 'Product']);
+        $product = Product::factory()->create(['name' => 'Product', 'manage_stock' => false]);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $product->id,
@@ -345,7 +347,7 @@ class CartCheckoutSessionTest extends TestCase
         config(['shop.stripe.enabled' => true]);
         config(['services.stripe.secret' => 'sk_test_fake']);
 
-        $product = Product::factory()->create(['name' => 'Product']);
+        $product = Product::factory()->create(['name' => 'Product', 'manage_stock' => false]);
 
         ProductPrice::factory()->create([
             'purchasable_id' => $product->id,

@@ -316,8 +316,9 @@ class PoolProductCheckoutTest extends TestCase
         $this->parkingSpot1->claimStock(1, null, $from, $until);
         $this->parkingSpot2->claimStock(1, null, $from, $until);
 
-        $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('Failed to checkout pool product');
+        // validateForCheckout will now catch this before checkout even starts
+        $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
+        $this->expectExceptionMessage('has only 1 items available');
 
         $cart->checkout();
     }

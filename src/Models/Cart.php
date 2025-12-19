@@ -840,10 +840,25 @@ class Cart extends Model
     /**
      * Validate cart for checkout without converting it
      * 
+     * Checks:
+     * 1. Cart is not already converted
+     * 2. Cart is not empty
+     * 3. All items have required information
+     * 4. Stock is available for all items (for booking/pool products with dates)
+     * 
      * @throws \Exception
      */
     public function validateForCheckout(bool $throws = true): bool
     {
+        // Check if cart is already converted
+        if ($this->isConverted()) {
+            if ($throws) {
+                throw new \Exception("Cart has already been converted/checked out");
+            } else {
+                return false;
+            }
+        }
+
         $items = $this->items()
             ->with('purchasable')
             ->get();
@@ -868,6 +883,90 @@ class Cart extends Model
                     throw new \Exception("Cart item '{$productName}' is missing required information: {$missingFields}");
                 } else {
                     return false;
+                }
+            }
+        }
+
+        // Validate stock availability for all items
+        foreach ($items as $item) {
+            $product = $item->purchasable;
+
+            if (!($product instanceof Product)) {
+                continue;
+            }
+
+            $from = $item->from;
+            $until = $item->until;
+
+            // For pool products, check pool availability
+            if ($product->isPool()) {
+                if ($from && $until) {
+                    // Get available quantity considering existing cart items and pending purchases
+                    $available = $product->getPoolMaxQuantity($from, $until);
+
+                    // Calculate how much of this cart's items are already counted
+                    // We need to check if there's still enough stock for what's in this cart
+                    $cartItemsForPool = $items->filter(
+                        fn($i) =>
+                        $i->purchasable_id === $product->id &&
+                            $i->purchasable_type === get_class($product)
+                    );
+                    $totalInCart = $cartItemsForPool->sum('quantity');
+
+                    if ($available !== PHP_INT_MAX && $totalInCart > $available) {
+                        if ($throws) {
+                            throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                                "Pool product '{$product->name}' has only {$available} items available for the period " .
+                                    "{$from->format('Y-m-d')} to {$until->format('Y-m-d')}. Cart has: {$totalInCart}"
+                            );
+                        } else {
+                            return false;
+                        }
+                    }
+                } else {
+                    // Without dates, check general pool availability
+                    $available = $product->getPoolMaxQuantity();
+                    $totalInCart = $items->filter(
+                        fn($i) =>
+                        $i->purchasable_id === $product->id &&
+                            $i->purchasable_type === get_class($product)
+                    )->sum('quantity');
+
+                    if ($available !== PHP_INT_MAX && $totalInCart > $available) {
+                        if ($throws) {
+                            throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                                "Pool product '{$product->name}' has only {$available} items available. Cart has: {$totalInCart}"
+                            );
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+            } elseif ($product->isBooking() && $product->manage_stock) {
+                // For booking products with managed stock
+                if ($from && $until) {
+                    if (!$product->isAvailableForBooking($from, $until, $item->quantity)) {
+                        if ($throws) {
+                            throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                                "Booking product '{$product->name}' is not available for the period " .
+                                    "{$from->format('Y-m-d')} to {$until->format('Y-m-d')}. Requested: {$item->quantity}"
+                            );
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+            } elseif ($product->manage_stock) {
+                // For regular products with managed stock
+                $available = $product->getAvailableStock();
+                if ($item->quantity > $available) {
+                    if ($throws) {
+                        throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                            "Product '{$product->name}' has only {$available} items in stock. Requested: {$item->quantity}"
+                        );
+                    } else {
+                        return false;
+                    }
                 }
             }
         }
