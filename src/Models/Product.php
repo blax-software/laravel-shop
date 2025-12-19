@@ -336,7 +336,7 @@ class Product extends Model implements Purchasable, Cartable
             return true;
         }
 
-        // Get stock claims that overlap with the requested period
+        // Get stock claims (CLAIMED entries) that overlap with the requested period
         $overlappingClaims = $this->stocks()
             ->where('type', StockType::CLAIMED->value)
             ->where('status', StockStatus::PENDING->value)
@@ -362,7 +362,18 @@ class Product extends Model implements Purchasable, Cartable
             })
             ->sum('quantity');
 
-        $availableStock = $this->getAvailableStock() - abs($overlappingClaims);
+        // Also get DECREASE entries with expires_at that overlap (from completed bookings)
+        // These are booking purchases that reduce stock during the booking period
+        $overlappingBookings = $this->stocks()
+            ->where('type', StockType::DECREASE->value)
+            ->where('status', StockStatus::COMPLETED->value)
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '>', $from) // Booking hasn't ended before our period starts
+            ->sum('quantity');
+
+        // Use base stock and subtract all overlapping reservations
+        // Note: overlappingBookings is already negative (DECREASE entries), so we add it
+        $availableStock = $this->getAvailableStock() - abs($overlappingClaims) + $overlappingBookings;
 
         return $availableStock >= $quantity;
     }

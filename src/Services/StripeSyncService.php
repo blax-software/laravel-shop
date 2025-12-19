@@ -2,6 +2,9 @@
 
 namespace Blax\Shop\Services;
 
+use Blax\Shop\Exceptions\HasNoDefaultPriceException;
+use Blax\Shop\Exceptions\ProductMissingAssociationException;
+use Blax\Shop\Exceptions\StripeNotEnabledException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Illuminate\Support\Facades\Log;
@@ -27,7 +30,7 @@ class StripeSyncService
     public function syncProduct(Product $product): string
     {
         if (!config('shop.stripe.enabled')) {
-            throw new \Exception('Stripe is not enabled');
+            throw new StripeNotEnabledException();
         }
 
         // Check if product already has a Stripe ID
@@ -89,7 +92,7 @@ class StripeSyncService
     public function syncPrice(ProductPrice $price, ?Product $product = null): string
     {
         if (!config('shop.stripe.enabled')) {
-            throw new \Exception('Stripe is not enabled');
+            throw new StripeNotEnabledException();
         }
 
         // Get the product if not provided
@@ -98,7 +101,7 @@ class StripeSyncService
         }
 
         if (!$product) {
-            throw new \Exception('Cannot sync price without associated product');
+            throw new ProductMissingAssociationException();
         }
 
         // Ensure product is synced to Stripe
@@ -184,7 +187,7 @@ class StripeSyncService
         $defaultPrice = $product->defaultPrice()->first();
 
         if (!$defaultPrice) {
-            throw new \Exception("Product '{$product->name}' has no default price");
+            throw HasNoDefaultPriceException::forProduct($product->name);
         }
 
         $stripePriceId = $this->syncPrice($defaultPrice, $product);

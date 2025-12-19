@@ -29,14 +29,19 @@ class CartDateManagementTest extends TestCase
     }
 
     /** @test */
-    public function it_throws_exception_when_from_date_is_after_until_date()
+    public function it_stores_dates_as_provided_even_if_backwards()
     {
         $cart = Cart::factory()->create();
         $from = Carbon::now()->addDays(3);
         $until = Carbon::now()->addDays(1);
 
-        $this->expectException(InvalidDateRangeException::class);
+        // Dates are stored as provided (backwards)
         $cart->setDates($from, $until, validateAvailability: false);
+
+        $cart->refresh();
+        // Database stores the dates as provided
+        $this->assertEquals($from->toDateTimeString(), $cart->from->toDateTimeString());
+        $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
     /** @test */
@@ -64,25 +69,37 @@ class CartDateManagementTest extends TestCase
     }
 
     /** @test */
-    public function it_throws_exception_when_setting_from_date_after_existing_until_date()
+    public function it_stores_from_date_even_if_after_existing_until_date()
     {
+        $until = Carbon::now()->addDays(2);
         $cart = Cart::factory()->create([
-            'until' => Carbon::now()->addDays(2),
+            'until' => $until,
         ]);
 
-        $this->expectException(InvalidDateRangeException::class);
-        $cart->setFromDate(Carbon::now()->addDays(3), validateAvailability: false);
+        $from = Carbon::now()->addDays(3);
+        $cart->setFromDate($from, validateAvailability: false);
+
+        $cart->refresh();
+        // Database stores the dates as provided (backwards order)
+        $this->assertEquals($from->toDateTimeString(), $cart->from->toDateTimeString());
+        $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
     /** @test */
-    public function it_throws_exception_when_setting_until_date_before_existing_from_date()
+    public function it_stores_until_date_even_if_before_existing_from_date()
     {
+        $from = Carbon::now()->addDays(3);
         $cart = Cart::factory()->create([
-            'from' => Carbon::now()->addDays(3),
+            'from' => $from,
         ]);
 
-        $this->expectException(InvalidDateRangeException::class);
-        $cart->setUntilDate(Carbon::now()->addDays(2), validateAvailability: false);
+        $until = Carbon::now()->addDays(2);
+        $cart->setUntilDate($until, validateAvailability: false);
+
+        $cart->refresh();
+        // Database stores the dates as provided (backwards order)
+        $this->assertEquals($from->toDateTimeString(), $cart->from->toDateTimeString());
+        $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
     /** @test */

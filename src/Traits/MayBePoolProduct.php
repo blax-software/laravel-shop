@@ -8,6 +8,10 @@ use Blax\Shop\Enums\PricingStrategy;
 use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
 use Blax\Shop\Exceptions\InvalidPoolConfigurationException;
+use Blax\Shop\Exceptions\InvalidPricingStrategyException;
+use Blax\Shop\Exceptions\NotEnoughStockException;
+use Blax\Shop\Exceptions\NotPoolProductException;
+use Blax\Shop\Exceptions\PoolHasNoItemsException;
 
 trait MayBePoolProduct
 {
@@ -126,13 +130,13 @@ trait MayBePoolProduct
         ?string $note = null
     ): array {
         if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
+            throw new NotPoolProductException();
         }
 
         $singleItems = $this->singleProducts;
 
         if ($singleItems->isEmpty()) {
-            throw new \Exception('Pool product has no single items to claim');
+            throw new PoolHasNoItemsException();
         }
 
         // Get pricing strategy
@@ -159,7 +163,7 @@ trait MayBePoolProduct
         }
 
         if (count($availableItems) < $quantity) {
-            throw new \Exception("Only " . count($availableItems) . " items available, but {$quantity} requested");
+            throw new NotEnoughStockException("Only " . count($availableItems) . " items available, but {$quantity} requested");
         }
 
         // Sort by pricing strategy
@@ -191,7 +195,7 @@ trait MayBePoolProduct
     public function releasePoolStock($reference): int
     {
         if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
+            throw new NotPoolProductException();
         }
 
         $singleItems = $this->singleProducts;
@@ -564,14 +568,14 @@ trait MayBePoolProduct
     public function setPoolPricingStrategy(string|PricingStrategy $strategy): void
     {
         if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
+            throw new NotPoolProductException();
         }
 
         // Handle both string and enum inputs
         if (is_string($strategy)) {
             $strategyEnum = PricingStrategy::tryFrom($strategy);
             if (!$strategyEnum) {
-                throw new \InvalidArgumentException("Invalid pricing strategy: {$strategy}");
+                throw new InvalidPricingStrategyException($strategy);
             }
             $strategy = $strategyEnum;
         }
@@ -874,7 +878,7 @@ trait MayBePoolProduct
     public function attachSingleItems(array|int|string $singleItemIds, array $attributes = []): void
     {
         if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
+            throw new NotPoolProductException();
         }
 
         $ids = is_array($singleItemIds) ? $singleItemIds : [$singleItemIds];
@@ -1028,7 +1032,7 @@ trait MayBePoolProduct
     public function getPoolAvailabilityCalendar($startDate, $endDate, int $quantity = 1): array
     {
         if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
+            throw new NotPoolProductException();
         }
 
         $start = $startDate instanceof \DateTimeInterface ? $startDate : \Carbon\Carbon::parse($startDate);
@@ -1072,7 +1076,7 @@ trait MayBePoolProduct
     public function getSingleItemsAvailability($from = null, $until = null): array
     {
         if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
+            throw new NotPoolProductException();
         }
 
         $singleItems = $this->singleProducts;
@@ -1131,7 +1135,7 @@ trait MayBePoolProduct
     public function isPoolAvailable(\DateTimeInterface $from, \DateTimeInterface $until, int $quantity = 1): bool
     {
         if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
+            throw new NotPoolProductException();
         }
 
         $maxQuantity = $this->getPoolMaxQuantity($from, $until);
@@ -1157,7 +1161,7 @@ trait MayBePoolProduct
     public function getPoolAvailablePeriods($startDate, $endDate, int $quantity = 1, int $minConsecutiveDays = 1): array
     {
         if (!$this->isPool()) {
-            throw new \Exception('This method is only for pool products');
+            throw new NotPoolProductException();
         }
 
         $start = $startDate instanceof \DateTimeInterface ? $startDate : \Carbon\Carbon::parse($startDate);

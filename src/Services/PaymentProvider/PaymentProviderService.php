@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Blax\Shop\Services\PaymentProvider;
 
+use Blax\Shop\Exceptions\UnsupportedPaymentProviderException;
 use Blax\Shop\Models\PaymentMethod;
 use Blax\Shop\Models\PaymentProviderIdentity;
 use Illuminate\Database\Eloquent\Model;
@@ -65,7 +66,7 @@ class PaymentProviderService
             return $identity;
         }
 
-        throw new \InvalidArgumentException("Unsupported payment provider: {$provider}");
+        throw new UnsupportedPaymentProviderException($provider);
     }
 
     /**
@@ -112,7 +113,7 @@ class PaymentProviderService
             return $paymentMethod;
         }
 
-        throw new \InvalidArgumentException("Unsupported payment provider: {$identity->provider_name}");
+        throw new UnsupportedPaymentProviderException($identity->provider_name);
     }
 
     /**

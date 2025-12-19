@@ -6,8 +6,16 @@ use Blax\Shop\Contracts\Cartable;
 use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Enums\PurchaseStatus;
+use Blax\Shop\Exceptions\CartableInterfaceException;
+use Blax\Shop\Exceptions\CartAlreadyConvertedException;
+use Blax\Shop\Exceptions\CartDatesRequiredException;
+use Blax\Shop\Exceptions\CartEmptyException;
+use Blax\Shop\Exceptions\CartItemMissingInformationException;
 use Blax\Shop\Exceptions\InvalidDateRangeException;
 use Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException;
+use Blax\Shop\Exceptions\NotEnoughStockException;
+use Blax\Shop\Exceptions\PriceCalculationException;
+use Blax\Shop\Exceptions\ProductHasNoPriceException;
 use Blax\Shop\Services\CartService;
 use Blax\Shop\Traits\ChecksIfBooking;
 use Blax\Shop\Traits\HasBookingPriceCalculation;
@@ -216,39 +224,60 @@ class Cart extends Model
      * @throws NotEnoughAvailableInTimespanException
      */
     public function setDates(
-        \DateTimeInterface|string|int|float $from,
-        \DateTimeInterface|string|int|float $until,
+        \DateTimeInterface|string|int|float|null $from,
+        \DateTimeInterface|string|int|float|null $until,
         bool $validateAvailability = true,
         bool $overwrite_item_dates = true
     ): self {
         // Parse string dates using Carbon
-        if (is_string($from) || is_numeric($from)) {
+        if ($from !== null && (is_string($from) || is_numeric($from))) {
             $from = Carbon::parse($from);
         }
-        if (is_string($until) || is_numeric($until)) {
+        if ($until !== null && (is_string($until) || is_numeric($until))) {
             $until = Carbon::parse($until);
         }
 
-        if ($from >= $until) {
-            throw new InvalidDateRangeException();
+        // Always update cart dates with provided values
+        $updateData = [];
+        if ($from !== null) {
+            $updateData['from'] = $from;
+        }
+        if ($until !== null) {
+            $updateData['until'] = $until;
         }
 
-        if ($validateAvailability) {
-            // When overwriting item dates, validate against the new cart dates
-            $this->validateDateAvailability($from, $until, $overwrite_item_dates);
+        if (!empty($updateData)) {
+            $this->update($updateData);
+            $this->refresh();
         }
 
-        // Update cart with from/until
-        $this->update([
-            'from' => $from,
-            'until' => $until,
-        ]);
+        // Get the current dates (may include one from database if only one was updated)
+        $effectiveFrom = $from ?? $this->from;
+        $effectiveUntil = $until ?? $this->until;
 
-        // Update cart items with from/until
-        $this->applyDatesToItems(
-            $validateAvailability,
-            $overwrite_item_dates
-        );
+        // Only calculate/validate if BOTH dates are set
+        if ($effectiveFrom && $effectiveUntil) {
+            // For calculations, swap if dates are backwards
+            $calcFrom = $effectiveFrom;
+            $calcUntil = $effectiveUntil;
+            if ($effectiveFrom > $effectiveUntil) {
+                $calcFrom = $effectiveUntil;
+                $calcUntil = $effectiveFrom;
+            }
+
+            if ($validateAvailability) {
+                // Validate against the correctly ordered dates
+                $this->validateDateAvailability($calcFrom, $calcUntil, $overwrite_item_dates);
+            }
+
+            // Update cart items with correctly ordered dates
+            $this->applyDatesToItems(
+                $validateAvailability,
+                $overwrite_item_dates,
+                $calcFrom,
+                $calcUntil
+            );
+        }
 
         return $this->fresh();
     }
@@ -259,7 +288,6 @@ class Cart extends Model
      * @param \DateTimeInterface|string $from Start date (DateTimeInterface or parsable string)
      * @param bool $validateAvailability Whether to validate product availability for the timespan
      * @return $this
-     * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
     public function setFromDate(
@@ -271,15 +299,24 @@ class Cart extends Model
             $from = Carbon::parse($from);
         }
 
-        if ($this->until && $from >= $this->until) {
-            throw new InvalidDateRangeException();
-        }
-
-        if ($validateAvailability && $this->until) {
-            $this->validateDateAvailability($from, $this->until);
-        }
-
+        // Always update the from date
         $this->update(['from' => $from]);
+        $this->refresh();
+
+        // Only calculate if both dates are set
+        if ($this->until) {
+            // For calculations, swap if dates are backwards
+            $calcFrom = $from;
+            $calcUntil = $this->until;
+            if ($from > $this->until) {
+                $calcFrom = $this->until;
+                $calcUntil = $from;
+            }
+
+            if ($validateAvailability) {
+                $this->validateDateAvailability($calcFrom, $calcUntil);
+            }
+        }
 
         return $this->fresh();
     }
@@ -290,7 +327,6 @@ class Cart extends Model
      * @param \DateTimeInterface|string $until End date (DateTimeInterface or parsable string)
      * @param bool $validateAvailability Whether to validate product availability for the timespan
      * @return $this
-     * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
     public function setUntilDate(\DateTimeInterface|string|int|float $until, bool $validateAvailability = true): self
@@ -300,15 +336,24 @@ class Cart extends Model
             $until = Carbon::parse($until);
         }
 
-        if ($this->from && $this->from >= $until) {
-            throw new InvalidDateRangeException();
-        }
-
-        if ($validateAvailability && $this->from) {
-            $this->validateDateAvailability($this->from, $until);
-        }
-
+        // Always update the until date
         $this->update(['until' => $until]);
+        $this->refresh();
+
+        // Only calculate if both dates are set
+        if ($this->from) {
+            // For calculations, swap if dates are backwards
+            $calcFrom = $this->from;
+            $calcUntil = $until;
+            if ($this->from > $until) {
+                $calcFrom = $until;
+                $calcUntil = $this->from;
+            }
+
+            if ($validateAvailability) {
+                $this->validateDateAvailability($calcFrom, $calcUntil);
+            }
+        }
 
         return $this->fresh();
     }
@@ -318,12 +363,22 @@ class Cart extends Model
      * 
      * @param bool $validateAvailability Whether to validate product availability for the timespan
      * @param bool $overwrite If true, overwrites existing item dates. If false, only sets null fields.
+     * @param \DateTimeInterface|null $from Optional from date (uses cart's from if not provided)
+     * @param \DateTimeInterface|null $until Optional until date (uses cart's until if not provided)
      * @return $this
      * @throws NotEnoughAvailableInTimespanException
      */
-    public function applyDatesToItems(bool $validateAvailability = true, bool $overwrite = false): self
-    {
-        if (!$this->from || !$this->until) {
+    public function applyDatesToItems(
+        bool $validateAvailability = true,
+        bool $overwrite = false,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
+    ): self {
+        // Use provided dates or fall back to cart dates
+        $fromDate = $from ?? $this->from;
+        $untilDate = $until ?? $this->until;
+
+        if (!$fromDate || !$untilDate) {
             return $this;
         }
 
@@ -338,23 +393,23 @@ class Cart extends Model
                     continue;
                 }
 
-                $fromDate = $shouldApplyFrom ? $this->from : $item->from;
-                $untilDate = $shouldApplyUntil ? $this->until : $item->until;
+                $itemFrom = $shouldApplyFrom ? $fromDate : $item->from;
+                $itemUntil = $shouldApplyUntil ? $untilDate : $item->until;
 
                 if ($validateAvailability) {
                     $product = $item->purchasable;
-                    if ($product && !$product->isAvailableForBooking($fromDate, $untilDate, $item->quantity)) {
+                    if ($product && !$product->isAvailableForBooking($itemFrom, $itemUntil, $item->quantity)) {
                         throw new NotEnoughAvailableInTimespanException(
                             productName: $product->name ?? 'Product',
                             requested: $item->quantity,
                             available: 0, // Could calculate actual available amount
-                            from: $fromDate,
-                            until: $untilDate
+                            from: $itemFrom,
+                            until: $itemUntil
                         );
                     }
                 }
 
-                $item->updateDates($fromDate, $untilDate);
+                $item->updateDates($itemFrom, $itemUntil);
             }
         }
 
@@ -493,7 +548,7 @@ class Cart extends Model
     ): CartItem {
         // $cartable must implement Cartable
         if (! $cartable instanceof Cartable) {
-            throw new \Exception("Item must implement the Cartable interface.");
+            throw new CartableInterfaceException();
         }
 
         // Extract dates from parameters if not provided directly
@@ -511,14 +566,14 @@ class Cart extends Model
             if ($from && $until) {
                 $available = $cartable->getPoolMaxQuantity($from, $until);
                 if ($available !== PHP_INT_MAX && $quantity > $available) {
-                    throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                    throw new NotEnoughStockException(
                         "Pool product '{$cartable->name}' has only {$available} items available for the requested period. Requested: {$quantity}"
                     );
                 }
             } else {
                 $available = $cartable->getPoolMaxQuantity();
                 if ($available !== PHP_INT_MAX && $quantity > $available) {
-                    throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                    throw new NotEnoughStockException(
                         "Pool product '{$cartable->name}' has only {$available} items available. Requested: {$quantity}"
                     );
                 }
@@ -541,12 +596,12 @@ class Cart extends Model
             if ($from && $until) {
                 // Validate from is before until
                 if ($from >= $until) {
-                    throw new \Exception("The 'from' date must be before the 'until' date. Got from: {$from->format('Y-m-d H:i:s')}, until: {$until->format('Y-m-d H:i:s')}");
+                    throw new InvalidDateRangeException("The 'from' date must be before the 'until' date. Got from: {$from->format('Y-m-d H:i:s')}, until: {$until->format('Y-m-d H:i:s')}");
                 }
 
                 // Check booking product availability if dates are provided
                 if ($cartable->isBooking() && !$cartable->isPool() && !$cartable->isAvailableForBooking($from, $until, $quantity)) {
-                    throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                    throw new NotEnoughStockException(
                         "Product '{$cartable->name}' is not available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')})."
                     );
                 }
@@ -556,14 +611,14 @@ class Cart extends Model
                     $maxQuantity = $cartable->getPoolMaxQuantity($from, $until);
                     // Only validate if pool has limited availability AND quantity exceeds it
                     if ($maxQuantity !== PHP_INT_MAX && $quantity > $maxQuantity) {
-                        throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                        throw new NotEnoughStockException(
                             "Pool product '{$cartable->name}' has only {$maxQuantity} items available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')}). Requested: {$quantity}"
                         );
                     }
                 }
             } elseif ($from || $until) {
                 // If only one date is provided, it's an error
-                throw new \Exception("Both 'from' and 'until' dates must be provided together, or both omitted.");
+                throw new CartDatesRequiredException();
             } else {
                 // Even without dates, check pool quantity limits
                 if ($cartable->isPool()) {
@@ -580,7 +635,7 @@ class Cart extends Model
                         $totalQuantity = $currentQuantityInCart + $quantity;
 
                         if ($totalQuantity > $maxQuantity) {
-                            throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                            throw new NotEnoughStockException(
                                 "Pool product '{$cartable->name}' has only {$maxQuantity} items available. Already in cart: {$currentQuantityInCart}, Requested: {$quantity}"
                             );
                         }
@@ -699,7 +754,7 @@ class Cart extends Model
                 // For pool products, throw specific error when neither pool nor single items have prices
                 throw \Blax\Shop\Exceptions\HasNoPriceException::poolProductNoPriceAndNoSingleItemPrices($cartable->name);
             }
-            throw new \Exception("Product '{$cartable->name}' has no valid price.");
+            throw new ProductHasNoPriceException($cartable->name);
         }
 
         // Calculate days if booking dates provided
@@ -714,7 +769,7 @@ class Cart extends Model
 
         // Defensive check - ensure pricePerUnit is not null
         if ($pricePerUnit === null) {
-            throw new \Exception("Cart item price calculation resulted in null for '{$cartable->name}' (pricePerDay: {$pricePerDay}, days: {$days})");
+            throw new PriceCalculationException($cartable->name, $pricePerDay, $days);
         }
 
         // Store the base unit_amount (price for 1 quantity, 1 day) in cents
@@ -853,7 +908,7 @@ class Cart extends Model
         // Check if cart is already converted
         if ($this->isConverted()) {
             if ($throws) {
-                throw new \Exception("Cart has already been converted/checked out");
+                throw new CartAlreadyConvertedException();
             } else {
                 return false;
             }
@@ -865,7 +920,7 @@ class Cart extends Model
 
         if ($items->isEmpty()) {
             if ($throws) {
-                throw new \Exception("Cart is empty");
+                throw new CartEmptyException();
             } else {
                 return false;
             }
@@ -880,7 +935,7 @@ class Cart extends Model
                 $missingFields = implode(', ', array_keys($adjustments));
 
                 if ($throws) {
-                    throw new \Exception("Cart item '{$productName}' is missing required information: {$missingFields}");
+                    throw new CartItemMissingInformationException($productName, $missingFields);
                 } else {
                     return false;
                 }
@@ -895,8 +950,9 @@ class Cart extends Model
                 continue;
             }
 
-            $from = $item->from;
-            $until = $item->until;
+            // Use effective dates (item-specific or cart fallback)
+            $from = $item->getEffectiveFromDate();
+            $until = $item->getEffectiveUntilDate();
 
             // For pool products, check pool availability
             if ($product->isPool()) {
@@ -915,7 +971,7 @@ class Cart extends Model
 
                     if ($available !== PHP_INT_MAX && $totalInCart > $available) {
                         if ($throws) {
-                            throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                            throw new NotEnoughStockException(
                                 "Pool product '{$product->name}' has only {$available} items available for the period " .
                                     "{$from->format('Y-m-d')} to {$until->format('Y-m-d')}. Cart has: {$totalInCart}"
                             );
@@ -934,7 +990,7 @@ class Cart extends Model
 
                     if ($available !== PHP_INT_MAX && $totalInCart > $available) {
                         if ($throws) {
-                            throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                            throw new NotEnoughStockException(
                                 "Pool product '{$product->name}' has only {$available} items available. Cart has: {$totalInCart}"
                             );
                         } else {
@@ -947,7 +1003,7 @@ class Cart extends Model
                 if ($from && $until) {
                     if (!$product->isAvailableForBooking($from, $until, $item->quantity)) {
                         if ($throws) {
-                            throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                            throw new NotEnoughStockException(
                                 "Booking product '{$product->name}' is not available for the period " .
                                     "{$from->format('Y-m-d')} to {$until->format('Y-m-d')}. Requested: {$item->quantity}"
                             );
@@ -961,7 +1017,7 @@ class Cart extends Model
                 $available = $product->getAvailableStock();
                 if ($item->quantity > $available) {
                     if ($throws) {
-                        throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                        throw new NotEnoughStockException(
                             "Product '{$product->name}' has only {$available} items in stock. Requested: {$item->quantity}"
                         );
                     } else {

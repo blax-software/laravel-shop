@@ -4,6 +4,11 @@ namespace Blax\Shop\Exceptions;
 
 class HasNoDefaultPriceException extends NotPurchasable
 {
+    public static function forProduct(string $productName): self
+    {
+        return new self("Product '{$productName}' has no default price.");
+    }
+
     public static function multiplePricesNoDefault(string $productName, int $priceCount): self
     {
         return new self(

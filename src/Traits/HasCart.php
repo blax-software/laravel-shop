@@ -3,6 +3,7 @@
 namespace Blax\Shop\Traits;
 
 use Blax\Shop\Exceptions\MultiplePurchaseOptions;
+use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Exceptions\NotPurchasable;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\CartItem;
@@ -46,31 +47,41 @@ trait HasCart
     /**
      * Add product to cart
      *
+     * For booking and pool products, stock is NOT claimed at add-to-cart time.
+     * Instead, availability is validated and stock is claimed at checkout time.
+     * This allows adding items to cart for future dates even if currently unavailable.
+     *
+     * For regular products with manage_stock, stock is claimed immediately to
+     * prevent overselling.
+     *
      * @param Product|ProductPrice $product_or_price
      * @param int $quantity
-     * @param array $options
+     * @param array $parameters Optional parameters including 'from' and 'until' for booking dates
      * @return CartItem
      * @throws \Exception
      */
     public function addToCart(Product|ProductPrice $product_or_price, int $quantity = 1, array $parameters = []): CartItem
     {
-        if ($product_or_price instanceof ProductPrice) {
-            $product = $product_or_price->purchasable;
+        $product = $product_or_price instanceof ProductPrice
+            ? $product_or_price->purchasable
+            : $product_or_price;
 
-            if ($product instanceof Product) {
+        if ($product instanceof Product) {
+            // For booking/pool products, do NOT claim stock at add-to-cart time
+            // Stock will be validated and claimed at checkout based on the booking dates
+            $isBookingOrPool = $product->isBooking() || $product->isPool();
+
+            if (!$isBookingOrPool) {
+                // For regular products, claim stock immediately to prevent overselling
                 $product->claimStock($quantity);
             }
-        }
-
-        if ($product_or_price instanceof Product) {
-            $product_or_price->claimStock($quantity);
 
             // Skip default price validation for pool products without direct prices
             // (they inherit pricing from single items and are validated in validatePricing())
-            $isPoolWithInheritedPricing = $product_or_price->isPool() && !$product_or_price->prices()->exists();
+            $isPoolWithInheritedPricing = $product->isPool() && !$product->prices()->exists();
 
             if (!$isPoolWithInheritedPricing) {
-                $default_prices = $product_or_price->defaultPrice()->count();
+                $default_prices = $product->defaultPrice()->count();
 
                 if ($default_prices === 0) {
                     throw new NotPurchasable("Product has no default price");
@@ -103,7 +114,7 @@ trait HasCart
 
         // Validate stock
         if ($product->manage_stock && $product->getAvailableStock() < $quantity) {
-            throw new \Exception("Insufficient stock available");
+            throw new NotEnoughStockException("Insufficient stock available");
         }
 
         $meta = (array) $cartItem->meta;

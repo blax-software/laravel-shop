@@ -110,7 +110,7 @@ trait HasShoppingCapabilities
             throw new \Exception("Booking products require 'from' and 'until' dates");
         }
 
-        // Decrease stock (for bookings, pass the until date)
+        // Decrease stock (for bookings, pass the until date as expiry so stock returns after booking ends)
         if (!$product->decreaseStock($quantity, $isBooking ? $until : null)) {
             throw new \Exception("Unable to decrease stock");
         }
