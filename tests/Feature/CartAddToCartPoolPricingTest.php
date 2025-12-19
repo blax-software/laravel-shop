@@ -199,11 +199,18 @@ class CartAddToCartPoolPricingTest extends TestCase
         $from = Carbon::now()->addDays(1)->startOfDay();
         $until = Carbon::now()->addDays(6)->startOfDay(); // 5 days
 
+        // Adding 2 pool items creates separate cart items (one per single item)
+        // because each single item has its own stock limit
         $cartItem = $this->cart->addToCart($this->poolProduct, 2, [], $from, $until);
 
-        $this->assertEquals(2, $cartItem->quantity);
+        // Returns the last cart item created (quantity 1)
+        $this->assertEquals(1, $cartItem->quantity);
         $this->assertEquals(12500, $cartItem->price); // 25.00 × 5 days per unit
-        $this->assertEquals(25000, $cartItem->subtotal); // 125.00 × 2 units = 250.00
+        $this->assertEquals(12500, $cartItem->subtotal); // 125.00 × 1 quantity
+
+        // But total cart should have 2 items with combined subtotal
+        $this->assertEquals(2, $this->cart->fresh()->items->count());
+        $this->assertEquals(25000, $this->cart->fresh()->getTotal()); // 125.00 × 2 units = 250.00
     }
 
     /** @test */
@@ -324,7 +331,7 @@ class CartAddToCartPoolPricingTest extends TestCase
     }
 
     /** @test */
-    public function it_increases_quantity_when_adding_same_pool_product_with_same_dates()
+    public function it_creates_separate_items_when_adding_same_pool_product_with_same_dates()
     {
         ProductPrice::factory()->create([
             'purchasable_id' => $this->poolProduct->id,
@@ -340,9 +347,17 @@ class CartAddToCartPoolPricingTest extends TestCase
         $cartItem1 = $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
         $cartItem2 = $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
 
-        $this->assertEquals($cartItem1->id, $cartItem2->id);
-        $this->assertEquals(2, $cartItem2->quantity);
-        $this->assertEquals(12000, $cartItem2->subtotal); // 3000 × 2 days × 2 units
+        // Items from different single items don't merge, even with same dates
+        $this->assertNotEquals($cartItem1->id, $cartItem2->id);
+        $this->assertEquals(1, $cartItem1->quantity);
+        $this->assertEquals(1, $cartItem2->quantity);
+
+        // Both items have the same price since they use pool fallback
+        $this->assertEquals(6000, $cartItem1->subtotal); // 3000 × 2 days × 1 unit
+        $this->assertEquals(6000, $cartItem2->subtotal); // 3000 × 2 days × 1 unit
+
+        // Total cart subtotal
+        $this->assertEquals(12000, $this->cart->fresh()->getTotal()); // 6000 × 2 = 12000
     }
 
     /** @test */
@@ -824,10 +839,13 @@ class CartAddToCartPoolPricingTest extends TestCase
         $availableQuantity = $this->poolProduct->getAvailableQuantity();
         $this->assertEquals(2, $availableQuantity);
 
-        // Adding 2 pool items should succeed (without dates)
+        // Adding 2 pool items creates 2 cart items (one per single item)
         $cartItem = $this->cart->addToCart($this->poolProduct, 2);
         $this->assertNotNull($cartItem);
-        $this->assertEquals(2, $cartItem->quantity);
+        // Returns the last cart item (quantity 1)
+        $this->assertEquals(1, $cartItem->quantity);
+        // But total items should be 2
+        $this->assertEquals(2, $this->cart->fresh()->items->sum('quantity'));
 
         // Try to add 1 more (total would be 3, but only 2 available)
         $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
@@ -888,10 +906,14 @@ class CartAddToCartPoolPricingTest extends TestCase
             'customer_type' => get_class($this->user),
         ]);
 
-        // Should be able to add 10 pool items
+        // Adding 10 pool items creates multiple cart items (grouped by single item)
+        // Since each single item stock is counted as 5+3+2=10
         $cartItem = $cart->addToCart($pool, 10);
         $this->assertNotNull($cartItem);
-        $this->assertEquals(10, $cartItem->quantity);
+        // Returns the last cart item (from VIP Spot with 2 stock)
+        $this->assertEquals(2, $cartItem->quantity);
+        // But total items in cart should sum to 10
+        $this->assertEquals(10, $cart->fresh()->items->sum('quantity'));
 
         // But not 11
         $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
@@ -944,10 +966,13 @@ class CartAddToCartPoolPricingTest extends TestCase
             'customer_type' => get_class($this->user),
         ]);
 
-        // Should be able to book 5 pool items for the period
+        // Adding 5 pool items creates multiple cart items (grouped by single item)
         $cartItem = $cart->addToCart($pool, 5, [], $from, $until);
         $this->assertNotNull($cartItem);
-        $this->assertEquals(5, $cartItem->quantity);
+        // Returns the last cart item (from Room B with 2 stock)
+        $this->assertEquals(2, $cartItem->quantity);
+        // But total items in cart should sum to 5
+        $this->assertEquals(5, $cart->fresh()->items->sum('quantity'));
     }
 
     /** @test */

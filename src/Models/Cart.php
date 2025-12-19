@@ -636,19 +636,28 @@ class Cart extends Model
                     );
                 }
 
-                // For pool products, check if price_id matches to allow proper merging
-                // Pool items with the same price_id (from the same single item) can merge
-                // but items from different single items (different price_id) should NOT merge
-                // Also check that the actual price matches (important for AVERAGE strategy where price can change)
+                // For pool products, check if we should merge with existing items
+                // Pool items can ONLY merge if they are from the SAME single item
+                // This is critical because different single items have their own stock limits
+                // even if they happen to share the same price (e.g., via pool fallback price)
                 $priceMatch = true;
                 if ($cartable instanceof Product && $cartable->isPool()) {
                     // Calculate expected price for this item
                     $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);
                     $expectedPrice = $poolItemData['price'] ?? null;
+                    $expectedSingleItemId = $poolItemData['item']?->id ?? null;
 
-                    // Only merge if price_id matches AND the price amount matches
+                    // Get the allocated single item ID from the existing cart item's meta
+                    $existingMeta = $item->getMeta();
+                    $existingAllocatedItemId = $existingMeta->allocated_single_item_id ?? null;
+
+                    // Only merge if:
+                    // 1. price_id matches (same price source)
+                    // 2. actual price amount matches
+                    // 3. allocated single item matches (CRITICAL: same single item being used)
                     $priceMatch = $poolPriceId && $item->price_id === $poolPriceId &&
-                        $expectedPrice !== null && $item->unit_amount === (int) round($expectedPrice);
+                        $expectedPrice !== null && $item->unit_amount === (int) round($expectedPrice) &&
+                        $expectedSingleItemId !== null && $existingAllocatedItemId === $expectedSingleItemId;
                 }
 
                 return $paramsMatch && $datesMatch && $priceMatch;
