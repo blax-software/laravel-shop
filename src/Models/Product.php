@@ -326,6 +326,12 @@ class Product extends Model implements Purchasable, Cartable
      */
     public function isAvailableForBooking(\DateTimeInterface $from, \DateTimeInterface $until, int $quantity = 1): bool
     {
+        // For pool products, delegate to pool-specific availability checking
+        if ($this->isPool()) {
+            $available = $this->getPoolMaxQuantity($from, $until);
+            return $available === PHP_INT_MAX || $available >= $quantity;
+        }
+
         if (!$this->manage_stock) {
             return true;
         }

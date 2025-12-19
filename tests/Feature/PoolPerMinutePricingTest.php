@@ -135,7 +135,9 @@ class PoolPerMinutePricingTest extends TestCase
     /** @test */
     public function it_uses_direct_pool_price_for_fractional_days()
     {
-        // Set direct price on pool instead of using inherited pricing
+        // Set direct price on pool - this is now used as fallback for single items without prices
+        // Since all single items in this test already have prices, the pool's direct price
+        // won't be used. The lowest single item price will be used instead.
         ProductPrice::factory()->create([
             'purchasable_id' => $this->poolProduct->id,
             'purchasable_type' => Product::class,
@@ -149,9 +151,11 @@ class PoolPerMinutePricingTest extends TestCase
 
         $cartItem = Cart::addBooking($this->poolProduct, 1, $from, $until);
 
-        // Direct pool price is $20.00 (2000 cents), for 0.5 days = $10.00 (1000 cents)
-        $this->assertEquals(1000, $cartItem->price);
-        $this->assertEquals(1000, $cartItem->subtotal);
+        // Pool's direct price is now only a fallback for single items without prices.
+        // Since both single items have prices ($50 and $30), the lowest ($30) is used.
+        // $30.00 (3000 cents) for 0.5 days = $15.00 (1500 cents)
+        $this->assertEquals(1500, $cartItem->price);
+        $this->assertEquals(1500, $cartItem->subtotal);
     }
 
     /** @test */

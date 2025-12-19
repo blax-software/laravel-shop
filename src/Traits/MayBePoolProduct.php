@@ -789,25 +789,11 @@ trait MayBePoolProduct
             }
         }
 
-        // Also add pool's direct price if it has one
-        if ($this->hasPrice()) {
-            $poolPriceModel = $this->defaultPrice()->first();
-            $poolPrice = $poolPriceModel?->getCurrentPrice($sales_price ?? $this->isOnSale());
-            if ($poolPrice !== null) {
-                $poolPriceRounded = round($poolPrice, 2);
-                $usedAtPoolPrice = $priceUsage[$poolPriceRounded] ?? 0;
-
-                // Pool price is typically unlimited (doesn't manage stock)
-                if (!$this->manage_stock) {
-                    $availableItems[] = [
-                        'price' => $poolPrice,
-                        'quantity' => PHP_INT_MAX,
-                        'item' => $this,
-                        'price_id' => $poolPriceModel?->id,
-                    ];
-                }
-            }
-        }
+        // Note: Pool's own price is ONLY used as fallback for single items without prices.
+        // We do NOT add the pool itself as a separate "unlimited" item.
+        // This ensures total stock is limited to the sum of single item stocks.
+        // The fallback logic is already handled above (lines 768-771) where single items
+        // without prices use the pool's price instead.
 
         if (empty($availableItems)) {
             return null;

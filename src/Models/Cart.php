@@ -234,7 +234,8 @@ class Cart extends Model
         }
 
         if ($validateAvailability) {
-            $this->validateDateAvailability($from, $until);
+            // When overwriting item dates, validate against the new cart dates
+            $this->validateDateAvailability($from, $until, $overwrite_item_dates);
         }
 
         // Update cart with from/until
@@ -368,7 +369,7 @@ class Cart extends Model
      * @return void
      * @throws NotEnoughAvailableInTimespanException
      */
-    protected function validateDateAvailability(\DateTimeInterface $from, \DateTimeInterface $until): void
+    protected function validateDateAvailability(\DateTimeInterface $from, \DateTimeInterface $until, bool $useProvidedDates = false): void
     {
         foreach ($this->items as $item) {
             if (!$item->is_booking) {
@@ -380,9 +381,9 @@ class Cart extends Model
                 continue;
             }
 
-            // Use item's specific dates if set, otherwise use the dates being validated
-            $checkFrom = $item->from ?? $from;
-            $checkUntil = $item->until ?? $until;
+            // Use provided dates when validating date overwrites, otherwise use item's specific dates
+            $checkFrom = $useProvidedDates ? $from : ($item->from ?? $from);
+            $checkUntil = $useProvidedDates ? $until : ($item->until ?? $until);
 
             if (!$product->isAvailableForBooking($checkFrom, $checkUntil, $item->quantity)) {
                 throw new NotEnoughAvailableInTimespanException(
@@ -644,10 +645,10 @@ class Cart extends Model
                     // Calculate expected price for this item
                     $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);
                     $expectedPrice = $poolItemData['price'] ?? null;
-                    
+
                     // Only merge if price_id matches AND the price amount matches
-                    $priceMatch = $poolPriceId && $item->price_id === $poolPriceId && 
-                                  $expectedPrice !== null && $item->unit_amount === (int) round($expectedPrice);
+                    $priceMatch = $poolPriceId && $item->price_id === $poolPriceId &&
+                        $expectedPrice !== null && $item->unit_amount === (int) round($expectedPrice);
                 }
 
                 return $paramsMatch && $datesMatch && $priceMatch;
