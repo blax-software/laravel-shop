@@ -263,8 +263,8 @@ return new class extends Migration
                 $table->timestamp('last_activity_at')->nullable();
                 $table->timestamp('expires_at')->nullable();
                 $table->timestamp('converted_at')->nullable();
-                $table->timestamp('from_date')->nullable(); // Default start date for booking items
-                $table->timestamp('until_date')->nullable(); // Default end date for booking items
+                $table->timestamp('from')->nullable(); // Default start date for booking items
+                $table->timestamp('until')->nullable(); // Default end date for booking items
                 $table->json('meta')->nullable();
                 $table->timestamps();
                 $table->softDeletes();

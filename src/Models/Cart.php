@@ -5,6 +5,7 @@ namespace Blax\Shop\Models;
 use Blax\Shop\Contracts\Cartable;
 use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Exceptions\InvalidDateRangeException;
 use Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException;
 use Blax\Shop\Services\CartService;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Facades\DB;
 
 class Cart extends Model
 {
@@ -32,8 +34,8 @@ class Cart extends Model
         'expires_at',
         'converted_at',
         'meta',
-        'from_date',
-        'until_date',
+        'from',
+        'until',
     ];
 
     protected $casts = [
@@ -42,8 +44,8 @@ class Cart extends Model
         'converted_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'meta' => 'object',
-        'from_date' => 'datetime',
-        'until_date' => 'datetime',
+        'from' => 'datetime',
+        'until' => 'datetime',
     ];
 
     protected $appends = [
@@ -236,8 +238,8 @@ class Cart extends Model
 
         // Update cart with from/until
         $this->update([
-            'from_date' => $from,
-            'until_date' => $until,
+            'from' => $from,
+            'until' => $until,
         ]);
 
         // Update cart items with from/until
@@ -264,15 +266,15 @@ class Cart extends Model
             $from = Carbon::parse($from);
         }
 
-        if ($this->until_date && $from >= $this->until_date) {
+        if ($this->until && $from >= $this->until) {
             throw new InvalidDateRangeException();
         }
 
-        if ($validateAvailability && $this->until_date) {
-            $this->validateDateAvailability($from, $this->until_date);
+        if ($validateAvailability && $this->until) {
+            $this->validateDateAvailability($from, $this->until);
         }
 
-        $this->update(['from_date' => $from]);
+        $this->update(['from' => $from]);
 
         return $this->fresh();
     }
@@ -293,15 +295,15 @@ class Cart extends Model
             $until = Carbon::parse($until);
         }
 
-        if ($this->from_date && $this->from_date >= $until) {
+        if ($this->from && $this->from >= $until) {
             throw new InvalidDateRangeException();
         }
 
-        if ($validateAvailability && $this->from_date) {
-            $this->validateDateAvailability($this->from_date, $until);
+        if ($validateAvailability && $this->from) {
+            $this->validateDateAvailability($this->from, $until);
         }
 
-        $this->update(['until_date' => $until]);
+        $this->update(['until' => $until]);
 
         return $this->fresh();
     }
@@ -315,27 +317,27 @@ class Cart extends Model
      */
     public function applyDatesToItems(bool $validateAvailability = true): self
     {
-        if (!$this->from_date || !$this->until_date) {
+        if (!$this->from || !$this->until) {
             return $this;
         }
 
         foreach ($this->items as $item) {
-            // Only apply to items without dates that are booking products
+            // Only apply to booking items that don't already have dates set
             if ($item->is_booking && (!$item->from || !$item->until)) {
                 if ($validateAvailability) {
                     $product = $item->purchasable;
-                    if ($product && !$product->isAvailableForBooking($this->from_date, $this->until_date, $item->quantity)) {
+                    if ($product && !$product->isAvailableForBooking($this->from, $this->until, $item->quantity)) {
                         throw new NotEnoughAvailableInTimespanException(
                             productName: $product->name ?? 'Product',
                             requested: $item->quantity,
                             available: 0, // Could calculate actual available amount
-                            from: $this->from_date,
-                            until: $this->until_date
+                            from: $this->from,
+                            until: $this->until
                         );
                     }
                 }
 
-                $item->updateDates($this->from_date, $this->until_date);
+                $item->updateDates($this->from, $this->until);
             }
         }
 
@@ -844,7 +846,7 @@ class Cart extends Model
 
     public function checkout(): static
     {
-        return \DB::transaction(function () {
+        return DB::transaction(function () {
             // Lock the cart to prevent concurrent checkouts
             $this->lockForUpdate();
 
@@ -949,6 +951,7 @@ class Cart extends Model
      * 
      * This method:
      * - Validates the cart (doesn't convert it)
+     * - Creates ProductPurchase records for each cart item (with PENDING status)
      * - Uses dynamic price_data for each cart item (no pre-created Stripe prices needed)
      * - Creates line items with descriptions including booking dates
      * - Returns the Stripe checkout session
@@ -970,6 +973,40 @@ class Cart extends Model
 
         // Validate cart before proceeding (doesn't convert it)
         $this->validateForCheckout();
+
+        // Create ProductPurchase records for each cart item
+        DB::transaction(function () {
+            foreach ($this->items as $item) {
+                // Skip if purchase already exists
+                if ($item->purchase_id) {
+                    continue;
+                }
+
+                $product = $item->purchasable;
+                $from = $item->from;
+                $until = $item->until;
+
+                // Create purchase record with PENDING status
+                $purchase = ProductPurchase::create([
+                    'cart_id' => $this->id,
+                    'price_id' => $item->price_id,
+                    'purchasable_id' => $product->id,
+                    'purchasable_type' => get_class($product),
+                    'purchaser_id' => $this->customer_id,
+                    'purchaser_type' => $this->customer_type,
+                    'quantity' => $item->quantity,
+                    'amount' => $item->subtotal,
+                    'amount_paid' => 0,
+                    'status' => PurchaseStatus::PENDING,
+                    'from' => $from,
+                    'until' => $until,
+                    'meta' => $item->meta,
+                ]);
+
+                // Link purchase to cart item
+                $item->update(['purchase_id' => $purchase->id]);
+            }
+        });
 
         $lineItems = [];
 

@@ -342,7 +342,7 @@ class CartItem extends Model
 
     /**
      * Get the effective 'from' date for this cart item.
-     * Returns the item's specific date if set, otherwise falls back to the cart's from_date.
+     * Returns the item's specific date if set, otherwise falls back to the cart's from.
      * 
      * @return \Carbon\Carbon|null
      */
@@ -352,12 +352,12 @@ class CartItem extends Model
             return $this->from;
         }
 
-        return $this->cart?->from_date;
+        return $this->cart?->from;
     }
 
     /**
      * Get the effective 'until' date for this cart item.
-     * Returns the item's specific date if set, otherwise falls back to the cart's until_date.
+     * Returns the item's specific date if set, otherwise falls back to the cart's until.
      * 
      * @return \Carbon\Carbon|null
      */
@@ -367,7 +367,7 @@ class CartItem extends Model
             return $this->until;
         }
 
-        return $this->cart?->until_date;
+        return $this->cart?->until;
     }
 
     /**

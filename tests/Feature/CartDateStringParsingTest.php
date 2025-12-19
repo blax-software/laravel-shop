@@ -51,10 +51,10 @@ class CartDateStringParsingTest extends TestCase
     {
         $cart = $this->cart->setDates('2025-12-20', '2025-12-25', false);
 
-        $this->assertNotNull($cart->from_date);
-        $this->assertNotNull($cart->until_date);
-        $this->assertEquals('2025-12-20', $cart->from_date->format('Y-m-d'));
-        $this->assertEquals('2025-12-25', $cart->until_date->format('Y-m-d'));
+        $this->assertNotNull($cart->from);
+        $this->assertNotNull($cart->until);
+        $this->assertEquals('2025-12-20', $cart->from->format('Y-m-d'));
+        $this->assertEquals('2025-12-25', $cart->until->format('Y-m-d'));
     }
 
     /** @test */
@@ -65,8 +65,8 @@ class CartDateStringParsingTest extends TestCase
 
         $cart = $this->cart->setDates($from, $until, false);
 
-        $this->assertEquals('2025-12-20', $cart->from_date->format('Y-m-d'));
-        $this->assertEquals('2025-12-25', $cart->until_date->format('Y-m-d'));
+        $this->assertEquals('2025-12-20', $cart->from->format('Y-m-d'));
+        $this->assertEquals('2025-12-25', $cart->until->format('Y-m-d'));
     }
 
     /** @test */
@@ -74,18 +74,18 @@ class CartDateStringParsingTest extends TestCase
     {
         $cart = $this->cart->setFromDate('2025-12-20', false);
 
-        $this->assertNotNull($cart->from_date);
-        $this->assertEquals('2025-12-20', $cart->from_date->format('Y-m-d'));
+        $this->assertNotNull($cart->from);
+        $this->assertEquals('2025-12-20', $cart->from->format('Y-m-d'));
     }
 
     /** @test */
     public function cart_set_until_date_accepts_string()
     {
-        $this->cart->update(['from_date' => Carbon::parse('2025-12-20')]);
+        $this->cart->update(['from' => Carbon::parse('2025-12-20')]);
         $cart = $this->cart->setUntilDate('2025-12-25', false);
 
-        $this->assertNotNull($cart->until_date);
-        $this->assertEquals('2025-12-25', $cart->until_date->format('Y-m-d'));
+        $this->assertNotNull($cart->until);
+        $this->assertEquals('2025-12-25', $cart->until->format('Y-m-d'));
     }
 
     /** @test */
@@ -107,8 +107,8 @@ class CartDateStringParsingTest extends TestCase
 
             $cart = $cart->setDates($from, $until, false);
 
-            $this->assertNotNull($cart->from_date, "Failed to parse: $from");
-            $this->assertNotNull($cart->until_date, "Failed to parse: $until");
+            $this->assertNotNull($cart->from, "Failed to parse: $from");
+            $this->assertNotNull($cart->until, "Failed to parse: $until");
         }
     }
 

@@ -24,8 +24,8 @@ class CartDateManagementTest extends TestCase
         $cart->setDates($from, $until, validateAvailability: false);
 
         $cart->refresh();
-        $this->assertEquals($from->toDateTimeString(), $cart->from_date->toDateTimeString());
-        $this->assertEquals($until->toDateTimeString(), $cart->until_date->toDateTimeString());
+        $this->assertEquals($from->toDateTimeString(), $cart->from->toDateTimeString());
+        $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
     /** @test */
@@ -48,7 +48,7 @@ class CartDateManagementTest extends TestCase
         $cart->setFromDate($from, validateAvailability: false);
 
         $cart->refresh();
-        $this->assertEquals($from->toDateTimeString(), $cart->from_date->toDateTimeString());
+        $this->assertEquals($from->toDateTimeString(), $cart->from->toDateTimeString());
     }
 
     /** @test */
@@ -60,14 +60,14 @@ class CartDateManagementTest extends TestCase
         $cart->setUntilDate($until, validateAvailability: false);
 
         $cart->refresh();
-        $this->assertEquals($until->toDateTimeString(), $cart->until_date->toDateTimeString());
+        $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
     /** @test */
     public function it_throws_exception_when_setting_from_date_after_existing_until_date()
     {
         $cart = Cart::factory()->create([
-            'until_date' => Carbon::now()->addDays(2),
+            'until' => Carbon::now()->addDays(2),
         ]);
 
         $this->expectException(InvalidDateRangeException::class);
@@ -78,7 +78,7 @@ class CartDateManagementTest extends TestCase
     public function it_throws_exception_when_setting_until_date_before_existing_from_date()
     {
         $cart = Cart::factory()->create([
-            'from_date' => Carbon::now()->addDays(3),
+            'from' => Carbon::now()->addDays(3),
         ]);
 
         $this->expectException(InvalidDateRangeException::class);
@@ -102,8 +102,8 @@ class CartDateManagementTest extends TestCase
         ]);
 
         $cart = Cart::factory()->create([
-            'from_date' => Carbon::now()->addDays(1),
-            'until_date' => Carbon::now()->addDays(3),
+            'from' => Carbon::now()->addDays(1),
+            'until' => Carbon::now()->addDays(3),
         ]);
 
         $itemFromDate = Carbon::now()->addDays(5);
@@ -136,8 +136,8 @@ class CartDateManagementTest extends TestCase
         $cartUntilDate = Carbon::now()->addDays(3);
 
         $cart = Cart::factory()->create([
-            'from_date' => $cartFromDate,
-            'until_date' => $cartUntilDate,
+            'from' => $cartFromDate,
+            'until' => $cartUntilDate,
         ]);
 
         $item = $cart->addToCart($product, 1);
@@ -187,8 +187,8 @@ class CartDateManagementTest extends TestCase
         ]);
 
         $cart = Cart::factory()->create([
-            'from_date' => Carbon::now()->addDays(1),
-            'until_date' => Carbon::now()->addDays(3),
+            'from' => Carbon::now()->addDays(1),
+            'until' => Carbon::now()->addDays(3),
         ]);
 
         $item = $cart->addToCart($product, 1);
@@ -283,8 +283,8 @@ class CartDateManagementTest extends TestCase
         ]);
 
         $cart = Cart::factory()->create([
-            'from_date' => Carbon::now()->addDays(1),
-            'until_date' => Carbon::now()->addDays(3),
+            'from' => Carbon::now()->addDays(1),
+            'until' => Carbon::now()->addDays(3),
         ]);
 
         $item = $cart->addToCart($product, 1);
@@ -389,8 +389,8 @@ class CartDateManagementTest extends TestCase
         ]);
 
         $cart = Cart::factory()->create([
-            'from_date' => Carbon::now()->addDays(1),
-            'until_date' => Carbon::now()->addDays(3),
+            'from' => Carbon::now()->addDays(1),
+            'until' => Carbon::now()->addDays(3),
         ]);
 
         // Add item that would exceed available stock
@@ -428,7 +428,7 @@ class CartDateManagementTest extends TestCase
             validateAvailability: false
         );
 
-        $this->assertNotNull($cart->from_date);
-        $this->assertNotNull($cart->until_date);
+        $this->assertNotNull($cart->from);
+        $this->assertNotNull($cart->until);
     }
 }

@@ -122,7 +122,7 @@ class StripeWebhookController
                 'converted_at' => now(),
             ]);
 
-            // Update associated purchases
+            // Update associated purchases and claim stocks
             $this->updatePurchasesForSession($cart, $session);
 
             Log::info('Cart converted via Stripe checkout', [
@@ -165,15 +165,20 @@ class StripeWebhookController
         // Update purchases with this charge ID if they exist
         $purchases = ProductPurchase::where('charge_id', $charge->id)->get();
         foreach ($purchases as $purchase) {
-            $updateData = [
-                'status' => PurchaseStatus::COMPLETED,
-            ];
+            if ($purchase->status !== PurchaseStatus::COMPLETED) {
+                $updateData = [
+                    'status' => PurchaseStatus::COMPLETED,
+                ];
 
-            if (in_array('amount_paid', $purchase->getFillable())) {
-                $updateData['amount_paid'] = $charge->amount / 100;
+                if (in_array('amount_paid', $purchase->getFillable())) {
+                    $updateData['amount_paid'] = $charge->amount / 100;
+                }
+
+                $purchase->update($updateData);
+
+                // Claim stock if not already claimed
+                $this->claimStockForPurchase($purchase);
             }
-
-            $purchase->update($updateData);
         }
     }
 
@@ -209,15 +214,20 @@ class StripeWebhookController
         // Update purchases with this payment intent
         $purchases = ProductPurchase::where('charge_id', $paymentIntent->id)->get();
         foreach ($purchases as $purchase) {
-            $updateData = [
-                'status' => PurchaseStatus::COMPLETED,
-            ];
+            if ($purchase->status !== PurchaseStatus::COMPLETED) {
+                $updateData = [
+                    'status' => PurchaseStatus::COMPLETED,
+                ];
 
-            if (in_array('amount_paid', $purchase->getFillable())) {
-                $updateData['amount_paid'] = $paymentIntent->amount / 100;
+                if (in_array('amount_paid', $purchase->getFillable())) {
+                    $updateData['amount_paid'] = $paymentIntent->amount / 100;
+                }
+
+                $purchase->update($updateData);
+
+                // Claim stock if not already claimed
+                $this->claimStockForPurchase($purchase);
             }
-
-            $purchase->update($updateData);
         }
     }
 
@@ -244,7 +254,8 @@ class StripeWebhookController
      */
     protected function updatePurchasesForSession(Cart $cart, $session)
     {
-        $purchases = $cart->items()->with('purchase')->get()->pluck('purchase')->filter();
+        // Get all purchases for this cart
+        $purchases = ProductPurchase::where('cart_id', $cart->id)->get();
 
         foreach ($purchases as $purchase) {
             if (!$purchase) {
@@ -255,16 +266,87 @@ class StripeWebhookController
                 'status' => PurchaseStatus::COMPLETED,
             ];
 
-            // Only update columns that exist in the model
+            // Update charge_id if it exists in fillable
             if (in_array('charge_id', $purchase->getFillable())) {
                 $updateData['charge_id'] = $session->payment_intent;
             }
 
+            // Update amount_paid if it exists in fillable
             if (in_array('amount_paid', $purchase->getFillable())) {
-                $updateData['amount_paid'] = $session->amount_total / 100; // Convert from cents
+                // Use the purchase's amount since it was already set correctly
+                $updateData['amount_paid'] = $purchase->amount;
             }
 
             $purchase->update($updateData);
+
+            // Claim stock after successful payment
+            $this->claimStockForPurchase($purchase);
+        }
+    }
+
+    /**
+     * Claim stock for a purchase (used after successful payment)
+     */
+    protected function claimStockForPurchase(ProductPurchase $purchase)
+    {
+        $product = $purchase->purchasable;
+        if (!($product instanceof \Blax\Shop\Models\Product)) {
+            return;
+        }
+
+        // Skip if product doesn't manage stock
+        if (!$product->manage_stock && !$product->isPool()) {
+            return;
+        }
+
+        // Determine if we need to claim stock with timespan (from/until)
+        $hasTimespan = $purchase->from && $purchase->until;
+
+        try {
+            if ($product->isPool()) {
+                // For pool products: claim from single items (they manage their own stock)
+                // Only claim if there's a timespan (booking dates)
+                if ($hasTimespan) {
+                    $product->claimPoolStock(
+                        $purchase->quantity,
+                        $purchase,
+                        $purchase->from,
+                        $purchase->until,
+                        "Purchase #{$purchase->id} completed"
+                    );
+                }
+                // If no timespan, pool products don't claim stock
+                // (single items would be simple products that don't need claiming)
+            } elseif ($product->isBooking()) {
+                // For booking products: claim stock for the timespan
+                if ($hasTimespan) {
+                    $product->claimStock(
+                        $purchase->quantity,
+                        $purchase,
+                        $purchase->from,
+                        $purchase->until,
+                        "Purchase #{$purchase->id} completed"
+                    );
+                } else {
+                    Log::warning('Booking product without timespan', [
+                        'purchase_id' => $purchase->id,
+                        'product_id' => $product->id,
+                    ]);
+                }
+            } else {
+                // For simple/consumable products (like shampoo bottle):
+                // Decrease stock immediately (no timespan needed)
+                if ($product->manage_stock) {
+                    $product->decreaseStock($purchase->quantity);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to claim/decrease stock for purchase', [
+                'purchase_id' => $purchase->id,
+                'product_id' => $product->id,
+                'product_type' => $product->type->value ?? 'unknown',
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

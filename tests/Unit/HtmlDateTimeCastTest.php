@@ -16,15 +16,15 @@ class HtmlDateTimeCastTest extends TestCase
         $cart = Cart::factory()->create();
         $date = Carbon::parse('2025-12-25 14:30:00');
 
-        $cart->from_date = $date;
+        $cart->from = $date;
         $cart->save();
 
         // Reload from database
         $cart->refresh();
 
         // Should return Carbon instance
-        $this->assertInstanceOf(Carbon::class, $cart->from_date);
-        $this->assertEquals('2025-12-25 14:30:00', $cart->from_date->format('Y-m-d H:i:s'));
+        $this->assertInstanceOf(Carbon::class, $cart->from);
+        $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
     /** @test */
@@ -33,13 +33,13 @@ class HtmlDateTimeCastTest extends TestCase
         $cart = Cart::factory()->create();
         $date = new \DateTime('2025-12-25 14:30:00');
 
-        $cart->from_date = $date;
+        $cart->from = $date;
         $cart->save();
 
         $cart->refresh();
 
-        $this->assertInstanceOf(Carbon::class, $cart->from_date);
-        $this->assertEquals('2025-12-25 14:30:00', $cart->from_date->format('Y-m-d H:i:s'));
+        $this->assertInstanceOf(Carbon::class, $cart->from);
+        $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
     /** @test */
@@ -48,13 +48,13 @@ class HtmlDateTimeCastTest extends TestCase
         $cart = Cart::factory()->create();
 
         // Standard datetime string
-        $cart->from_date = '2025-12-25 14:30:00';
+        $cart->from = '2025-12-25 14:30:00';
         $cart->save();
 
         $cart->refresh();
 
-        $this->assertInstanceOf(Carbon::class, $cart->from_date);
-        $this->assertEquals('2025-12-25 14:30:00', $cart->from_date->format('Y-m-d H:i:s'));
+        $this->assertInstanceOf(Carbon::class, $cart->from);
+        $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
     /** @test */
@@ -63,26 +63,26 @@ class HtmlDateTimeCastTest extends TestCase
         $cart = Cart::factory()->create();
 
         // HTML5 datetime-local format (YYYY-MM-DDTHH:MM)
-        $cart->from_date = '2025-12-25T14:30';
+        $cart->from = '2025-12-25T14:30';
         $cart->save();
 
         $cart->refresh();
 
-        $this->assertInstanceOf(Carbon::class, $cart->from_date);
-        $this->assertEquals('2025-12-25 14:30:00', $cart->from_date->format('Y-m-d H:i:s'));
+        $this->assertInstanceOf(Carbon::class, $cart->from);
+        $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
     /** @test */
     public function it_can_format_for_html5_input()
     {
         $cart = Cart::factory()->create();
-        $cart->from_date = Carbon::parse('2025-12-25 14:30:00');
+        $cart->from = Carbon::parse('2025-12-25 14:30:00');
         $cart->save();
 
         $cart->refresh();
 
         // Can format for HTML5 datetime-local input
-        $htmlFormat = $cart->from_date->format('Y-m-d\TH:i');
+        $htmlFormat = $cart->from->format('Y-m-d\TH:i');
         $this->assertEquals('2025-12-25T14:30', $htmlFormat);
     }
 
@@ -90,12 +90,12 @@ class HtmlDateTimeCastTest extends TestCase
     public function it_handles_null_values()
     {
         $cart = Cart::factory()->create();
-        $cart->from_date = null;
+        $cart->from = null;
         $cart->save();
 
         $cart->refresh();
 
-        $this->assertNull($cart->from_date);
+        $this->assertNull($cart->from);
     }
 
     /** @test */
@@ -128,28 +128,28 @@ class HtmlDateTimeCastTest extends TestCase
         $cart = Cart::factory()->create();
         $timestamp = Carbon::parse('2025-12-25 14:30:00')->timestamp;
 
-        $cart->from_date = $timestamp;
+        $cart->from = $timestamp;
         $cart->save();
 
         $cart->refresh();
 
-        $this->assertInstanceOf(Carbon::class, $cart->from_date);
-        $this->assertEquals('2025-12-25 14:30:00', $cart->from_date->format('Y-m-d H:i:s'));
+        $this->assertInstanceOf(Carbon::class, $cart->from);
+        $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
     /** @test */
     public function it_maintains_carbon_methods()
     {
         $cart = Cart::factory()->create();
-        $cart->from_date = Carbon::parse('2025-12-25 14:30:00');
+        $cart->from = Carbon::parse('2025-12-25 14:30:00');
         $cart->save();
 
         $cart->refresh();
 
         // All Carbon methods should be available
-        $this->assertTrue($cart->from_date->isAfter(Carbon::parse('2025-12-24')));
-        $this->assertTrue($cart->from_date->isBefore(Carbon::parse('2025-12-26')));
-        $this->assertEquals('December', $cart->from_date->format('F'));
-        $this->assertEquals('2025-12-25', $cart->from_date->toDateString());
+        $this->assertTrue($cart->from->isAfter(Carbon::parse('2025-12-24')));
+        $this->assertTrue($cart->from->isBefore(Carbon::parse('2025-12-26')));
+        $this->assertEquals('December', $cart->from->format('F'));
+        $this->assertEquals('2025-12-25', $cart->from->toDateString());
     }
 }
