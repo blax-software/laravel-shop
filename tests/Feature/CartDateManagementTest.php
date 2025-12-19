@@ -258,12 +258,119 @@ class CartDateManagementTest extends TestCase
         $cartUntilDate = Carbon::now()->addDays(3);
 
         $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false);
-        $cart->applyDatesToItems(validateAvailability: false);
+        $cart->applyDatesToItems(validateAvailability: false, overwrite: false);
 
         $item->refresh();
-        // Item dates should remain unchanged
+        // Item dates should remain unchanged when overwrite is false
         $this->assertEquals($itemFromDate->toDateString(), $item->from->toDateString());
         $this->assertEquals($itemUntilDate->toDateString(), $item->until->toDateString());
+    }
+
+    /** @test */
+    public function apply_dates_to_items_overwrites_when_overwrite_is_true()
+    {
+        $product = Product::factory()->create([
+            'type' => ProductType::BOOKING,
+            'manage_stock' => false,
+        ]);
+
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'type' => PriceType::RECURRING,
+            'is_default' => true,
+
+        ]);
+
+        $cart = Cart::factory()->create();
+        $item = $cart->addToCart($product, 1);
+
+        $itemFromDate = Carbon::now()->addDays(5);
+        $itemUntilDate = Carbon::now()->addDays(7);
+        $item->updateDates($itemFromDate, $itemUntilDate);
+
+        $cartFromDate = Carbon::now()->addDays(1);
+        $cartUntilDate = Carbon::now()->addDays(3);
+
+        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false);
+        $cart->applyDatesToItems(validateAvailability: false, overwrite: true);
+
+        $item->refresh();
+        // Item dates should be overwritten with cart dates when overwrite is true
+        $this->assertEquals($cartFromDate->toDateString(), $item->from->toDateString());
+        $this->assertEquals($cartUntilDate->toDateString(), $item->until->toDateString());
+    }
+
+    /** @test */
+    public function apply_dates_to_items_fills_only_null_from_date_when_overwrite_false()
+    {
+        $product = Product::factory()->create([
+            'type' => ProductType::BOOKING,
+            'manage_stock' => false,
+        ]);
+
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'type' => PriceType::RECURRING,
+            'is_default' => true,
+
+        ]);
+
+        $cart = Cart::factory()->create();
+        $item = $cart->addToCart($product, 1);
+
+        // Only set 'until' date on the item, leave 'from' as null
+        $itemUntilDate = Carbon::now()->addDays(7);
+        $item->until = $itemUntilDate;
+        $item->save();
+
+        $cartFromDate = Carbon::now()->addDays(1);
+        $cartUntilDate = Carbon::now()->addDays(3);
+
+        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false);
+        $cart->applyDatesToItems(validateAvailability: false, overwrite: false);
+
+        $item->refresh();
+        // 'from' should be filled from cart, 'until' should remain unchanged
+        $this->assertEquals($cartFromDate->toDateString(), $item->from->toDateString());
+        $this->assertEquals($itemUntilDate->toDateString(), $item->until->toDateString());
+    }
+
+    /** @test */
+    public function apply_dates_to_items_fills_only_null_until_date_when_overwrite_false()
+    {
+        $product = Product::factory()->create([
+            'type' => ProductType::BOOKING,
+            'manage_stock' => false,
+        ]);
+
+        $price = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'type' => PriceType::RECURRING,
+            'is_default' => true,
+
+        ]);
+
+        $cart = Cart::factory()->create();
+        $item = $cart->addToCart($product, 1);
+
+        // Only set 'from' date on the item, leave 'until' as null
+        $itemFromDate = Carbon::now()->addDays(1);
+        $item->from = $itemFromDate;
+        $item->save();
+
+        $cartFromDate = Carbon::now()->addDays(5);
+        $cartUntilDate = Carbon::now()->addDays(7);
+
+        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false);
+        $cart->applyDatesToItems(validateAvailability: false, overwrite: false);
+
+        $item->refresh();
+        // 'from' should remain unchanged, 'until' should be filled from cart
+        $this->assertEquals($itemFromDate->toDateString(), $item->from->toDateString());
+        $this->assertEquals($cartUntilDate->toDateString(), $item->until->toDateString());
     }
 
     /** @test */

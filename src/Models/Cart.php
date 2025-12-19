@@ -312,32 +312,44 @@ class Cart extends Model
      * Apply cart dates to all items that don't have their own dates set.
      * 
      * @param bool $validateAvailability Whether to validate product availability for the timespan
+     * @param bool $overwrite If true, overwrites existing item dates. If false, only sets null fields.
      * @return $this
      * @throws NotEnoughAvailableInTimespanException
      */
-    public function applyDatesToItems(bool $validateAvailability = true): self
+    public function applyDatesToItems(bool $validateAvailability = true, bool $overwrite = false): self
     {
         if (!$this->from || !$this->until) {
             return $this;
         }
 
         foreach ($this->items as $item) {
-            // Only apply to booking items that don't already have dates set
-            if ($item->is_booking && (!$item->from || !$item->until)) {
+            // Only apply to booking items
+            if ($item->is_booking) {
+                // Determine which dates to apply based on overwrite setting
+                $shouldApplyFrom = $overwrite || !$item->from;
+                $shouldApplyUntil = $overwrite || !$item->until;
+
+                if (!$shouldApplyFrom && !$shouldApplyUntil) {
+                    continue;
+                }
+
+                $fromDate = $shouldApplyFrom ? $this->from : $item->from;
+                $untilDate = $shouldApplyUntil ? $this->until : $item->until;
+
                 if ($validateAvailability) {
                     $product = $item->purchasable;
-                    if ($product && !$product->isAvailableForBooking($this->from, $this->until, $item->quantity)) {
+                    if ($product && !$product->isAvailableForBooking($fromDate, $untilDate, $item->quantity)) {
                         throw new NotEnoughAvailableInTimespanException(
                             productName: $product->name ?? 'Product',
                             requested: $item->quantity,
                             available: 0, // Could calculate actual available amount
-                            from: $this->from,
-                            until: $this->until
+                            from: $fromDate,
+                            until: $untilDate
                         );
                     }
                 }
 
-                $item->updateDates($this->from, $this->until);
+                $item->updateDates($fromDate, $untilDate);
             }
         }
 
