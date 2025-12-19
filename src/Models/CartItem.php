@@ -435,8 +435,9 @@ class CartItem extends Model
 
         // Get current price per day
         // Pass dates to ensure accurate pricing for pool products during date updates
-        $pricePerDay = $product->getCurrentPrice(null, $this->cart, $from, $until);
-        $regularPricePerDay = $product->getCurrentPrice(false, $this->cart, $from, $until) ?? $pricePerDay;
+        // Pass cart item ID to exclude this item from usage calculation
+        $pricePerDay = $product->getCurrentPrice(null, $this->cart, $from, $until, $this->id);
+        $regularPricePerDay = $product->getCurrentPrice(false, $this->cart, $from, $until, $this->id) ?? $pricePerDay;
 
         // Store the base unit_amount (price for 1 quantity, 1 day) in cents
         $unitAmount = (int) round($pricePerDay);

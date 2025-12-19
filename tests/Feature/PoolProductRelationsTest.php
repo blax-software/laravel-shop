@@ -145,7 +145,10 @@ class PoolProductRelationsTest extends TestCase
     public function legacy_manual_attach_still_works()
     {
         // Test that old way of attaching still works (without reverse relation)
-        $pool = Product::factory()->create(['type' => ProductType::POOL]);
+        $pool = Product::factory()->create([
+            'type' => ProductType::POOL,
+            'manage_stock' => false,
+        ]);
         $spot = Product::factory()->create(['type' => ProductType::BOOKING]);
 
         // Old way using productRelations()->attach() directly

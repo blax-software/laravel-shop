@@ -218,7 +218,8 @@ class Cart extends Model
     public function setDates(
         \DateTimeInterface|string|int|float $from,
         \DateTimeInterface|string|int|float $until,
-        bool $validateAvailability = true
+        bool $validateAvailability = true,
+        bool $overwrite_item_dates = true
     ): self {
         // Parse string dates using Carbon
         if (is_string($from) || is_numeric($from)) {
@@ -243,7 +244,10 @@ class Cart extends Model
         ]);
 
         // Update cart items with from/until
-        $this->applyDatesToItems($validateAvailability);
+        $this->applyDatesToItems(
+            $validateAvailability,
+            $overwrite_item_dates
+        );
 
         return $this->fresh();
     }
@@ -587,12 +591,22 @@ class Cart extends Model
         // For pool products, calculate current quantity in cart once to ensure consistency
         // Force fresh query to get latest cart state (important for recursive calls)
         $currentQuantityInCart = null;
+        $poolSingleItem = null;
+        $poolPriceId = null;
+
         if ($cartable instanceof Product && $cartable->isPool()) {
             $this->unsetRelation('items'); // Clear cached relationship
             $currentQuantityInCart = $this->items()
                 ->where('purchasable_id', $cartable->getKey())
                 ->where('purchasable_type', get_class($cartable))
                 ->sum('quantity');
+
+            // Pre-calculate pool pricing info for use in merge logic
+            $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);
+            if ($poolItemData) {
+                $poolSingleItem = $poolItemData['item'];
+                $poolPriceId = $poolItemData['price_id'];
+            }
         }
 
         // Check if item already exists in cart with same parameters, dates, AND price
@@ -600,7 +614,7 @@ class Cart extends Model
             ->where('purchasable_id', $cartable->getKey())
             ->where('purchasable_type', get_class($cartable))
             ->get()
-            ->first(function ($item) use ($parameters, $from, $until, $cartable, $currentQuantityInCart) {
+            ->first(function ($item) use ($parameters, $from, $until, $cartable, $poolPriceId) {
                 $existingParams = is_array($item->parameters)
                     ? $item->parameters
                     : (array) $item->parameters;
@@ -621,22 +635,19 @@ class Cart extends Model
                     );
                 }
 
-                // For pool products, check pricing strategy to determine merge behavior
+                // For pool products, check if price_id matches to allow proper merging
+                // Pool items with the same price_id (from the same single item) can merge
+                // but items from different single items (different price_id) should NOT merge
+                // Also check that the actual price matches (important for AVERAGE strategy where price can change)
                 $priceMatch = true;
                 if ($cartable instanceof Product && $cartable->isPool()) {
-                    // For pools, use smart pricing that considers which tiers are used
-                    $currentPrice = $cartable->getNextAvailablePoolPriceConsideringCart($this, null, $from, $until);
-                    if (!$currentPrice) {
-                        // Fallback to getCurrentPrice if method returns null
-                        $currentPrice = $cartable->getCurrentPrice();
-                    }
-                    if ($from && $until) {
-                        $days = $this->calculateBookingDays($from, $until);
-                        $currentPrice *= $days;
-                    }
-
-                    // Compare prices - merge if prices match
-                    $priceMatch = abs((float)$item->price - $currentPrice) < 0.01;
+                    // Calculate expected price for this item
+                    $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);
+                    $expectedPrice = $poolItemData['price'] ?? null;
+                    
+                    // Only merge if price_id matches AND the price amount matches
+                    $priceMatch = $poolPriceId && $item->price_id === $poolPriceId && 
+                                  $expectedPrice !== null && $item->unit_amount === (int) round($expectedPrice);
                 }
 
                 return $paramsMatch && $datesMatch && $priceMatch;
@@ -644,8 +655,6 @@ class Cart extends Model
 
         // Calculate price per day (base price)
         // For pool products, get price based on how many items are already in cart
-        $poolSingleItem = null;
-        $poolPriceId = null;
         if ($cartable instanceof Product && $cartable->isPool()) {
             // Use smarter pricing that considers which price tiers are used
             $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);

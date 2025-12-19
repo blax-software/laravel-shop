@@ -139,6 +139,7 @@ trait MayBePoolProduct
         $strategy = $this->getPricingStrategy();
 
         // Build list of available single items with their prices
+        // IMPORTANT: Collect ALL available items first, then sort, to ensure correct pricing strategy order
         $availableItems = [];
         foreach ($singleItems as $item) {
             if ($item->isAvailableForBooking($from, $until, 1)) {
@@ -154,11 +155,6 @@ trait MayBePoolProduct
                     'item' => $item,
                     'price' => $price ?? PHP_FLOAT_MAX, // Items without prices go last
                 ];
-            }
-
-            // Early exit if we have enough
-            if (count($availableItems) >= $quantity) {
-                break;
             }
         }
 
@@ -684,13 +680,15 @@ trait MayBePoolProduct
      * @param bool|null $sales_price Whether to get sale price
      * @param \DateTimeInterface|null $from Start date for availability check
      * @param \DateTimeInterface|null $until End date for availability check
+     * @param string|int|null $excludeCartItemId Cart item ID to exclude from usage calculation (for date updates)
      * @return array|null ['price' => float, 'item' => Product, 'price_id' => string|null]
      */
     public function getNextAvailablePoolItemWithPrice(
         \Blax\Shop\Models\Cart $cart,
         bool|null $sales_price = null,
         ?\DateTimeInterface $from = null,
-        ?\DateTimeInterface $until = null
+        ?\DateTimeInterface $until = null,
+        string|int|null $excludeCartItemId = null
     ): ?array {
         if (!$this->isPool()) {
             return null;
@@ -724,12 +722,36 @@ trait MayBePoolProduct
             $days = $this->calculateBookingDays($from, $until);
         }
 
-        // Build usage map: price => quantity used
-        $priceUsage = [];
+        // Build usage map: track which single items have been allocated
+        // Use allocated_single_item_id from meta to track actual single item usage
+        // ONLY count items that overlap with the current booking period
+        // Exclude the specified cart item (if updating dates on existing item)
+        $singleItemUsage = []; // item_id => quantity used
         foreach ($cartItems as $item) {
-            $pricePerDay = $item->price / $days;
-            $priceKey = round($pricePerDay, 2); // Round to avoid floating point issues
-            $priceUsage[$priceKey] = ($priceUsage[$priceKey] ?? 0) + $item->quantity;
+            // Skip the cart item being updated (if applicable)
+            if ($excludeCartItemId && $item->id === $excludeCartItemId) {
+                continue;
+            }
+
+            // Only count this cart item if it overlaps with the current booking period
+            $overlaps = true;
+            if ($from && $until && $item->from && $item->until) {
+                // Check if the cart item's booking period overlaps with the current period
+                // No overlap if: cart item ends before current starts, or cart item starts after current ends
+                $overlaps = !(
+                    $item->until < $from || // Cart item ends before current booking starts
+                    $item->from > $until    // Cart item starts after current booking ends
+                );
+            }
+
+            if ($overlaps) {
+                $meta = $item->getMeta();
+                $allocatedItemId = $meta->allocated_single_item_id ?? null;
+
+                if ($allocatedItemId) {
+                    $singleItemUsage[$allocatedItemId] = ($singleItemUsage[$allocatedItemId] ?? 0) + $item->quantity;
+                }
+            }
         }
 
         // Build available items list
@@ -749,16 +771,16 @@ trait MayBePoolProduct
                 }
 
                 if ($price !== null) {
-                    $priceRounded = round($price, 2);
+                    // Subtract quantity already allocated from THIS specific single item
+                    $usedFromThisItem = $singleItemUsage[$item->id] ?? 0;
+                    $availableFromThisItem = $available === PHP_INT_MAX
+                        ? PHP_INT_MAX
+                        : max(0, $available - $usedFromThisItem);
 
-                    // Subtract quantity already used in cart at this price
-                    $usedAtThisPrice = $priceUsage[$priceRounded] ?? 0;
-                    $availableAtThisPrice = $available - $usedAtThisPrice;
-
-                    if ($availableAtThisPrice > 0) {
+                    if ($availableFromThisItem > 0) {
                         $availableItems[] = [
                             'price' => $price,
-                            'quantity' => $availableAtThisPrice,
+                            'quantity' => $availableFromThisItem,
                             'item' => $item,
                             'price_id' => $priceModel?->id,
                         ];
@@ -848,9 +870,10 @@ trait MayBePoolProduct
         \Blax\Shop\Models\Cart $cart,
         bool|null $sales_price = null,
         ?\DateTimeInterface $from = null,
-        ?\DateTimeInterface $until = null
+        ?\DateTimeInterface $until = null,
+        string|int|null $excludeCartItemId = null
     ): ?float {
-        $result = $this->getNextAvailablePoolItemWithPrice($cart, $sales_price, $from, $until);
+        $result = $this->getNextAvailablePoolItemWithPrice($cart, $sales_price, $from, $until, $excludeCartItemId);
         return $result['price'] ?? null;
     }
 
@@ -945,6 +968,14 @@ trait MayBePoolProduct
             throw InvalidPoolConfigurationException::notAPoolProduct($this->name);
         }
 
+        // Critical: Pool products should NEVER manage stock themselves
+        // Stock is managed by individual single items only
+        if ($this->manage_stock) {
+            throw new InvalidPoolConfigurationException(
+                "Pool product '{$this->name}' has manage_stock=true. Pool products should never manage stock directly - only their single items manage stock."
+            );
+        }
+
         $singleItems = $this->singleProducts;
 
         // Critical: No single items
@@ -962,16 +993,14 @@ trait MayBePoolProduct
             }
         }
 
-        // Check stock management on single items
-        $itemsWithoutStock = $singleItems->filter(fn($item) => !$item->manage_stock);
-        if ($itemsWithoutStock->isNotEmpty()) {
-            $itemNames = $itemsWithoutStock->pluck('name')->toArray();
-            $errors[] = "Single items without stock management: " . implode(', ', $itemNames);
-            throw InvalidPoolConfigurationException::singleItemsWithoutStock($this->name, $itemNames);
-        }
+        // Note: Single items may or may not manage stock
+        // Items without stock management are treated as having unlimited availability
+        // This is acceptable - the pool just checks availability from each single item
 
-        // Check for items with zero stock
-        $itemsWithZeroStock = $singleItems->filter(fn($item) => $item->getAvailableStock() <= 0);
+        // Check for items with zero stock (only for items that manage stock)
+        $itemsWithZeroStock = $singleItems
+            ->filter(fn($item) => $item->manage_stock) // Only check items that manage stock
+            ->filter(fn($item) => $item->getAvailableStock() <= 0);
         if ($itemsWithZeroStock->isNotEmpty()) {
             $itemNames = $itemsWithZeroStock->pluck('name')->toArray();
             $warnings[] = "Single items with zero stock: " . implode(', ', $itemNames);

@@ -120,6 +120,7 @@ class BookingTimespanValidationTest extends TestCase
         $poolProduct = Product::factory()->create([
             'name' => 'Kayak Fleet',
             'type' => ProductType::POOL,
+            'manage_stock' => false, // Pool products never manage stock themselves
         ]);
 
         $singleItem = Product::factory()->create([
@@ -174,6 +175,7 @@ class BookingTimespanValidationTest extends TestCase
         // Create a pool product with 2 single items so both bookings can succeed
         $poolProduct = Product::factory()->create([
             'type' => ProductType::POOL,
+            'manage_stock' => false,
         ]);
 
         ProductPrice::factory()->create([
@@ -392,6 +394,7 @@ class BookingTimespanValidationTest extends TestCase
         // Create pool with 2 single items
         $poolProduct = Product::factory()->create([
             'type' => ProductType::POOL,
+            'manage_stock' => false,
         ]);
 
         $singleItem1 = Product::factory()->create([

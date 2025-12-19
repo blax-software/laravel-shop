@@ -220,11 +220,11 @@ class PoolPerMinutePricingTest extends TestCase
 
         // First booking uses lowest pricing: 3000 cents * 0.25 = 750 cents ($7.50)
         $this->assertEquals(750, $cartItem1->price);
-        // Second booking may use next available pricing tier
-        $this->assertGreaterThanOrEqual(750, (int)$cartItem2->price);
+        // Second booking is on a different day (non-overlapping) so also uses lowest pricing
+        $this->assertEquals(750, (int)$cartItem2->price);
 
-        // Total should be reasonable for two 6-hour bookings
-        $this->assertGreaterThan(1500, $cart->getTotal());
+        // Total should be 750 + 750 = 1500 for two 6-hour bookings on different days
+        $this->assertEquals(1500, $cart->getTotal());
     }
 
     /** @test */

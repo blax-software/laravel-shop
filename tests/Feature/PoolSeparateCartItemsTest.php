@@ -123,6 +123,7 @@ class PoolSeparateCartItemsTest extends TestCase
         $item2 = $this->cart->addToCart($this->pool, 1, [], $from, $until);
 
         // Should create separate cart items because price is different
+        // (Note: With AVERAGE strategy, price_id may be the same but price differs)
         $this->assertNotEquals($item1->id, $item2->id);
         $this->assertEquals(2, $this->cart->items()->count());
         $this->assertNotEquals($price1, $item2->price);

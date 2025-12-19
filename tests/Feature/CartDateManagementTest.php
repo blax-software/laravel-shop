@@ -257,7 +257,7 @@ class CartDateManagementTest extends TestCase
         $cartFromDate = Carbon::now()->addDays(1);
         $cartUntilDate = Carbon::now()->addDays(3);
 
-        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false);
+        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false, overwrite_item_dates: false);
         $cart->applyDatesToItems(validateAvailability: false, overwrite: false);
 
         $item->refresh();
@@ -328,7 +328,7 @@ class CartDateManagementTest extends TestCase
         $cartFromDate = Carbon::now()->addDays(1);
         $cartUntilDate = Carbon::now()->addDays(3);
 
-        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false);
+        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false, overwrite_item_dates: false);
         $cart->applyDatesToItems(validateAvailability: false, overwrite: false);
 
         $item->refresh();
@@ -364,7 +364,7 @@ class CartDateManagementTest extends TestCase
         $cartFromDate = Carbon::now()->addDays(5);
         $cartUntilDate = Carbon::now()->addDays(7);
 
-        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false);
+        $cart->setDates($cartFromDate, $cartUntilDate, validateAvailability: false, overwrite_item_dates: false);
         $cart->applyDatesToItems(validateAvailability: false, overwrite: false);
 
         $item->refresh();

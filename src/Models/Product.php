@@ -401,13 +401,15 @@ class Product extends Model implements Purchasable, Cartable
      * @param mixed $cart Optional cart instance (auto-resolved from session/user if not provided)
      * @param \DateTimeInterface|null $from Optional start date for booking calculations
      * @param \DateTimeInterface|null $until Optional end date for booking calculations
+     * @param string|int|null $excludeCartItemId Cart item ID to exclude from usage calculation (for date updates)
      * @return float|null The current price, or null if unavailable
      */
     public function getCurrentPrice(
         bool|null $sales_price = null,
         mixed $cart = null,
         ?\DateTimeInterface $from = null,
-        ?\DateTimeInterface $until = null
+        ?\DateTimeInterface $until = null,
+        string|int|null $excludeCartItemId = null
     ): ?float {
         // If this is a pool product, use cart-aware pricing if cart is provided
         if ($this->isPool()) {
@@ -432,7 +434,7 @@ class Product extends Model implements Purchasable, Cartable
             if ($cart) {
                 // Cart-aware: Use smarter pricing that considers which price tiers are used
                 // This returns null if no items are available (all sold out)
-                return $this->getNextAvailablePoolPriceConsideringCart($cart, $sales_price, $from, $until);
+                return $this->getNextAvailablePoolPriceConsideringCart($cart, $sales_price, $from, $until, $excludeCartItemId);
             }
 
             // No cart: Get inherited price from single items
