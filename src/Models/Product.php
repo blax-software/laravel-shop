@@ -371,9 +371,10 @@ class Product extends Model implements Purchasable, Cartable
             ->where('expires_at', '>', $from) // Booking hasn't ended before our period starts
             ->sum('quantity');
 
-        // Use base stock and subtract all overlapping reservations
+        // Use base stock at the START of the booking period and subtract all overlapping reservations
+        // We check availability at $from because claims that expire before then should not affect availability
         // Note: overlappingBookings is already negative (DECREASE entries), so we add it
-        $availableStock = $this->getAvailableStock() - abs($overlappingClaims) + $overlappingBookings;
+        $availableStock = $this->getAvailableStock($from) - abs($overlappingClaims) + $overlappingBookings;
 
         return $availableStock >= $quantity;
     }

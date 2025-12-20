@@ -382,6 +382,15 @@ class Cart extends Model
             return $this;
         }
 
+        // First, reallocate pool items if pricing strategy suggests better allocation with new dates
+        $this->reallocatePoolItems($fromDate, $untilDate, $overwrite);
+
+        // Refresh items relationship to get updated meta values
+        $this->load('items');
+
+        // Track pool products to validate total allocation across all cart items
+        $poolValidation = [];
+
         foreach ($this->items as $item) {
             // Only apply to booking items
             if ($item->is_booking) {
@@ -398,11 +407,32 @@ class Cart extends Model
 
                 if ($validateAvailability) {
                     $product = $item->purchasable;
-                    if ($product && !$product->isAvailableForBooking($itemFrom, $itemUntil, $item->quantity)) {
+
+                    // For pool products, track allocation for total validation
+                    if ($product instanceof Product && $product->isPool()) {
+                        $poolKey = $product->id . '|' . $itemFrom->format('Y-m-d H:i:s') . '|' . $itemUntil->format('Y-m-d H:i:s');
+
+                        if (!isset($poolValidation[$poolKey])) {
+                            $poolValidation[$poolKey] = [
+                                'product' => $product,
+                                'from' => $itemFrom,
+                                'until' => $itemUntil,
+                                'requested' => 0,
+                                'allocated' => 0,
+                            ];
+                        }
+
+                        $poolValidation[$poolKey]['requested'] += $item->quantity;
+
+                        $meta = $item->getMeta();
+                        if (isset($meta->allocated_single_item_id)) {
+                            $poolValidation[$poolKey]['allocated'] += $item->quantity;
+                        }
+                    } elseif ($product && !$product->isAvailableForBooking($itemFrom, $itemUntil, $item->quantity)) {
                         throw new NotEnoughAvailableInTimespanException(
                             productName: $product->name ?? 'Product',
                             requested: $item->quantity,
-                            available: 0, // Could calculate actual available amount
+                            available: 0,
                             from: $itemFrom,
                             until: $itemUntil
                         );
@@ -413,7 +443,158 @@ class Cart extends Model
             }
         }
 
+        // Validate pool allocations - all requested items must be allocated
+        if ($validateAvailability) {
+            foreach ($poolValidation as $poolData) {
+                if ($poolData['requested'] > $poolData['allocated']) {
+                    $product = $poolData['product'];
+                    throw new NotEnoughAvailableInTimespanException(
+                        productName: $product->name ?? 'Product',
+                        requested: $poolData['requested'],
+                        available: $poolData['allocated'],
+                        from: $poolData['from'],
+                        until: $poolData['until']
+                    );
+                }
+            }
+        }
+
         return $this->fresh();
+    }
+
+    /**
+     * Reallocate pool items to optimize pricing when dates change.
+     * 
+     * When dates change, check if better-priced single items become available
+     * according to the pool's pricing strategy (LOWEST, HIGHEST, etc.)
+     * 
+     * @param \DateTimeInterface $from New start date
+     * @param \DateTimeInterface $until New end date
+     * @param bool $overwrite Whether to apply to all items or only those without dates
+     * @return void
+     */
+    protected function reallocatePoolItems(\DateTimeInterface $from, \DateTimeInterface $until, bool $overwrite = true): void
+    {
+        // Group cart items by pool product
+        $poolItems = $this->items()->get()
+            ->filter(function ($item) {
+                $product = $item->purchasable;
+                return $product instanceof Product && $product->isPool();
+            })
+            ->groupBy('purchasable_id');
+
+        foreach ($poolItems as $poolId => $items) {
+            $poolProduct = $items->first()->purchasable;
+
+            if (!$poolProduct) {
+                continue;
+            }
+
+            // Get all available single items for the new dates with their prices
+            $strategy = $poolProduct->getPricingStrategy();
+            // Eager load stocks relationship to ensure fresh data
+            $singleItems = $poolProduct->singleProducts()->with('stocks')->get();
+
+            if ($singleItems->isEmpty()) {
+                continue;
+            }
+
+            // Build list of available items with prices for new dates
+            $availableWithPrices = [];
+            foreach ($singleItems as $single) {
+                // Manually check if this single is available for the booking period
+                $available = $single->getAvailableStock($from);
+
+                // Check for overlapping claims - two periods overlap if:
+                // claim.start < our.end AND claim.end > our.start
+                $overlaps = $single->stocks()
+                    ->where('type', \Blax\Shop\Enums\StockType::CLAIMED->value)
+                    ->where('status', \Blax\Shop\Enums\StockStatus::PENDING->value)
+                    ->where(function ($query) use ($from, $until) {
+                        $query->where(function ($q) use ($from, $until) {
+                            // Claim starts before our period ends
+                            $q->where(function ($subQ) use ($until) {
+                                $subQ->where('claimed_from', '<', $until)
+                                    ->orWhereNull('claimed_from'); // No start = starts immediately
+                            })
+                                // AND claim ends after our period starts
+                                ->where(function ($subQ) use ($from) {
+                                    $subQ->where('expires_at', '>', $from)
+                                        ->orWhereNull('expires_at'); // No end = never expires
+                                });
+                        });
+                    })
+                    ->exists();
+
+                if ($available > 0 && !$overlaps) {
+                    $priceModel = $single->defaultPrice()->first();
+                    $price = $priceModel?->getCurrentPrice($single->isOnSale());
+
+                    // Fallback to pool price if single has no price
+                    if ($price === null && $poolProduct->hasPrice()) {
+                        $priceModel = $poolProduct->defaultPrice()->first();
+                        $price = $priceModel?->getCurrentPrice($poolProduct->isOnSale());
+                    }
+
+                    if ($price !== null) {
+                        $availableWithPrices[] = [
+                            'single' => $single,
+                            'price' => $price,
+                            'price_id' => $priceModel?->id,
+                        ];
+                    }
+                }
+            }
+
+            if (empty($availableWithPrices)) {
+                continue;
+            }
+
+            // Sort by pricing strategy
+            usort($availableWithPrices, function ($a, $b) use ($strategy) {
+                return match ($strategy) {
+                    \Blax\Shop\Enums\PricingStrategy::LOWEST => $a['price'] <=> $b['price'],
+                    \Blax\Shop\Enums\PricingStrategy::HIGHEST => $b['price'] <=> $a['price'],
+                    \Blax\Shop\Enums\PricingStrategy::AVERAGE => 0,
+                };
+            });
+
+            // Reallocate cart items to optimal singles
+            // Each cart item gets one single - no single can be allocated twice
+            $usedIndices = [];
+            foreach ($items as $cartItem) {
+                // Only reallocate if we should overwrite or item has no dates yet
+                if (!$overwrite && $cartItem->from && $cartItem->until) {
+                    continue;
+                }
+
+                // Find next unused single from available list
+                $allocated = false;
+                for ($i = 0; $i < count($availableWithPrices); $i++) {
+                    if (!in_array($i, $usedIndices)) {
+                        $allocation = $availableWithPrices[$i];
+
+                        // Update cart item with new allocation
+                        $cartItem->updateMetaKey('allocated_single_item_id', $allocation['single']->id);
+                        $cartItem->updateMetaKey('allocated_single_item_name', $allocation['single']->name);
+
+                        // Update price_id if changed
+                        if ($allocation['price_id'] && $allocation['price_id'] !== $cartItem->price_id) {
+                            $cartItem->update(['price_id' => $allocation['price_id']]);
+                        }
+
+                        $usedIndices[] = $i;
+                        $allocated = true;
+                        break;
+                    }
+                }
+
+                // If we couldn't allocate (ran out of available singles), stop
+                if (!$allocated) {
+                    break;
+                }
+            }
+        }
     }
 
     /**
@@ -561,23 +742,35 @@ class Cart extends Model
 
         // For pool products with quantity > 1, add them one at a time to get progressive pricing
         if ($cartable instanceof Product && $cartable->isPool() && $quantity > 1) {
-            // Pre-validate that we have enough total availability
-            // This prevents creating partial batches when stock is insufficient
+            // Validate availability if dates are provided
             if ($from && $until) {
                 $available = $cartable->getPoolMaxQuantity($from, $until);
-                if ($available !== PHP_INT_MAX && $quantity > $available) {
+
+                // Subtract items already in cart for the same period
+                $itemsInCart = $this->items()
+                    ->where('purchasable_id', $cartable->getKey())
+                    ->where('purchasable_type', get_class($cartable))
+                    ->get()
+                    ->filter(function ($item) use ($from, $until) {
+                        // Only count items with overlapping dates
+                        if (!$item->from || !$item->until) {
+                            return false;
+                        }
+                        // Check for overlap: item overlaps if it doesn't end before period starts or start after period ends
+                        return !($item->until < $from || $item->from > $until);
+                    })
+                    ->sum('quantity');
+
+                $availableForThisRequest = $available === PHP_INT_MAX ? PHP_INT_MAX : max(0, $available - $itemsInCart);
+
+                if ($availableForThisRequest !== PHP_INT_MAX && $quantity > $availableForThisRequest) {
                     throw new NotEnoughStockException(
-                        "Pool product '{$cartable->name}' has only {$available} items available for the requested period. Requested: {$quantity}"
-                    );
-                }
-            } else {
-                $available = $cartable->getPoolMaxQuantity();
-                if ($available !== PHP_INT_MAX && $quantity > $available) {
-                    throw new NotEnoughStockException(
-                        "Pool product '{$cartable->name}' has only {$available} items available. Requested: {$quantity}"
+                        "Pool product '{$cartable->name}' has only {$availableForThisRequest} items available for the requested period. Requested: {$quantity}"
                     );
                 }
             }
+            // When dates are not provided, skip availability validation - allow flexible cart behavior
+            // The cart will validate when dates are set via setDates()
 
             // Add items one at a time for progressive pricing
             $lastCartItem = null;
@@ -609,10 +802,28 @@ class Cart extends Model
                 // Check pool product availability if dates are provided
                 if ($cartable->isPool()) {
                     $maxQuantity = $cartable->getPoolMaxQuantity($from, $until);
+
+                    // Subtract items already in cart for the same period
+                    $itemsInCart = $this->items()
+                        ->where('purchasable_id', $cartable->getKey())
+                        ->where('purchasable_type', get_class($cartable))
+                        ->get()
+                        ->filter(function ($item) use ($from, $until) {
+                            // Only count items with overlapping dates
+                            if (!$item->from || !$item->until) {
+                                return false;
+                            }
+                            // Check for overlap
+                            return !($item->until < $from || $item->from > $until);
+                        })
+                        ->sum('quantity');
+
+                    $availableForThisRequest = $maxQuantity === PHP_INT_MAX ? PHP_INT_MAX : max(0, $maxQuantity - $itemsInCart);
+
                     // Only validate if pool has limited availability AND quantity exceeds it
-                    if ($maxQuantity !== PHP_INT_MAX && $quantity > $maxQuantity) {
+                    if ($availableForThisRequest !== PHP_INT_MAX && $quantity > $availableForThisRequest) {
                         throw new NotEnoughStockException(
-                            "Pool product '{$cartable->name}' has only {$maxQuantity} items available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')}). Requested: {$quantity}"
+                            "Pool product '{$cartable->name}' has only {$availableForThisRequest} items available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')}). Requested: {$quantity}"
                         );
                     }
                 }
@@ -620,27 +831,13 @@ class Cart extends Model
                 // If only one date is provided, it's an error
                 throw new CartDatesRequiredException();
             } else {
-                // Even without dates, check pool quantity limits
-                if ($cartable->isPool()) {
-                    $maxQuantity = $cartable->getPoolMaxQuantity();
+                // When adding pool items without dates, allow adding even if currently unavailable
+                // Items may be claimed now but available in the future
+                // Validation will happen when dates are set or at checkout
+                // This enables flexible booking workflows where users add items first, then select dates
 
-                    // Skip validation if pool has unlimited availability
-                    if ($maxQuantity !== PHP_INT_MAX) {
-                        // Get current quantity in cart for this pool product
-                        $currentQuantityInCart = $this->items()
-                            ->where('purchasable_id', $cartable->getKey())
-                            ->where('purchasable_type', get_class($cartable))
-                            ->sum('quantity');
-
-                        $totalQuantity = $currentQuantityInCart + $quantity;
-
-                        if ($totalQuantity > $maxQuantity) {
-                            throw new NotEnoughStockException(
-                                "Pool product '{$cartable->name}' has only {$maxQuantity} items available. Already in cart: {$currentQuantityInCart}, Requested: {$quantity}"
-                            );
-                        }
-                    }
-                }
+                // Note: We skip availability validation here for pool products without dates
+                // The cart will not be ready for checkout without dates anyway
             }
         }
 
@@ -1084,13 +1281,30 @@ class Cart extends Model
                     // If pool has timespan and has booking single items, claim stock from single items
                     if ($from && $until && $product->hasBookingSingleItems()) {
                         try {
-                            $claimedItems = $product->claimPoolStock(
-                                $quantity,
-                                $this,
-                                $from,
-                                $until,
-                                "Checkout from cart {$this->id}"
-                            );
+                            // Check if we have pre-allocated single items from reallocation
+                            $meta = $item->getMeta();
+                            $allocatedSingleId = $meta->allocated_single_item_id ?? null;
+
+                            if ($allocatedSingleId) {
+                                // Use the pre-allocated single item
+                                $singleItem = Product::find($allocatedSingleId);
+                                if (!$singleItem) {
+                                    throw new \Exception("Allocated single item not found: {$allocatedSingleId}");
+                                }
+
+                                // Claim stock for this specific item
+                                $singleItem->claimStock($quantity, $this, $from, $until, "Checkout from cart {$this->id}");
+                                $claimedItems = [$singleItem];
+                            } else {
+                                // No pre-allocation, use standard pool claiming logic
+                                $claimedItems = $product->claimPoolStock(
+                                    $quantity,
+                                    $this,
+                                    $from,
+                                    $until,
+                                    "Checkout from cart {$this->id}"
+                                );
+                            }
 
                             // Store claimed items info in purchase meta
                             $item->updateMetaKey('claimed_single_items', array_map(fn($i) => $i->id, $claimedItems));

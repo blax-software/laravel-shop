@@ -166,8 +166,26 @@ class ProductStock extends Model
         ?string $note = null
     ): ?self {
         return DB::transaction(function () use ($product, $quantity, $reference, $from, $until, $note) {
-            if (!$product->decreaseStock($quantity)) {
-                return null;
+            // When claiming for a future booking, check availability at the start date
+            // Otherwise claims for different time periods would incorrectly conflict
+            $checkDate = $from ?? now();
+
+            // Manually check stock availability at the relevant date
+            if ($product->manage_stock) {
+                $available = $product->getAvailableStock($checkDate);
+                if ($available < $quantity) {
+                    throw new \Blax\Shop\Exceptions\NotEnoughStockException(
+                        "Not enough stock available for product ID {$product->id} at date {$checkDate->format('Y-m-d')}"
+                    );
+                }
+
+                // Create DECREASE entry to reduce physical inventory
+                $product->stocks()->create([
+                    'quantity' => -$quantity,
+                    'type' => \Blax\Shop\Enums\StockType::DECREASE,
+                    'status' => \Blax\Shop\Enums\StockStatus::COMPLETED,
+                    'expires_at' => null, // Permanent reduction (until claim is released)
+                ]);
             }
 
             return self::create([

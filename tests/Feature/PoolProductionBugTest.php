@@ -50,6 +50,15 @@ class PoolProductionBugTest extends TestCase
 
     /**
      * Create the pool product matching production setup
+     * 
+     * Pool default price: 5000
+     * Singles:
+     * 1. price: 50000
+     * 2. price: none (should fallback to pool price 5000)
+     * 3. price: none (should fallback to pool price 5000)
+     * 4. price: none (should fallback to pool price 5000)
+     * 5. price: 10001
+     * 6. price: 10002
      */
     protected function createProductionPool(): void
     {
@@ -179,9 +188,14 @@ class PoolProductionBugTest extends TestCase
         $this->createProductionPool();
         $this->cart = $this->createCart();
 
-        // Adding 7 items should throw exception since we only have 6 single items
+        // With new flexible cart behavior: adding without dates is allowed
+        // Exception should only be thrown when DATES are provided and there isn't enough stock
+        $from = now()->addDays(10);
+        $until = now()->addDays(12);
+        
+        // Adding 7 items with dates should throw exception since we only have 6 single items
         $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
-        $this->cart->addToCart($this->pool, 7);
+        $this->cart->addToCart($this->pool, 7, [], $from, $until);
     }
 
     /** @test */
@@ -373,5 +387,173 @@ class PoolProductionBugTest extends TestCase
 
         // Total should be 30000 (3x 5000 x 2 days)
         $this->assertEquals(30000, $cart->getTotal());
+    }
+
+    /**
+     * If a user boys 5 single parking items, another can also buy 5 single items on different dates, 
+     * but not on the same dates, if stock is claimed on date
+     */
+    /** @test */
+    public function pool_allows_adding_singel_to_cart_again_after_booked()
+    {
+        $this->createProductionPool();
+        $this->cart = $this->createCart();
+
+        $from1 = Carbon::tomorrow()->startOfDay();
+        $until1 = Carbon::tomorrow()->addDay()->startOfDay(); // 1 day
+
+        // First user books all 6 single items for specific dates
+        $this->cart->addToCart(
+            $this->pool,
+            6,
+            [],
+            $from1,
+            $until1
+        );
+
+        // Simulate checkout with positive purchase
+        $this->assertTrue($this->cart->isReadyForCheckout());
+        $this->assertTrue($this->cart->IsReadyToCheckout);
+        $this->cart->checkout();
+
+        $this->assertGreaterThan(0, $this->cart->purchases()->count());
+
+        // Create a second cart for another user
+        $secondUser = User::factory()->create();
+        $secondCart = $secondUser->currentCart();
+
+        // Second user adds items WITHOUT dates first
+        $secondCart->addToCart($this->pool, 6);
+
+        $this->assertFalse($secondCart->isReadyForCheckout());
+        $this->assertFalse($secondCart->IsReadyToCheckout);
+
+        $this->assertThrows(
+            fn() => $secondCart->setDates($from1, $until1),
+            \Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException::class
+        );
+
+        // Now second user tries different dates - should succeed
+        $from2 = Carbon::tomorrow()->addDays(2)->startOfDay();
+        $until2 = Carbon::tomorrow()->addDays(3)->startOfDay(); // 1 day later
+
+        // This should work without exception
+        $secondCart->setDates($from2, $until2);
+        $this->assertTrue($secondCart->isReadyForCheckout());
+        $this->assertTrue($secondCart->isReadyToCheckout);
+
+        $this->assertEquals(85003, $secondCart->fresh()->getTotal());
+
+        $secondCart->checkout();
+
+        $this->assertTrue($secondCart->fresh()->isConverted());
+    }
+
+    /**
+     * Production bug: After purchasing items via Stripe checkout for specific dates,
+     * user cannot add items to cart for DIFFERENT dates.
+     * 
+     * Scenario:
+     * 1. User buys 5 singles from yesterday to in 2 days via Stripe checkout
+     * 2. Purchase is successful, webhooks handled, stock claimed for those dates
+     * 3. User should be able to add items to cart for DIFFERENT dates
+     * 4. But currently can only add 2 items (bug!)
+     * 
+     * Expected: Should be able to add 6 items for different dates
+     * Actual: Can only add 2 items
+     */
+    /** @test */
+    public function user_can_add_pool_items_for_different_dates_after_stripe_purchase()
+    {
+        $this->createProductionPool();
+        $this->cart = $this->createCart();
+
+        // Simulate production scenario: purchase 5 items from yesterday to in 2 days
+        $purchasedFrom = Carbon::yesterday()->startOfDay();
+        $purchasedUntil = Carbon::tomorrow()->addDay()->startOfDay(); // in 2 days
+
+        // Add 5 items to cart with those dates
+        $this->cart->addToCart($this->pool, 5, [], $purchasedFrom, $purchasedUntil);
+
+        // Simulate Stripe checkout flow (not regular checkout)
+        // This creates PENDING purchases and then webhook claims stock
+        $this->simulateStripeCheckout($this->cart, $purchasedFrom, $purchasedUntil);
+
+        // Verify the cart is now converted
+        $this->assertTrue($this->cart->fresh()->isConverted());
+
+        // Now user creates a NEW cart for DIFFERENT dates
+        $newCart = $this->user->currentCart();
+        $this->assertNotEquals($this->cart->id, $newCart->id, 'Should create a new cart after previous one is converted');
+
+        // Try to add 6 items for completely different dates
+        $newFrom = Carbon::tomorrow()->addDays(5)->startOfDay();
+        $newUntil = Carbon::tomorrow()->addDays(6)->startOfDay();
+
+        // This should work - we should be able to add all 6 items for different dates
+        $newCart->addToCart($this->pool, 6, [], $newFrom, $newUntil);
+
+        // Verify we got all 6 items
+        $newCart = $newCart->fresh();
+        $this->assertEquals(6, $newCart->items->sum('quantity'));
+        $this->assertEquals(85003, $newCart->getTotal());
+        $this->assertTrue($newCart->fresh()->isReadyForCheckout());
+    }
+
+    /**
+     * Helper to simulate Stripe checkout flow
+     * This mimics what happens when using checkoutSession() and webhook handler
+     */
+    protected function simulateStripeCheckout(Cart $cart, $from, $until)
+    {
+        // Step 1: checkoutSession() creates PENDING purchases (without claiming stock yet)
+        foreach ($cart->items as $item) {
+            $product = $item->purchasable;
+
+            $purchase = \Blax\Shop\Models\ProductPurchase::create([
+                'cart_id' => $cart->id,
+                'price_id' => $item->price_id,
+                'purchasable_id' => $product->id,
+                'purchasable_type' => get_class($product),
+                'purchaser_id' => $cart->customer_id,
+                'purchaser_type' => $cart->customer_type,
+                'quantity' => $item->quantity,
+                'amount' => $item->subtotal,
+                'amount_paid' => 0,
+                'status' => \Blax\Shop\Enums\PurchaseStatus::PENDING,
+                'from' => $from,
+                'until' => $until,
+                'meta' => $item->meta,
+            ]);
+
+            $item->update(['purchase_id' => $purchase->id]);
+        }
+
+        // Step 2: Webhook handler marks cart as converted and updates purchases to COMPLETED
+        $cart->update([
+            'status' => \Blax\Shop\Enums\CartStatus::CONVERTED,
+            'converted_at' => now(),
+        ]);
+
+        // Step 3: Webhook handler claims stock for each purchase
+        $purchases = \Blax\Shop\Models\ProductPurchase::where('cart_id', $cart->id)->get();
+        foreach ($purchases as $purchase) {
+            $purchase->update([
+                'status' => \Blax\Shop\Enums\PurchaseStatus::COMPLETED,
+                'amount_paid' => $purchase->amount,
+            ]);
+
+            // Claim stock (this is what the webhook handler does)
+            $product = $purchase->purchasable;
+            if ($product instanceof Product && $product->isPool() && $purchase->from && $purchase->until) {
+                $product->claimPoolStock(
+                    $purchase->quantity,
+                    $purchase,
+                    $purchase->from,
+                    $purchase->until,
+                    "Purchase #{$purchase->id} completed"
+                );
+            }
+        }
     }
 }

@@ -154,34 +154,38 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart = $this->createCart();
         ['pool' => $pool, 'spots' => $spots] = $this->createParkingPool(hasPoolPrice: true, poolManagesStock: false);
 
+        // Set dates for validation
+        $from = now()->addDays(1);
+        $until = now()->addDays(2);
+
         // Add 1: Should use lowest price (300 from Spot 1)
-        $cartItem = $this->cart->addToCart($pool, 1);
+        $cartItem = $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(300, $this->cart->getTotal());
         $this->assertEquals(300, $cartItem->price);
 
         // Add 2: Still lowest price (300), cumulative 600
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(600, $this->cart->fresh()->getTotal());
 
         // Add 3: Next lowest is pool price (500), cumulative 1100
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(1100, $this->cart->fresh()->getTotal());
 
         // Add 4: Pool price again (500), cumulative 1600
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(1600, $this->cart->fresh()->getTotal());
 
         // Add 5: Spot 3 price (1000), cumulative 2600
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(2600, $this->cart->fresh()->getTotal());
 
         // Add 6: Spot 3 price again (1000), cumulative 3600
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
 
-        // Add 7: Should throw exception - no more stock
+        // Add 7: Should throw exception - no more stock (with dates for validation)
         $this->expectException(NotEnoughStockException::class);
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
     }
 
     /** @test */
@@ -445,34 +449,38 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart = $this->createCart();
         ['pool' => $pool, 'spots' => $spots] = $this->createParkingPool(hasPoolPrice: true, poolManagesStock: true);
 
+        // Set dates for validation
+        $from = now()->addDays(1);
+        $until = now()->addDays(2);
+
         // Add 1: Should use lowest price (300 from Spot 1)
-        $cartItem = $this->cart->addToCart($pool, 1);
+        $cartItem = $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(300, $this->cart->getTotal());
         $this->assertEquals(300, $cartItem->price);
 
         // Add 2: Still lowest price (300), cumulative 600
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(600, $this->cart->fresh()->getTotal());
 
         // Add 3: Next lowest is pool price (500) for Spot 2, cumulative 1100
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(1100, $this->cart->fresh()->getTotal());
 
         // Add 4: Pool price again (500), cumulative 1600
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(1600, $this->cart->fresh()->getTotal());
 
         // Add 5: Spot 3 price (1000), cumulative 2600
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(2600, $this->cart->fresh()->getTotal());
 
         // Add 6: Spot 3 price again (1000), cumulative 3600
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
 
-        // Add 7: Should throw exception - no more stock
+        // Add 7: Should throw exception - no more stock (with dates for validation)
         $this->expectException(NotEnoughStockException::class);
-        $this->cart->addToCart($pool, 1);
+        $this->cart->addToCart($pool, 1, [], $from, $until);
     }
 
     /** @test */

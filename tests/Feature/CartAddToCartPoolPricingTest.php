@@ -839,18 +839,22 @@ class CartAddToCartPoolPricingTest extends TestCase
         $availableQuantity = $this->poolProduct->getAvailableQuantity();
         $this->assertEquals(2, $availableQuantity);
 
+        // Set booking dates for the test
+        $from = now()->addDays(1);
+        $until = now()->addDays(3);
+
         // Adding 2 pool items creates 2 cart items (one per single item)
-        $cartItem = $this->cart->addToCart($this->poolProduct, 2);
+        $cartItem = $this->cart->addToCart($this->poolProduct, 2, [], $from, $until);
         $this->assertNotNull($cartItem);
         // Returns the last cart item (quantity 1)
         $this->assertEquals(1, $cartItem->quantity);
         // But total items should be 2
         $this->assertEquals(2, $this->cart->fresh()->items->sum('quantity'));
 
-        // Try to add 1 more (total would be 3, but only 2 available)
+        // Try to add 1 more with dates (total would be 3, but only 2 available)
         $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
-        $this->expectExceptionMessage('has only 2 items available');
-        $this->cart->addToCart($this->poolProduct, 1);
+        $this->expectExceptionMessage('has only 0 items available'); // 2 total - 2 in cart = 0 remaining
+        $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
     }
 
     /** @test */
@@ -906,19 +910,23 @@ class CartAddToCartPoolPricingTest extends TestCase
             'customer_type' => get_class($this->user),
         ]);
 
+        // Set dates for validation
+        $from = now()->addDays(1);
+        $until = now()->addDays(3);
+
         // Adding 10 pool items creates multiple cart items (grouped by single item)
         // Since each single item stock is counted as 5+3+2=10
-        $cartItem = $cart->addToCart($pool, 10);
+        $cartItem = $cart->addToCart($pool, 10, [], $from, $until);
         $this->assertNotNull($cartItem);
         // Returns the last cart item (from VIP Spot with 2 stock)
         $this->assertEquals(2, $cartItem->quantity);
         // But total items in cart should sum to 10
         $this->assertEquals(10, $cart->fresh()->items->sum('quantity'));
 
-        // But not 11
+        // But not 11 - with dates for validation
         $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
-        $this->expectExceptionMessage('has only 10 items available');
-        $cart->addToCart($pool, 1);
+        $this->expectExceptionMessage('has only 0 items available'); // 10 total - 10 in cart = 0 remaining
+        $cart->addToCart($pool, 1, [], $from, $until);
     }
 
     /** @test */
@@ -1070,7 +1078,7 @@ class CartAddToCartPoolPricingTest extends TestCase
             $spot3->id
         ]);
 
-        // Pool should have unlimited availability
+        // Pool should have availability of 6
         $this->assertEquals(6, $pool->getAvailableQuantity());
 
         $pool->setPoolPricingStrategy('lowest');
@@ -1079,81 +1087,97 @@ class CartAddToCartPoolPricingTest extends TestCase
 
         $this->assertEquals(0, $cart->items()->count());
 
+        // Set dates for booking to test progressive pricing with date-aware allocation
+        $from = now()->addDays(1);
+        $until = now()->addDays(3);
+
+        // With flexible cart: adding with dates validates stock
         $this->assertThrows(
-            fn() => $cartItem = $cart->addToCart($pool, 1000),
+            fn() => $cartItem = $cart->addToCart($pool, 1000, [], $from, $until),
             \Blax\Shop\Exceptions\NotEnoughStockException::class
         );
 
-        // 1. Addition 
-        $this->assertEquals(2000, $pool->getCurrentPrice(cart: $cart)); // 20.00
-        $this->assertEquals(2000, $pool->getLowestAvailablePoolPrice(cart: $cart)); // 20.00
-        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice(cart: $cart)); // 80.00
-        $cartItem = $cart->addToCart($pool, 1);
+        // 1. Addition - with dates for proper allocation
+        // Price per day: 20.00, Booking: 2 days, Total: 40.00
+        $this->assertEquals(2000, $pool->getCurrentPrice(cart: $cart, from: $from, until: $until)); // 20.00/day
+        $this->assertEquals(2000, $pool->getLowestAvailablePoolPrice($from, $until)); // 20.00/day
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice($from, $until)); // 80.00/day
+        $cartItem = $cart->addToCart($pool, 1, [], $from, $until);
 
         $this->assertNotNull($cartItem);
+        $this->assertEquals(4000, $cartItem->price); // 20.00/day × 2 days = 40.00
+        $this->assertEquals(4000, $cartItem->subtotal); // 40.00 × 1
 
-        // 2. Addition 
-        $this->assertEquals(2000, $pool->getCurrentPrice()); // 20.00
-        $this->assertEquals(2000, $pool->getLowestAvailablePoolPrice()); // 20.00
-        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice()); // 80.00
-        $cartItem = $cart->addToCart($pool, 1);
-
-        $this->assertNotNull($cartItem);
-        $this->assertEquals(4000, $cartItem->subtotal); // 20.00 × 2
-
-        // 3. Addition 
-        $this->assertEquals(5000, $pool->getCurrentPrice(cart: $cart)); // 50.00
-        $this->assertEquals(5000, $pool->getLowestAvailablePoolPrice(cart: $cart)); // 50.00
-        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice(cart: $cart)); // 80.00
-        $cartItem = $cart->addToCart($pool, 1);
+        // 2. Addition - should merge with 1st item (same single, same price, same dates)
+        // Price per day: 20.00, Booking: 2 days, Total: 40.00
+        $this->assertEquals(2000, $pool->getCurrentPrice(from: $from, until: $until)); // 20.00/day
+        $this->assertEquals(2000, $pool->getLowestAvailablePoolPrice($from, $until)); // 20.00/day
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice($from, $until)); // 80.00/day
+        $cartItem = $cart->addToCart($pool, 1, [], $from, $until);
 
         $this->assertNotNull($cartItem);
-        $this->assertEquals(5000, $cartItem->price); // Next lowest (inherited from pool): 50.00
-        $this->assertEquals(5000, $cartItem->subtotal); // 50.00 (not cumulative)
+        // Merges with 1st item: quantity becomes 2, subtotal becomes 80.00
+        $this->assertEquals(2, $cartItem->quantity);
+        $this->assertEquals(8000, $cartItem->subtotal); // 40.00 × 2
 
-        // 4. Addition 
-        $this->assertEquals(5000, $pool->getCurrentPrice()); // 50.00
-        $this->assertEquals(5000, $pool->getLowestAvailablePoolPrice()); // 50.00
-        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice()); // 80.00
-        $cartItem = $cart->addToCart($pool, 1);
-
-        $this->assertNotNull($cartItem);
-        $this->assertEquals(5000, $cartItem->price); // Next lowest (inherited from pool): 50.00
-        $this->assertEquals(10000, $cartItem->subtotal); // 50.00 × 2 (merged)
-
-        // 5. Addition 
-        $this->assertEquals(8000, $pool->getCurrentPrice(cart: $cart)); // 80.00
-        $this->assertEquals(8000, $pool->getLowestAvailablePoolPrice(cart: $cart)); // 80.00
-        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice(cart: $cart)); // 80.00
-        $cartItem = $cart->addToCart($pool, 1);
+        // 3. Addition - first Spot1 unit exhausted, moves to second Spot1 unit
+        // Both units of Spot1 now have 1 item each, so next item goes to Spot2
+        // Price per day: 50.00 (Spot2 inherits from pool), Booking: 2 days, Total: 100.00
+        $this->assertEquals(5000, $pool->getCurrentPrice(cart: $cart, from: $from, until: $until)); // 50.00/day
+        $this->assertEquals(5000, $pool->getLowestAvailablePoolPrice($from, $until)); // 50.00/day
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice($from, $until)); // 80.00/day
+        $cartItem = $cart->addToCart($pool, 1, [], $from, $until);
 
         $this->assertNotNull($cartItem);
-        $this->assertEquals(8000, $cartItem->price); // Next lowest: 80.00
-        $this->assertEquals(8000, $cartItem->subtotal); // 80.00
+        $this->assertEquals(10000, $cartItem->price); // 50.00/day × 2 days = 100.00
+        $this->assertEquals(10000, $cartItem->subtotal); // 100.00 × 1
 
-        // 6. Addition 
-        $this->assertEquals(8000, $pool->getCurrentPrice()); // 80.00
-        $this->assertEquals(8000, $pool->getLowestAvailablePoolPrice()); // 80.00
-        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice()); // 80.00
-        $cartItem = $cart->addToCart($pool, 1);
+        // 4. Addition - merges with 3rd item (same Spot2, same price, same dates)
+        // Price per day: 50.00, Booking: 2 days, Total: 100.00
+        $this->assertEquals(5000, $pool->getCurrentPrice(from: $from, until: $until)); // 50.00/day
+        $this->assertEquals(5000, $pool->getLowestAvailablePoolPrice($from, $until)); // 50.00/day
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice($from, $until)); // 80.00/day
+        $cartItem = $cart->addToCart($pool, 1, [], $from, $until);
 
         $this->assertNotNull($cartItem);
-        $this->assertEquals(8000, $cartItem->price); // Next lowest: 80.00
-        $this->assertEquals(16000, $cartItem->subtotal); // 80.00 × 2 (merged)
+        $this->assertEquals(2, $cartItem->quantity);
+        $this->assertEquals(20000, $cartItem->subtotal); // 100.00 × 2
+
+        // 5. Addition - Spot1 and Spot2 both exhausted, moves to Spot3
+        // Price per day: 80.00, Booking: 2 days, Total: 160.00
+        $this->assertEquals(8000, $pool->getCurrentPrice(cart: $cart, from: $from, until: $until)); // 80.00/day
+        $this->assertEquals(8000, $pool->getLowestAvailablePoolPrice($from, $until)); // 80.00/day
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice($from, $until)); // 80.00/day
+        $cartItem = $cart->addToCart($pool, 1, [], $from, $until);
+
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(16000, $cartItem->price); // 80.00/day × 2 days = 160.00
+        $this->assertEquals(16000, $cartItem->subtotal); // 160.00 × 1
+
+        // 6. Addition - merges with 5th item (same Spot3, same price, same dates)
+        // Price per day: 80.00, Booking: 2 days, Total: 160.00
+        $this->assertEquals(8000, $pool->getCurrentPrice(from: $from, until: $until)); // 80.00/day
+        $this->assertEquals(8000, $pool->getLowestAvailablePoolPrice($from, $until)); // 80.00/day
+        $this->assertEquals(8000, $pool->getHighestAvailablePoolPrice($from, $until)); // 80.00/day
+        $cartItem = $cart->addToCart($pool, 1, [], $from, $until);
+
+        $this->assertNotNull($cartItem);
+        $this->assertEquals(2, $cartItem->quantity);
+        $this->assertEquals(32000, $cartItem->subtotal); // 160.00 × 2
 
         $this->assertEquals(3, $cart->items()->count());
 
-        $this->assertNull($pool->getCurrentPrice());
-        $this->assertNull($pool->getLowestAvailablePoolPrice());
-        $this->assertNull($pool->getHighestAvailablePoolPrice());
-        $this->assertNull($pool->getCurrentPrice(cart: $cart));
-        $this->assertNull($pool->getLowestAvailablePoolPrice(cart: $cart));
-        $this->assertNull($pool->getHighestAvailablePoolPrice(cart: $cart));
+        $this->assertNull($pool->getCurrentPrice(from: $from, until: $until));
+        $this->assertNull($pool->getLowestAvailablePoolPrice($from, $until));
+        $this->assertNull($pool->getHighestAvailablePoolPrice($from, $until));
+        $this->assertNull($pool->getCurrentPrice(cart: $cart, from: $from, until: $until));
+        $this->assertNull($pool->getLowestAvailablePoolPrice($from, $until));
+        $this->assertNull($pool->getHighestAvailablePoolPrice($from, $until));
 
 
-        // 7. Addition 
+        // 7. Addition - should fail because all 6 items are allocated for this period
         $this->assertThrows(
-            fn() => $cart->addToCart($pool, 1),
+            fn() => $cart->addToCart($pool, 1, [], $from, $until),
             \Blax\Shop\Exceptions\NotEnoughStockException::class
         );
     }
@@ -1202,7 +1226,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $from = now()->addWeek();
         $until = now()->addWeek()->addDays(5); // 5 days
 
-        // Pool should have unlimited availability
+        // Pool should have availability of 6
         $this->assertEquals(6, $pool->getAvailableQuantity());
 
         $pool->setPoolPricingStrategy('lowest');
@@ -1211,8 +1235,9 @@ class CartAddToCartPoolPricingTest extends TestCase
 
         $this->assertEquals(0, $cart->items()->count());
 
+        // With flexible cart: adding without dates is allowed, but with dates stock is validated
         $this->assertThrows(
-            fn() => $cartItem = $cart->addToCart($pool, 1000),
+            fn() => $cartItem = $cart->addToCart($pool, 1000, [], $from, $until),
             \Blax\Shop\Exceptions\NotEnoughStockException::class
         );
 

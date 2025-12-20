@@ -88,7 +88,9 @@ trait MayBePoolProduct
 
             // For booking items, check how many units are available for the period
             if ($item->isBooking()) {
-                $availableStock = $item->getAvailableStock();
+                // Get available stock at the START of the booking period
+                // This ensures we don't count claims that will be released before the booking starts
+                $availableStock = $item->getAvailableStock($from);
                 // Check if any quantity is available for booking
                 for ($qty = $availableStock; $qty > 0; $qty--) {
                     if ($item->isAvailableForBooking($from, $until, $qty)) {
@@ -265,7 +267,9 @@ trait MayBePoolProduct
                         })
                         ->sum('quantity');
 
-                    $available = max(0, $item->getAvailableStock() - abs($overlappingClaims));
+                    // Get available stock at the START of the booking period
+                    // This ensures claims that will expire before the booking starts don't reduce availability
+                    $available = max(0, $item->getAvailableStock($from) - abs($overlappingClaims));
                 }
             } elseif (!$item->isBooking()) {
                 $available = $item->getAvailableStock();
@@ -737,24 +741,34 @@ trait MayBePoolProduct
                 continue;
             }
 
-            // Only count this cart item if it overlaps with the current booking period
-            $overlaps = true;
-            if ($from && $until && $item->from && $item->until) {
+            // Logic for counting cart items:
+            // 1. If we're checking for specific dates ($from && $until): only count items with dates that overlap
+            // 2. If we're checking without dates (for progressive pricing): count all items for pricing purposes
+
+            if ($from && $until) {
+                // Checking for specific booking dates: skip items without dates (not allocated to timeframe)
+                if (!$item->from || !$item->until) {
+                    continue;
+                }
+
                 // Check if the cart item's booking period overlaps with the current period
                 // No overlap if: cart item ends before current starts, or cart item starts after current ends
                 $overlaps = !(
                     $item->until < $from || // Cart item ends before current booking starts
                     $item->from > $until    // Cart item starts after current booking ends
                 );
-            }
 
-            if ($overlaps) {
-                $meta = $item->getMeta();
-                $allocatedItemId = $meta->allocated_single_item_id ?? null;
-
-                if ($allocatedItemId) {
-                    $singleItemUsage[$allocatedItemId] = ($singleItemUsage[$allocatedItemId] ?? 0) + $item->quantity;
+                if (!$overlaps) {
+                    continue;
                 }
+            }
+            // else: no dates provided, count all items for progressive pricing
+
+            $meta = $item->getMeta();
+            $allocatedItemId = $meta->allocated_single_item_id ?? null;
+
+            if ($allocatedItemId) {
+                $singleItemUsage[$allocatedItemId] = ($singleItemUsage[$allocatedItemId] ?? 0) + $item->quantity;
             }
         }
 
