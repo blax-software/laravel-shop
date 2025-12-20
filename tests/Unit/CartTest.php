@@ -234,29 +234,31 @@ class CartTest extends TestCase
     }
 
     /** @test */
-    public function checkout_session_link_is_null_when_stripe_disabled()
+    public function checkout_session_link_throws_when_stripe_disabled()
     {
         config(['shop.stripe.enabled' => false]);
 
         $cart = Cart::create();
 
-        $this->assertNull($cart->checkoutSessionLink());
+        // Now throws CartEmptyException (validation happens before stripe check)
+        $this->expectException(\Blax\Shop\Exceptions\CartEmptyException::class);
+        $cart->checkoutSessionLink();
     }
 
     /** @test */
-    public function checkout_session_link_returns_null_when_no_session_exists()
+    public function checkout_session_link_throws_when_cart_empty()
     {
         config(['shop.stripe.enabled' => true]);
 
         $cart = Cart::create();
 
-        $link = $cart->checkoutSessionLink();
-
-        $this->assertNull($link);
+        // Now throws CartEmptyException instead of returning null
+        $this->expectException(\Blax\Shop\Exceptions\CartEmptyException::class);
+        $cart->checkoutSessionLink();
     }
 
     /** @test */
-    public function checkout_session_link_returns_null_when_session_id_empty()
+    public function checkout_session_link_throws_when_cart_empty_even_with_meta()
     {
         config(['shop.stripe.enabled' => true]);
 
@@ -264,9 +266,9 @@ class CartTest extends TestCase
             'meta' => ['other_data' => 'value'],
         ]);
 
-        $link = $cart->checkoutSessionLink();
-
-        $this->assertNull($link);
+        // Now throws CartEmptyException instead of returning null
+        $this->expectException(\Blax\Shop\Exceptions\CartEmptyException::class);
+        $cart->checkoutSessionLink();
     }
 
     /** @test */

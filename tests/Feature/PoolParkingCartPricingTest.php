@@ -315,7 +315,7 @@ class PoolParkingCartPricingTest extends TestCase
     }
 
     /** @test */
-    public function config_a_validates_availability_when_setting_dates()
+    public function config_a_marks_items_unavailable_when_setting_dates_to_unavailable_period()
     {
         $this->cart = $this->createCart();
         ['pool' => $pool, 'spots' => $spots] = $this->createParkingPool(hasPoolPrice: true, poolManagesStock: false);
@@ -334,8 +334,13 @@ class PoolParkingCartPricingTest extends TestCase
         $spots[2]->claimStock(2, null, $from, $until);
 
         // Try to set dates for period when no stock is available
-        $this->expectException(\Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException::class);
+        // Should NOT throw, but mark items as unavailable
         $this->cart->setDates($from, $until, validateAvailability: true);
+
+        // Item should be marked as unavailable (null price)
+        $item = $this->cart->items()->first();
+        $this->assertNull($item->price, 'Unavailable item should have null price');
+        $this->assertFalse($item->is_ready_to_checkout, 'Unavailable item should not be ready for checkout');
     }
 
     // ==========================================
@@ -667,7 +672,7 @@ class PoolParkingCartPricingTest extends TestCase
     // ==========================================
 
     /** @test */
-    public function set_dates_validates_availability_for_each_cart_item()
+    public function set_dates_marks_items_unavailable_when_all_claimed()
     {
         $this->cart = $this->createCart();
         ['pool' => $pool, 'spots' => $spots] = $this->createParkingPool(hasPoolPrice: true, poolManagesStock: false);
@@ -686,10 +691,17 @@ class PoolParkingCartPricingTest extends TestCase
         $spots[1]->claimStock(2, null, $from, $until);
         $spots[2]->claimStock(2, null, $from, $until);
 
-        // Setting dates should validate and throw exception
-        // because ALL spots are claimed for this period and we need 5
-        $this->expectException(\Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException::class);
+        // Setting dates should NOT throw, but mark items as unavailable
         $this->cart->setDates($from, $until, validateAvailability: true);
+
+        // All items should be marked as unavailable (null price)
+        $this->cart->refresh();
+        $this->cart->load('items');
+        foreach ($this->cart->items as $item) {
+            $this->assertNull($item->price, 'Unavailable item should have null price');
+            $this->assertFalse($item->is_ready_to_checkout, 'Unavailable item should not be ready');
+        }
+        $this->assertFalse($this->cart->is_ready_to_checkout, 'Cart should not be ready');
     }
 
     /** @test */

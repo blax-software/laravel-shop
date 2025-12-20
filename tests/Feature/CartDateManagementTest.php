@@ -468,7 +468,7 @@ class CartDateManagementTest extends TestCase
     }
 
     /** @test */
-    public function validate_date_availability_throws_exception_when_product_not_available()
+    public function validate_date_availability_marks_items_unavailable_when_product_not_available()
     {
         $product = Product::factory()->create([
             'type' => ProductType::BOOKING,
@@ -490,13 +490,17 @@ class CartDateManagementTest extends TestCase
         // Set item dates that consume the stock
         $item->updateDates(Carbon::now()->addDays(1), Carbon::now()->addDays(3));
 
-        // Try to set cart dates that overlap - should throw exception
-        $this->expectException(NotEnoughAvailableInTimespanException::class);
+        // Try to set cart dates that overlap - should NOT throw, instead mark items unavailable
         $cart->setDates(Carbon::now()->addDays(2), Carbon::now()->addDays(4), validateAvailability: true);
+
+        // Item should now be marked as unavailable (null price)
+        $item->refresh();
+        $this->assertNull($item->price, 'Unavailable item should have null price');
+        $this->assertFalse($item->is_ready_to_checkout, 'Unavailable item should not be ready for checkout');
     }
 
     /** @test */
-    public function apply_dates_to_items_throws_exception_when_product_not_available()
+    public function apply_dates_to_items_marks_items_unavailable_when_product_not_available()
     {
         $product = Product::factory()->create([
             'type' => ProductType::BOOKING,
@@ -520,9 +524,13 @@ class CartDateManagementTest extends TestCase
         // Add item that would exceed available stock
         $item = $cart->addToCart($product, 2);
 
-        // Should throw exception because only 1 available but requesting 2
-        $this->expectException(NotEnoughAvailableInTimespanException::class);
+        // Should NOT throw exception, instead mark items as unavailable
         $cart->applyDatesToItems(validateAvailability: true);
+
+        // Item should be marked as unavailable (null price)
+        $item->refresh();
+        $this->assertNull($item->price, 'Unavailable item should have null price');
+        $this->assertFalse($item->is_ready_to_checkout, 'Unavailable item should not be ready for checkout');
     }
 
     /** @test */

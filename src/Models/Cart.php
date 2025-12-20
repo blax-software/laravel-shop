@@ -408,8 +408,22 @@ class Cart extends Model
                 if ($validateAvailability) {
                     $product = $item->purchasable;
 
-                    // For pool products, track allocation for total validation
+                    // For pool products, check if allocated by reallocatePoolItems
                     if ($product instanceof Product && $product->isPool()) {
+                        $meta = $item->getMeta();
+                        $allocatedSingleItemId = $meta->allocated_single_item_id ?? null;
+
+                        // If this item was NOT allocated (no single assigned), skip updateDates
+                        // to preserve the null price set by reallocatePoolItems
+                        if (empty($allocatedSingleItemId)) {
+                            // Just update the dates without recalculating price
+                            $item->update([
+                                'from' => $itemFrom,
+                                'until' => $itemUntil,
+                            ]);
+                            continue;
+                        }
+
                         $poolKey = $product->id . '|' . $itemFrom->format('Y-m-d H:i:s') . '|' . $itemUntil->format('Y-m-d H:i:s');
 
                         if (!isset($poolValidation[$poolKey])) {
@@ -423,19 +437,19 @@ class Cart extends Model
                         }
 
                         $poolValidation[$poolKey]['requested'] += $item->quantity;
-
-                        $meta = $item->getMeta();
-                        if (isset($meta->allocated_single_item_id)) {
-                            $poolValidation[$poolKey]['allocated'] += $item->quantity;
-                        }
+                        $poolValidation[$poolKey]['allocated'] += $item->quantity;
                     } elseif ($product && !$product->isAvailableForBooking($itemFrom, $itemUntil, $item->quantity)) {
-                        throw new NotEnoughAvailableInTimespanException(
-                            productName: $product->name ?? 'Product',
-                            requested: $item->quantity,
-                            available: 0,
-                            from: $itemFrom,
-                            until: $itemUntil
-                        );
+                        // Non-pool booking item is not available - mark as unavailable
+                        // Don't throw exception - let user adjust dates freely
+                        $item->update([
+                            'from' => $itemFrom,
+                            'until' => $itemUntil,
+                            'price' => null,
+                            'subtotal' => null,
+                            'unit_amount' => null,
+                        ]);
+                        // Skip updateDates() since we already set the dates with null price
+                        continue;
                     }
                 }
 
@@ -443,21 +457,10 @@ class Cart extends Model
             }
         }
 
-        // Validate pool allocations - all requested items must be allocated
-        if ($validateAvailability) {
-            foreach ($poolValidation as $poolData) {
-                if ($poolData['requested'] > $poolData['allocated']) {
-                    $product = $poolData['product'];
-                    throw new NotEnoughAvailableInTimespanException(
-                        productName: $product->name ?? 'Product',
-                        requested: $poolData['requested'],
-                        available: $poolData['allocated'],
-                        from: $poolData['from'],
-                        until: $poolData['until']
-                    );
-                }
-            }
-        }
+        // Pool validation is now handled by reallocatePoolItems() which marks
+        // unallocated items with null price instead of throwing exceptions.
+        // This allows users to freely adjust dates without exceptions.
+        // Validation happens at checkout time via isReadyForCheckout().
 
         return $this->fresh();
     }
@@ -547,6 +550,22 @@ class Cart extends Model
             }
 
             if (empty($availableWithPrices)) {
+                // No singles available for this period - mark ALL pool items as unavailable
+                foreach ($items as $cartItem) {
+                    // Only update if we should overwrite or item has no dates yet
+                    if (!$overwrite && $cartItem->from && $cartItem->until) {
+                        continue;
+                    }
+
+                    // Clear allocation and set price to null to indicate unavailable
+                    $cartItem->updateMetaKey('allocated_single_item_id', null);
+                    $cartItem->updateMetaKey('allocated_single_item_name', null);
+                    $cartItem->update([
+                        'price' => null,
+                        'subtotal' => null,
+                        'unit_amount' => null,
+                    ]);
+                }
                 continue;
             }
 
@@ -589,9 +608,16 @@ class Cart extends Model
                     }
                 }
 
-                // If we couldn't allocate (ran out of available singles), stop
+                // If we couldn't allocate (ran out of available singles), mark as unavailable
                 if (!$allocated) {
-                    break;
+                    // Clear allocation and set price to null to indicate unavailable
+                    $cartItem->updateMetaKey('allocated_single_item_id', null);
+                    $cartItem->updateMetaKey('allocated_single_item_name', null);
+                    $cartItem->update([
+                        'price' => null,
+                        'subtotal' => null,
+                        'unit_amount' => null,
+                    ]);
                 }
             }
         }
@@ -605,6 +631,15 @@ class Cart extends Model
      * @return void
      * @throws NotEnoughAvailableInTimespanException
      */
+    /**
+     * Mark booking items as unavailable if they cannot be booked for the given dates.
+     * Instead of throwing exceptions, this marks items with null price.
+     *
+     * @param \DateTimeInterface $from Start date
+     * @param \DateTimeInterface $until End date
+     * @param bool $useProvidedDates Whether to use provided dates or item's own dates
+     * @return void
+     */
     protected function validateDateAvailability(\DateTimeInterface $from, \DateTimeInterface $until, bool $useProvidedDates = false): void
     {
         foreach ($this->items as $item) {
@@ -617,18 +652,23 @@ class Cart extends Model
                 continue;
             }
 
+            // Skip pool products - they are handled by reallocatePoolItems()
+            if ($product->type === ProductType::POOL) {
+                continue;
+            }
+
             // Use provided dates when validating date overwrites, otherwise use item's specific dates
             $checkFrom = $useProvidedDates ? $from : ($item->from ?? $from);
             $checkUntil = $useProvidedDates ? $until : ($item->until ?? $until);
 
             if (!$product->isAvailableForBooking($checkFrom, $checkUntil, $item->quantity)) {
-                throw new NotEnoughAvailableInTimespanException(
-                    productName: $product->name ?? 'Product',
-                    requested: $item->quantity,
-                    available: 0, // Could calculate actual available amount
-                    from: $checkFrom,
-                    until: $checkUntil
-                );
+                // Mark item as unavailable instead of throwing exception
+                // This allows users to freely adjust dates
+                $item->update([
+                    'price' => null,
+                    'subtotal' => null,
+                    'unit_amount' => null,
+                ]);
             }
         }
     }
@@ -768,9 +808,25 @@ class Cart extends Model
                         "Pool product '{$cartable->name}' has only {$availableForThisRequest} items available for the requested period. Requested: {$quantity}"
                     );
                 }
+            } else {
+                // When dates are not provided, validate against total pool capacity (not current availability)
+                // This allows adding items even if currently claimed - dates will be validated later
+                $totalCapacity = $cartable->getPoolTotalCapacity(); // Total capacity ignoring claims
+
+                // Subtract items already in cart
+                $itemsInCart = $this->items()
+                    ->where('purchasable_id', $cartable->getKey())
+                    ->where('purchasable_type', get_class($cartable))
+                    ->sum('quantity');
+
+                $availableForThisRequest = $totalCapacity === PHP_INT_MAX ? PHP_INT_MAX : max(0, $totalCapacity - $itemsInCart);
+
+                if ($availableForThisRequest !== PHP_INT_MAX && $quantity > $availableForThisRequest) {
+                    throw new NotEnoughStockException(
+                        "Pool product '{$cartable->name}' has only {$availableForThisRequest} items available. Requested: {$quantity}"
+                    );
+                }
             }
-            // When dates are not provided, skip availability validation - allow flexible cart behavior
-            // The cart will validate when dates are set via setDates()
 
             // Add items one at a time for progressive pricing
             $lastCartItem = null;
@@ -831,13 +887,27 @@ class Cart extends Model
                 // If only one date is provided, it's an error
                 throw new CartDatesRequiredException();
             } else {
-                // When adding pool items without dates, allow adding even if currently unavailable
-                // Items may be claimed now but available in the future
-                // Validation will happen when dates are set or at checkout
-                // This enables flexible booking workflows where users add items first, then select dates
+                // When adding pool items without dates, validate against total pool capacity
+                // This allows adding items even if currently claimed - date-based validation happens later
+                if ($cartable->isPool()) {
+                    $totalCapacity = $cartable->getPoolTotalCapacity(); // Total capacity ignoring claims
 
-                // Note: We skip availability validation here for pool products without dates
-                // The cart will not be ready for checkout without dates anyway
+                    // Subtract items already in cart (without dates or with any dates)
+                    $itemsInCart = $this->items()
+                        ->where('purchasable_id', $cartable->getKey())
+                        ->where('purchasable_type', get_class($cartable))
+                        ->sum('quantity');
+
+                    $availableForThisRequest = $totalCapacity === PHP_INT_MAX ? PHP_INT_MAX : max(0, $totalCapacity - $itemsInCart);
+
+                    if ($availableForThisRequest !== PHP_INT_MAX && $quantity > $availableForThisRequest) {
+                        throw new NotEnoughStockException(
+                            "Pool product '{$cartable->name}' has only {$availableForThisRequest} items available. Requested: {$quantity}"
+                        );
+                    }
+                }
+                // Items may be claimed now but available in the future
+                // Full date-based validation will happen when dates are set via setDates() or at checkout
             }
         }
 
@@ -1518,9 +1588,9 @@ class Cart extends Model
      */
     public function checkoutSessionLink(array $option = [], ?string $url = null): string|null|false
     {
-        if (! @$this->validateForCheckout(false)) {
-            return null;
-        }
+        // Validate cart - throw exceptions if validation fails
+        // This ensures users know what's wrong instead of silently returning null
+        $this->validateForCheckout();
 
         $checkoutSession = $this->checkoutSession($option, $url);
 

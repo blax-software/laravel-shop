@@ -180,6 +180,15 @@ class CartItem extends Model
             return false;
         }
 
+        // Check if item has a valid price (null or <= 0 means unavailable)
+        if ($this->price === null || $this->price <= 0) {
+            return false;
+        }
+
+        // Note: Pool items don't require pre-allocation to be ready for checkout.
+        // The checkout process can allocate singles on-the-fly via claimPoolStock().
+        // The price check above is sufficient - if price is null, item is unavailable.
+
         // Check if dates are required (for booking products or pools with booking items)
         $requiresDates = $product->isBooking() ||
             ($product->isPool() && $product->hasBookingSingleItems());
@@ -322,6 +331,15 @@ class CartItem extends Model
         if (!$product) {
             return $adjustments;
         }
+
+        // Check if price is invalid (null, zero or negative means unavailable)
+        if ($this->price === null || $this->price <= 0) {
+            $adjustments['price'] = 'unavailable';
+        }
+
+        // Note: Pool items don't require pre-allocation to be ready for checkout.
+        // The checkout process can allocate singles on-the-fly via claimPoolStock().
+        // The price check above is sufficient - if price is null, item is unavailable.
 
         // Check if dates are required (for booking products or pools with booking items)
         $requiresDates = $product->isBooking() ||

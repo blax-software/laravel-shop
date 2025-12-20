@@ -428,16 +428,24 @@ class PoolProductionBugTest extends TestCase
         $this->assertFalse($secondCart->isReadyForCheckout());
         $this->assertFalse($secondCart->IsReadyToCheckout);
 
-        $this->assertThrows(
-            fn() => $secondCart->setDates($from1, $until1),
-            \Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException::class
-        );
+        // Setting dates to a fully booked period should NOT throw,
+        // but mark items as unavailable instead
+        $secondCart->setDates($from1, $until1);
+        
+        // All items should be marked as unavailable
+        $secondCart->refresh();
+        $secondCart->load('items');
+        foreach ($secondCart->items as $item) {
+            $this->assertNull($item->price, 'Item should have null price for unavailable period');
+            $this->assertFalse($item->is_ready_to_checkout);
+        }
+        $this->assertFalse($secondCart->isReadyForCheckout());
 
         // Now second user tries different dates - should succeed
         $from2 = Carbon::tomorrow()->addDays(2)->startOfDay();
         $until2 = Carbon::tomorrow()->addDays(3)->startOfDay(); // 1 day later
 
-        // This should work without exception
+        // This should work - items become available again with new dates
         $secondCart->setDates($from2, $until2);
         $this->assertTrue($secondCart->isReadyForCheckout());
         $this->assertTrue($secondCart->isReadyToCheckout);

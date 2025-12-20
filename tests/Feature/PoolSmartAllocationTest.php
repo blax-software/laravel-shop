@@ -167,7 +167,7 @@ class PoolSmartAllocationTest extends TestCase
     }
 
     /**
-     * Test: User1 purchases items, User2 can add same items for different dates
+     * Test: User1 purchases items, User2 can add same items but only available ones get allocated
      */
     /** @test */
     public function user2_can_book_same_items_for_different_dates_after_user1_purchase()
@@ -179,6 +179,7 @@ class PoolSmartAllocationTest extends TestCase
         $purchaseFrom = Carbon::yesterday()->startOfDay();
         $purchaseUntil = Carbon::tomorrow()->addDay()->startOfDay();
 
+        // User1 books 5 of 6 available singles
         $user1Cart->addToCart($this->pool, 5, [], $purchaseFrom, $purchaseUntil);
         $user1Cart->checkout();
 
@@ -194,9 +195,22 @@ class PoolSmartAllocationTest extends TestCase
         $this->assertEquals(6, $user2Cart->fresh()->items->sum('quantity'));
         $this->assertFalse($user2Cart->fresh()->isReadyForCheckout(), 'Cart should not be ready without dates');
 
-        // User2 tries to set dates that conflict with User1
-        $this->expectException(\Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException::class);
+        // User2 sets dates that conflict with User1's booking
+        // Only 1 single is still available (User1 took 5)
         $user2Cart->setDates($purchaseFrom, $purchaseUntil);
+
+        // 5 items should be unavailable (null price), 1 should be available
+        $user2Cart->refresh();
+        $user2Cart->load('items');
+
+        $availableItems = $user2Cart->items->filter(fn($item) => $item->price !== null && $item->price > 0);
+        $unavailableItems = $user2Cart->items->filter(fn($item) => $item->price === null);
+
+        $this->assertEquals(1, $availableItems->count(), 'Should have 1 available item (6th single not booked by user1)');
+        $this->assertEquals(5, $unavailableItems->count(), 'Should have 5 unavailable items (user1 booked those singles)');
+
+        // Cart should NOT be ready (has unavailable items)
+        $this->assertFalse($user2Cart->isReadyForCheckout(), 'Cart should not be ready with unavailable items');
     }
 
     /**

@@ -113,6 +113,55 @@ trait MayBePoolProduct
     }
 
     /**
+     * Get the total capacity of the pool (sum of all single item stock quantities)
+     * 
+     * Unlike getPoolMaxQuantity(), this method returns the TOTAL capacity regardless
+     * of current claims or availability. This is useful for validating cart additions
+     * without dates - you can't add more items than the pool has single items, even
+     * if you haven't chosen dates yet.
+     * 
+     * @return int Total capacity (sum of single item stock quantities)
+     */
+    public function getPoolTotalCapacity(): int
+    {
+        if (!$this->isPool()) {
+            return $this->manage_stock ? ($this->stock_quantity ?? 0) : PHP_INT_MAX;
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return 0;
+        }
+
+        $hasUnlimitedItem = false;
+        $total = 0;
+
+        foreach ($singleItems as $item) {
+            if (!$item->manage_stock) {
+                $hasUnlimitedItem = true;
+                continue;
+            }
+
+            // Get total stock quantity (not available stock)
+            // Sum all INCREASE entries to get the total capacity
+            $itemCapacity = $item->stocks()
+                ->where('type', \Blax\Shop\Enums\StockType::INCREASE->value)
+                ->where('status', \Blax\Shop\Enums\StockStatus::COMPLETED->value)
+                ->sum('quantity');
+
+            $total += $itemCapacity;
+        }
+
+        // If ALL items are unlimited, pool is unlimited
+        if ($hasUnlimitedItem && $total === 0) {
+            return PHP_INT_MAX;
+        }
+
+        return $total;
+    }
+
+    /**
      * Claim stock for a pool product
      * This will claim stock from the available single items, respecting the pricing strategy
      * 
