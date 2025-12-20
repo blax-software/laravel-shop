@@ -451,11 +451,59 @@ class CartItem extends Model
         // Calculate days using per-minute precision
         $days = $this->calculateBookingDays($from, $until);
 
-        // Get current price per day
-        // Pass dates to ensure accurate pricing for pool products during date updates
-        // Pass cart item ID to exclude this item from usage calculation
-        $pricePerDay = $product->getCurrentPrice(null, $this->cart, $from, $until, $this->id);
-        $regularPricePerDay = $product->getCurrentPrice(false, $this->cart, $from, $until, $this->id) ?? $pricePerDay;
+        // For pool products with an allocated single, use the allocated single's price
+        // This ensures consistency when reallocatePoolItems has already assigned a specific single
+        $meta = $this->getMeta();
+        $allocatedSingleItemId = $meta->allocated_single_item_id ?? null;
+
+        if ($product->isPool() && $allocatedSingleItemId) {
+            // Get the allocated single item
+            $allocatedSingle = Product::find($allocatedSingleItemId);
+
+            if ($allocatedSingle) {
+                // Get price from the allocated single, with fallback to pool price
+                $priceModel = $allocatedSingle->defaultPrice()->first();
+                $pricePerDay = $priceModel?->getCurrentPrice($allocatedSingle->isOnSale());
+                $regularPricePerDay = $priceModel?->getCurrentPrice(false) ?? $pricePerDay;
+
+                // Fallback to pool price if single has no price
+                if ($pricePerDay === null && $product->hasPrice()) {
+                    $poolPriceModel = $product->defaultPrice()->first();
+                    $pricePerDay = $poolPriceModel?->getCurrentPrice($product->isOnSale());
+                    $regularPricePerDay = $poolPriceModel?->getCurrentPrice(false) ?? $pricePerDay;
+                }
+            } else {
+                // Allocated single not found - this is an error state, mark as unavailable
+                $this->update([
+                    'from' => $from,
+                    'until' => $until,
+                    'price' => null,
+                    'regular_price' => null,
+                    'unit_amount' => null,
+                    'subtotal' => null,
+                ]);
+                return $this->fresh();
+            }
+        } else {
+            // Non-pool product or pool without allocation: use getCurrentPrice
+            // Pass dates to ensure accurate pricing for pool products during date updates
+            // Pass cart item ID to exclude this item from usage calculation
+            $pricePerDay = $product->getCurrentPrice(null, $this->cart, $from, $until, $this->id);
+            $regularPricePerDay = $product->getCurrentPrice(false, $this->cart, $from, $until, $this->id) ?? $pricePerDay;
+        }
+
+        // If no price found, mark as unavailable
+        if ($pricePerDay === null) {
+            $this->update([
+                'from' => $from,
+                'until' => $until,
+                'price' => null,
+                'regular_price' => null,
+                'unit_amount' => null,
+                'subtotal' => null,
+            ]);
+            return $this->fresh();
+        }
 
         // Store the base unit_amount (price for 1 quantity, 1 day) in cents
         $unitAmount = (int) round($pricePerDay);

@@ -387,4 +387,103 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->expectException(\Blax\Shop\Exceptions\CartItemMissingInformationException::class);
         $this->cart->checkout();
     }
+
+    /** @test */
+    public function checkoutSessionLink_throws_when_items_have_null_price()
+    {
+        $pool = $this->createPoolWithLimitedSingles(3);
+
+        $from = now()->addDays(1);
+        $until = now()->addDays(2);
+
+        // Add items
+        $this->cart->addToCart($pool, 3, [], $from, $until);
+
+        // Manually make one unavailable
+        $item = $this->cart->items()->first();
+        $item->update(['price' => null, 'subtotal' => null]);
+
+        // checkoutSessionLink should throw because item is unavailable
+        $this->expectException(\Blax\Shop\Exceptions\CartItemMissingInformationException::class);
+        $this->cart->checkoutSessionLink();
+    }
+
+    /** @test */
+    public function checkoutSessionLink_throws_when_items_have_zero_price()
+    {
+        $pool = $this->createPoolWithLimitedSingles(3);
+
+        $from = now()->addDays(1);
+        $until = now()->addDays(2);
+
+        // Add items
+        $this->cart->addToCart($pool, 3, [], $from, $until);
+
+        // Manually set price to 0 (should also be considered unavailable)
+        $item = $this->cart->items()->first();
+        $item->update(['price' => 0, 'subtotal' => 0]);
+
+        // checkoutSessionLink should throw because item has 0 price
+        $this->expectException(\Blax\Shop\Exceptions\CartItemMissingInformationException::class);
+        $this->cart->checkoutSessionLink();
+    }
+
+    /** @test */
+    public function pool_items_maintain_consistent_pricing_after_date_changes()
+    {
+        $pool = $this->createPoolWithLimitedSingles(3);
+
+        $from1 = now()->addDays(1);
+        $until1 = now()->addDays(2);
+
+        // Add 3 items with dates
+        $this->cart->addToCart($pool, 3, [], $from1, $until1);
+
+        // Get initial prices
+        $initialPrices = $this->cart->items->pluck('price')->sort()->values()->toArray();
+
+        // Change to different dates (same duration)
+        $from2 = now()->addDays(5);
+        $until2 = now()->addDays(6);
+
+        $this->cart->setDates($from2, $until2);
+        $this->cart->refresh();
+        $this->cart->load('items');
+
+        // Prices should be the same (only dates changed, not duration)
+        $newPrices = $this->cart->items->pluck('price')->sort()->values()->toArray();
+
+        $this->assertEquals(
+            $initialPrices,
+            $newPrices,
+            'Prices should remain consistent when only dates change (same duration)'
+        );
+    }
+
+    /** @test */
+    public function price_zero_is_treated_as_unavailable()
+    {
+        $pool = $this->createPoolWithLimitedSingles(3);
+
+        $from = now()->addDays(1);
+        $until = now()->addDays(2);
+
+        $this->cart->addToCart($pool, 3, [], $from, $until);
+
+        // Set price to 0 (simulating an old bug where 0 was used instead of null)
+        $item = $this->cart->items()->first();
+        $item->update(['price' => 0, 'subtotal' => 0]);
+        $item->refresh();
+
+        // Item should NOT be ready for checkout
+        $this->assertFalse($item->is_ready_to_checkout, 'Item with price 0 should not be ready');
+
+        // requiredAdjustments should show price as unavailable
+        $adjustments = $item->requiredAdjustments();
+        $this->assertArrayHasKey('price', $adjustments);
+        $this->assertEquals('unavailable', $adjustments['price']);
+
+        // Cart should NOT be ready
+        $this->assertFalse($this->cart->fresh()->is_ready_to_checkout);
+    }
 }
