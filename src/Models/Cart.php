@@ -316,6 +316,14 @@ class Cart extends Model
             if ($validateAvailability) {
                 $this->validateDateAvailability($calcFrom, $calcUntil);
             }
+
+            // Update cart items with new dates and recalculate prices
+            $this->applyDatesToItems(
+                $validateAvailability,
+                true,
+                $calcFrom,
+                $calcUntil
+            );
         }
 
         return $this->fresh();
@@ -353,6 +361,14 @@ class Cart extends Model
             if ($validateAvailability) {
                 $this->validateDateAvailability($calcFrom, $calcUntil);
             }
+
+            // Update cart items with new dates and recalculate prices
+            $this->applyDatesToItems(
+                $validateAvailability,
+                true,
+                $calcFrom,
+                $calcUntil
+            );
         }
 
         return $this->fresh();
@@ -502,34 +518,14 @@ class Cart extends Model
                 continue;
             }
 
-            // Build list of available items with prices for new dates
-            $availableWithPrices = [];
+            // Build list of available singles with their prices for new dates
+            $singlesWithPrices = [];
             foreach ($singleItems as $single) {
-                // Manually check if this single is available for the booking period
-                $available = $single->getAvailableStock($from);
+                // Get available stock at the booking start date
+                // This already accounts for claims via the DECREASE entries they create
+                $effectiveAvailable = $single->getAvailableStock($from);
 
-                // Check for overlapping claims - two periods overlap if:
-                // claim.start < our.end AND claim.end > our.start
-                $overlaps = $single->stocks()
-                    ->where('type', \Blax\Shop\Enums\StockType::CLAIMED->value)
-                    ->where('status', \Blax\Shop\Enums\StockStatus::PENDING->value)
-                    ->where(function ($query) use ($from, $until) {
-                        $query->where(function ($q) use ($from, $until) {
-                            // Claim starts before our period ends
-                            $q->where(function ($subQ) use ($until) {
-                                $subQ->where('claimed_from', '<', $until)
-                                    ->orWhereNull('claimed_from'); // No start = starts immediately
-                            })
-                                // AND claim ends after our period starts
-                                ->where(function ($subQ) use ($from) {
-                                    $subQ->where('expires_at', '>', $from)
-                                        ->orWhereNull('expires_at'); // No end = never expires
-                                });
-                        });
-                    })
-                    ->exists();
-
-                if ($available > 0 && !$overlaps) {
+                if ($effectiveAvailable > 0) {
                     $priceModel = $single->defaultPrice()->first();
                     $price = $priceModel?->getCurrentPrice($single->isOnSale());
 
@@ -540,16 +536,17 @@ class Cart extends Model
                     }
 
                     if ($price !== null) {
-                        $availableWithPrices[] = [
+                        $singlesWithPrices[] = [
                             'single' => $single,
                             'price' => $price,
                             'price_id' => $priceModel?->id,
+                            'available' => $effectiveAvailable,
                         ];
                     }
                 }
             }
 
-            if (empty($availableWithPrices)) {
+            if (empty($singlesWithPrices)) {
                 // No singles available for this period - mark ALL pool items as unavailable
                 foreach ($items as $cartItem) {
                     // Only update if we should overwrite or item has no dates yet
@@ -570,7 +567,7 @@ class Cart extends Model
             }
 
             // Sort by pricing strategy
-            usort($availableWithPrices, function ($a, $b) use ($strategy) {
+            usort($singlesWithPrices, function ($a, $b) use ($strategy) {
                 return match ($strategy) {
                     \Blax\Shop\Enums\PricingStrategy::LOWEST => $a['price'] <=> $b['price'],
                     \Blax\Shop\Enums\PricingStrategy::HIGHEST => $b['price'] <=> $a['price'],
@@ -579,45 +576,133 @@ class Cart extends Model
             });
 
             // Reallocate cart items to optimal singles
-            // Each cart item gets one single - no single can be allocated twice
-            $usedIndices = [];
+            // Track usage per single to properly allocate considering quantities
+            // If a single can't accommodate a cart item's full quantity, split the cart item
+            $singleUsage = []; // single_id => quantity used
+
+            // Use singlesWithPrices directly as our ordered list
+            $orderedSingles = $singlesWithPrices;
+
             foreach ($items as $cartItem) {
                 // Only reallocate if we should overwrite or item has no dates yet
                 if (!$overwrite && $cartItem->from && $cartItem->until) {
                     continue;
                 }
 
-                // Find next unused single from available list
+                $neededQty = $cartItem->quantity;
                 $allocated = false;
-                for ($i = 0; $i < count($availableWithPrices); $i++) {
-                    if (!in_array($i, $usedIndices)) {
-                        $allocation = $availableWithPrices[$i];
 
-                        // Update cart item with new allocation
-                        $cartItem->updateMetaKey('allocated_single_item_id', $allocation['single']->id);
-                        $cartItem->updateMetaKey('allocated_single_item_name', $allocation['single']->name);
+                // Try to find a single that can accommodate the full quantity
+                foreach ($orderedSingles as $singleInfo) {
+                    $single = $singleInfo['single'];
+                    $usedFromSingle = $singleUsage[$single->id] ?? 0;
+                    $remainingFromSingle = $singleInfo['available'] - $usedFromSingle;
+
+                    if ($remainingFromSingle >= $neededQty) {
+                        // This single can accommodate the cart item's full quantity
+                        $cartItem->updateMetaKey('allocated_single_item_id', $single->id);
+                        $cartItem->updateMetaKey('allocated_single_item_name', $single->name);
 
                         // Update price_id if changed
-                        if ($allocation['price_id'] && $allocation['price_id'] !== $cartItem->price_id) {
-                            $cartItem->update(['price_id' => $allocation['price_id']]);
+                        if ($singleInfo['price_id'] && $singleInfo['price_id'] !== $cartItem->price_id) {
+                            $cartItem->update(['price_id' => $singleInfo['price_id']]);
                         }
 
-                        $usedIndices[] = $i;
+                        // Track usage
+                        $singleUsage[$single->id] = $usedFromSingle + $neededQty;
                         $allocated = true;
                         break;
                     }
                 }
 
-                // If we couldn't allocate (ran out of available singles), mark as unavailable
                 if (!$allocated) {
-                    // Clear allocation and set price to null to indicate unavailable
-                    $cartItem->updateMetaKey('allocated_single_item_id', null);
-                    $cartItem->updateMetaKey('allocated_single_item_name', null);
-                    $cartItem->update([
-                        'price' => null,
-                        'subtotal' => null,
-                        'unit_amount' => null,
-                    ]);
+                    // No single can accommodate the full quantity
+                    // Try to split: use as much as possible from the first available single,
+                    // then create new cart items for the rest
+                    $remainingQty = $neededQty;
+                    $firstAllocation = true;
+
+                    foreach ($orderedSingles as $singleInfo) {
+                        if ($remainingQty <= 0) break;
+
+                        $single = $singleInfo['single'];
+                        $usedFromSingle = $singleUsage[$single->id] ?? 0;
+                        $availableFromSingle = $singleInfo['available'] - $usedFromSingle;
+
+                        if ($availableFromSingle <= 0) continue;
+
+                        $qtyToAllocate = min($remainingQty, $availableFromSingle);
+
+                        if ($firstAllocation) {
+                            // Update the original cart item with reduced quantity
+                            // Also update subtotal to match the new quantity
+                            $newSubtotal = $cartItem->price * $qtyToAllocate;
+                            $cartItem->update([
+                                'quantity' => $qtyToAllocate,
+                                'subtotal' => $newSubtotal,
+                            ]);
+                            $cartItem->refresh(); // Ensure model reflects database state
+                            $cartItem->updateMetaKey('allocated_single_item_id', $single->id);
+                            $cartItem->updateMetaKey('allocated_single_item_name', $single->name);
+
+                            if ($singleInfo['price_id'] && $singleInfo['price_id'] !== $cartItem->price_id) {
+                                $cartItem->update(['price_id' => $singleInfo['price_id']]);
+                            }
+
+                            $firstAllocation = false;
+                        } else {
+                            // Create a new cart item for the additional quantity
+                            // Get price from the single
+                            $priceModel = $single->defaultPrice()->first();
+                            $singlePrice = $priceModel?->getCurrentPrice($single->isOnSale());
+
+                            if ($singlePrice === null && $poolProduct->hasPrice()) {
+                                $priceModel = $poolProduct->defaultPrice()->first();
+                                $singlePrice = $priceModel?->getCurrentPrice($poolProduct->isOnSale());
+                            }
+
+                            $days = $this->calculateBookingDays($from, $until);
+                            $pricePerUnit = (int) round($singlePrice * $days);
+
+                            $newCartItem = $this->items()->create([
+                                'purchasable_id' => $cartItem->purchasable_id,
+                                'purchasable_type' => $cartItem->purchasable_type,
+                                'price_id' => $priceModel?->id,
+                                'quantity' => $qtyToAllocate,
+                                'price' => $pricePerUnit,
+                                'regular_price' => $pricePerUnit,
+                                'unit_amount' => (int) round($singlePrice),
+                                'subtotal' => $pricePerUnit * $qtyToAllocate,
+                                'parameters' => $cartItem->parameters,
+                                'from' => $from,
+                                'until' => $until,
+                            ]);
+
+                            $newCartItem->updateMetaKey('allocated_single_item_id', $single->id);
+                            $newCartItem->updateMetaKey('allocated_single_item_name', $single->name);
+                        }
+
+                        $singleUsage[$single->id] = $usedFromSingle + $qtyToAllocate;
+                        $remainingQty -= $qtyToAllocate;
+                        $allocated = true;
+                    }
+
+                    // If we still have remaining quantity that couldn't be allocated
+                    if ($remainingQty > 0) {
+                        if ($firstAllocation) {
+                            // Couldn't allocate anything - mark as unavailable
+                            $cartItem->updateMetaKey('allocated_single_item_id', null);
+                            $cartItem->updateMetaKey('allocated_single_item_name', null);
+                            $cartItem->update([
+                                'price' => null,
+                                'subtotal' => null,
+                                'unit_amount' => null,
+                            ]);
+                        } else {
+                            // Partial allocation - the cart item was already updated with what we could allocate
+                            // The remaining quantity is lost (over-capacity)
+                        }
+                    }
                 }
             }
         }
@@ -780,6 +865,14 @@ class Cart extends Model
             $until = is_string($parameters['until']) ? Carbon::parse($parameters['until']) : $parameters['until'];
         }
 
+        // Fallback to cart dates if no dates provided
+        if (!$from && $this->from) {
+            $from = $this->from;
+        }
+        if (!$until && $this->until) {
+            $until = $this->until;
+        }
+
         // For pool products with quantity > 1, add them one at a time to get progressive pricing
         if ($cartable instanceof Product && $cartable->isPool() && $quantity > 1) {
             // Validate availability if dates are provided
@@ -860,11 +953,16 @@ class Cart extends Model
                     $maxQuantity = $cartable->getPoolMaxQuantity($from, $until);
 
                     // Subtract items already in cart for the same period
+                    // Only count items that are actually valid (have a price allocated)
                     $itemsInCart = $this->items()
                         ->where('purchasable_id', $cartable->getKey())
                         ->where('purchasable_type', get_class($cartable))
                         ->get()
                         ->filter(function ($item) use ($from, $until) {
+                            // Don't count items marked as unavailable (null price)
+                            if ($item->price === null) {
+                                return false;
+                            }
                             // Only count items with overlapping dates
                             if (!$item->from || !$item->until) {
                                 return false;

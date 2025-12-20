@@ -516,16 +516,21 @@ class CartDateManagementTest extends TestCase
 
         ]);
 
-        $cart = Cart::factory()->create([
-            'from' => Carbon::now()->addDays(1),
-            'until' => Carbon::now()->addDays(3),
-        ]);
+        // Create cart WITHOUT dates first (so addToCart doesn't validate)
+        $cart = Cart::factory()->create();
 
-        // Add item that would exceed available stock
+        // Add item that would exceed available stock (qty=2 but stock=1)
+        // This succeeds because cart has no dates yet, so no availability validation
         $item = $cart->addToCart($product, 2);
 
-        // Should NOT throw exception, instead mark items as unavailable
-        $cart->applyDatesToItems(validateAvailability: true);
+        // Now set dates on the cart with validation enabled
+        // This triggers applyDatesToItems which should mark items as unavailable
+        // rather than throwing an exception
+        $cart->setDates(
+            Carbon::now()->addDays(1),
+            Carbon::now()->addDays(3),
+            validateAvailability: true
+        );
 
         // Item should be marked as unavailable (null price)
         $item->refresh();
