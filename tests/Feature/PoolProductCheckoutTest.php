@@ -11,6 +11,7 @@ use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolProductCheckoutTest extends TestCase
 {
@@ -88,7 +89,7 @@ class PoolProductCheckoutTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function checkout_cart_with_pool_product_claims_correct_single_items()
     {
         $from = Carbon::now()->addDays(1);
@@ -117,7 +118,7 @@ class PoolProductCheckoutTest extends TestCase
         $this->assertEquals(2, $claimedCount);
     }
 
-    /** @test */
+    #[Test]
     public function checkout_cart_with_pool_product_without_timespan_throws_exception_when_single_items_are_bookings()
     {
         $cart = $this->user->currentCart();
@@ -136,7 +137,7 @@ class PoolProductCheckoutTest extends TestCase
         $cart->checkout();
     }
 
-    /** @test */
+    #[Test]
     public function checkout_cart_with_pool_product_and_timespan_succeeds()
     {
         $from = Carbon::now()->addDays(1);
@@ -158,7 +159,7 @@ class PoolProductCheckoutTest extends TestCase
         $this->assertCount(1, $cart->purchases);
     }
 
-    /** @test */
+    #[Test]
     public function checkout_cart_with_pool_product_stores_claimed_items_in_cart_item_meta()
     {
         $from = Carbon::now()->addDays(1);
@@ -190,7 +191,7 @@ class PoolProductCheckoutTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function checkout_cart_with_multiple_pool_products_claims_from_each_independently()
     {
         $from = Carbon::now()->addDays(1);
@@ -260,7 +261,7 @@ class PoolProductCheckoutTest extends TestCase
         $this->assertEquals(1, $bikePool->getPoolMaxQuantity($from, $until));
     }
 
-    /** @test */
+    #[Test]
     public function checkout_cart_with_pool_product_and_regular_booking_product_succeeds()
     {
         $from = Carbon::now()->addDays(1);
@@ -294,7 +295,7 @@ class PoolProductCheckoutTest extends TestCase
         $this->assertCount(2, $cart->purchases);
     }
 
-    /** @test */
+    #[Test]
     public function checkout_cart_with_pool_product_fails_when_single_item_becomes_unavailable_during_checkout()
     {
         $from = Carbon::now()->addDays(1);
@@ -323,7 +324,7 @@ class PoolProductCheckoutTest extends TestCase
         $cart->checkout();
     }
 
-    /** @test */
+    #[Test]
     public function checkout_cart_validates_timespan_before_claiming_stock()
     {
         $cart = $this->user->currentCart();
@@ -347,7 +348,7 @@ class PoolProductCheckoutTest extends TestCase
         $this->assertEquals(3, $this->parkingPool->getPoolMaxQuantity($from, $until));
     }
 
-    /** @test */
+    #[Test]
     public function checkout_creates_purchase_with_correct_timespan()
     {
         $from = Carbon::now()->addDays(1);
@@ -372,7 +373,7 @@ class PoolProductCheckoutTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $purchase->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function checkout_with_pool_product_using_legacy_parameters()
     {
         $from = Carbon::now()->addDays(1);
@@ -399,7 +400,7 @@ class PoolProductCheckoutTest extends TestCase
         $this->assertTrue($cart->isConverted());
     }
 
-    /** @test */
+    #[Test]
     public function checkout_pool_product_claims_stock_with_cart_reference()
     {
         $from = Carbon::now()->addDays(1);

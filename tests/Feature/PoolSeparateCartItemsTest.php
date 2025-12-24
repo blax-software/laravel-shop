@@ -11,6 +11,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolSeparateCartItemsTest extends TestCase
 {
@@ -65,7 +66,7 @@ class PoolSeparateCartItemsTest extends TestCase
         $this->pool->attachSingleItems([$spot1->id, $spot2->id]);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_separate_cart_items_for_different_dates()
     {
         $from1 = Carbon::now()->addDays(1)->startOfDay();
@@ -82,7 +83,7 @@ class PoolSeparateCartItemsTest extends TestCase
         $this->assertEquals(2, $this->cart->items()->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_merges_cart_items_with_same_dates_and_price()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
@@ -97,7 +98,7 @@ class PoolSeparateCartItemsTest extends TestCase
         $this->assertEquals(2, $item2->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_separate_cart_items_when_price_changes()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
@@ -129,7 +130,7 @@ class PoolSeparateCartItemsTest extends TestCase
         $this->assertNotEquals($price1, $item2->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_separate_cart_items_for_different_date_lengths()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();

@@ -10,10 +10,11 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolClaimingPriorityTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function it_claims_lowest_priced_items_first_with_lowest_strategy()
     {
         // Create pool product
@@ -99,7 +100,7 @@ class PoolClaimingPriorityTest extends TestCase
         $this->assertEquals($spot2->id, $claimedIds[2]);
     }
 
-    /** @test */
+    #[Test]
     public function it_claims_highest_priced_items_first_with_highest_strategy()
     {
         // Create pool product
@@ -167,7 +168,7 @@ class PoolClaimingPriorityTest extends TestCase
         $this->assertEquals($cheapSpot->id, $claimedItems[1]->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_fallback_price_for_items_without_price()
     {
         $pool = Product::factory()->create([

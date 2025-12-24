@@ -9,12 +9,13 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class HasShoppingCapabilitiesTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function user_has_cart_relationship()
     {
         $user = User::factory()->create();
@@ -22,7 +23,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertInstanceOf(\Illuminate\Database\Eloquent\Relations\MorphMany::class, $user->cart());
     }
 
-    /** @test */
+    #[Test]
     public function user_has_purchases_relationship()
     {
         $user = User::factory()->create();
@@ -30,7 +31,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertInstanceOf(\Illuminate\Database\Eloquent\Relations\MorphMany::class, $user->purchases());
     }
 
-    /** @test */
+    #[Test]
     public function user_can_get_current_cart()
     {
         $user = User::factory()->create();
@@ -41,7 +42,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertEquals($user->id, $cart->customer_id);
     }
 
-    /** @test */
+    #[Test]
     public function user_cannot_purchase_product_without_price()
     {
         $user = User::factory()->create();
@@ -52,7 +53,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $user->purchase($product);
     }
 
-    /** @test */
+    #[Test]
     public function user_cannot_purchase_product_with_multiple_default_prices()
     {
         $user = User::factory()->create();
@@ -68,7 +69,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $user->purchase($product);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_purchase_product_with_single_default_price()
     {
         $user = User::factory()->create();
@@ -84,7 +85,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertEquals($user->id, $purchase->purchaser_id);
     }
 
-    /** @test */
+    #[Test]
     public function user_cannot_add_product_to_cart_without_default_price()
     {
         $user = User::factory()->create();
@@ -93,7 +94,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertThrows(fn() => $user->addToCart($product), NotPurchasable::class);
     }
 
-    /** @test */
+    #[Test]
     public function user_cannot_add_product_with_multiple_default_prices_to_cart()
     {
         $user = User::factory()->create();
@@ -108,7 +109,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $user->addToCart($product);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_get_completed_purchases()
     {
         $user = User::factory()->create();
@@ -127,7 +128,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertEquals(PurchaseStatus::COMPLETED, $completed->first()->status);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_with_metadata_stores_correctly()
     {
         $user = User::factory()->create();
@@ -144,7 +145,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertEquals('Special instructions', $purchase->meta->notes);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_check_if_purchased_specific_product()
     {
         $user = User::factory()->create();
@@ -158,7 +159,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertFalse($user->hasPurchased($notPurchasedProduct));
     }
 
-    /** @test */
+    #[Test]
     public function user_cart_items_are_accessible()
     {
         $user = User::factory()->create();
@@ -169,7 +170,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertCount(1, $user->cartItems);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_update_cart_item_quantity()
     {
         $user = User::factory()->create();
@@ -182,7 +183,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertEquals(5, $cartItem->fresh()->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_remove_item_from_cart()
     {
         $user = User::factory()->create();
@@ -197,7 +198,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertCount(0, $user->fresh()->cartItems);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_get_cart_total()
     {
         $user = User::factory()->create();
@@ -212,7 +213,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertEquals(250.00, $total);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_get_cart_items_count()
     {
         $user = User::factory()->create();
@@ -227,7 +228,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertEquals(5, $count);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_clear_cart()
     {
         $user = User::factory()->create();
@@ -244,7 +245,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertCount(0, $user->fresh()->cartItems);
     }
 
-    /** @test */
+    #[Test]
     public function adding_product_to_cart_reserves_stock()
     {
         $user = User::factory()->create();
@@ -257,7 +258,7 @@ class HasShoppingCapabilitiesTest extends TestCase
         $this->assertEquals(7, $product->fresh()->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function purchase_calls_product_actions()
     {
         $user = User::factory()->create();

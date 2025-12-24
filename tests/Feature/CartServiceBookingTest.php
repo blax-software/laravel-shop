@@ -11,6 +11,7 @@ use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartServiceBookingTest extends TestCase
 {
@@ -84,7 +85,7 @@ class CartServiceBookingTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function validate_bookings_returns_error_for_booking_product_without_timespan()
     {
         $cart = $this->user->currentCart();
@@ -104,7 +105,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertStringContainsString('Hotel Room', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validate_bookings_returns_error_for_pool_product_without_timespan_when_single_items_are_bookings()
     {
         $cart = $this->user->currentCart();
@@ -124,7 +125,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertStringContainsString('Parking Spaces', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validate_bookings_validates_stock_availability_correctly()
     {
         $cart = $this->user->currentCart();
@@ -150,7 +151,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertStringContainsString('not available for the selected period', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validate_bookings_handles_pool_products_with_individual_timespans_in_meta()
     {
         $cart = $this->user->currentCart();
@@ -170,7 +171,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertEmpty($errors);
     }
 
-    /** @test */
+    #[Test]
     public function has_valid_bookings_returns_true_when_all_bookings_are_valid()
     {
         $cart = $this->user->currentCart();
@@ -189,7 +190,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertTrue(Cart::hasValidBookings());
     }
 
-    /** @test */
+    #[Test]
     public function has_valid_bookings_returns_false_when_bookings_are_invalid()
     {
         $cart = $this->user->currentCart();
@@ -205,7 +206,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertFalse(Cart::hasValidBookings());
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_successfully_adds_booking_product_with_timespan()
     {
         $from = Carbon::now()->addDays(1);
@@ -220,7 +221,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $cartItem->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_successfully_adds_pool_product_with_timespan()
     {
         $from = Carbon::now()->addDays(1);
@@ -235,7 +236,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $cartItem->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_calculates_price_correctly_based_on_days()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
@@ -253,7 +254,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertEquals($expectedTotal, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_throws_exception_when_product_is_not_booking_or_pool_type()
     {
         $simpleProduct = Product::factory()->create([
@@ -277,7 +278,7 @@ class CartServiceBookingTest extends TestCase
         Cart::addBooking($simpleProduct, 1, $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_throws_exception_when_insufficient_stock_available_for_booking_period()
     {
         $from = Carbon::now()->addDays(1);
@@ -292,7 +293,7 @@ class CartServiceBookingTest extends TestCase
         Cart::addBooking($this->bookingProduct, 5, $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_throws_exception_when_pool_quantity_exceeds_available_single_items()
     {
         $from = Carbon::now()->addDays(1);
@@ -305,7 +306,7 @@ class CartServiceBookingTest extends TestCase
         Cart::addBooking($this->poolProduct, 5, $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_creates_cart_item_with_correct_from_until_timestamps()
     {
         $from = Carbon::now()->addDays(5)->setTime(14, 30, 0);
@@ -317,7 +318,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $cartItem->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_stores_regular_price_correctly()
     {
         $from = Carbon::now()->addDays(1);
@@ -329,7 +330,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertEquals($this->bookingProduct->getCurrentPrice(), $cartItem->regular_price);
     }
 
-    /** @test */
+    #[Test]
     public function validate_bookings_returns_error_when_pool_quantity_exceeds_available_single_items()
     {
         $cart = $this->user->currentCart();
@@ -354,7 +355,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertStringContainsString('Parking Spaces', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validate_bookings_passes_with_valid_pool_product_and_timespan()
     {
         $cart = $this->user->currentCart();
@@ -375,7 +376,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertEmpty($errors);
     }
 
-    /** @test */
+    #[Test]
     public function validate_bookings_handles_multiple_booking_products_in_cart()
     {
         $cart = $this->user->currentCart();
@@ -407,7 +408,7 @@ class CartServiceBookingTest extends TestCase
         $this->assertEmpty($errors);
     }
 
-    /** @test */
+    #[Test]
     public function add_booking_with_parameters_stores_them_correctly()
     {
         $from = Carbon::now()->addDays(1);

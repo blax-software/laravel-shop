@@ -6,6 +6,7 @@ use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolAvailabilityMethodsTest extends TestCase
 {
@@ -48,7 +49,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->pool->attachSingleItems([$this->spot1->id, $this->spot2->id, $this->spot3->id]);
     }
 
-    /** @test */
+    #[Test]
     public function it_gets_pool_availability_calendar()
     {
         $start = Carbon::now()->addDays(1)->startOfDay();
@@ -66,7 +67,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_shows_correct_availability_per_day()
     {
         $start = Carbon::now()->addDays(1)->startOfDay();
@@ -79,7 +80,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->assertEquals(6, $calendar[$dateStr]);
     }
 
-    /** @test */
+    #[Test]
     public function it_reduces_availability_when_items_are_claimed()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
@@ -95,7 +96,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->assertEquals(4, $calendar[$dateStr]);
     }
 
-    /** @test */
+    #[Test]
     public function it_gets_single_items_availability_without_dates()
     {
         $availability = $this->pool->getSingleItemsAvailability();
@@ -113,7 +114,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->assertEquals(1, $availability[2]['available']);
     }
 
-    /** @test */
+    #[Test]
     public function it_gets_single_items_availability_with_dates()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
@@ -130,7 +131,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->assertEquals(1, $availability[2]['available']); // Spot 3: still 1
     }
 
-    /** @test */
+    #[Test]
     public function it_shows_unlimited_for_items_without_stock_management()
     {
         $unlimitedSpot = Product::factory()->create([
@@ -148,7 +149,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->assertFalse($unlimited['manage_stock']);
     }
 
-    /** @test */
+    #[Test]
     public function it_checks_if_pool_is_available_for_period()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
@@ -160,7 +161,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->assertFalse($this->pool->isPoolAvailable($from, $until, 7));
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_false_when_pool_not_available()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
@@ -174,7 +175,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->assertFalse($this->pool->isPoolAvailable($from, $until, 1));
     }
 
-    /** @test */
+    #[Test]
     public function it_gets_available_periods_for_pool()
     {
         $start = Carbon::now()->addDays(1)->startOfDay();
@@ -200,7 +201,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_filters_periods_by_minimum_consecutive_days()
     {
         $start = Carbon::now()->addDays(1)->startOfDay();
@@ -234,7 +235,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_higher_quantity_requirements_in_available_periods()
     {
         $start = Carbon::now()->addDays(1)->startOfDay();
@@ -263,7 +264,7 @@ class PoolAvailabilityMethodsTest extends TestCase
         $this->assertNotEquals($periodsBefore, $periodsAfter);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_for_non_pool_products()
     {
         $regularProduct = Product::factory()->create([

@@ -9,12 +9,13 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductPriceTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_product_price()
     {
         $product = Product::factory()->create();
@@ -35,7 +36,7 @@ class ProductPriceTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function price_belongs_to_purchasable()
     {
         $product = Product::factory()->create();
@@ -51,7 +52,7 @@ class ProductPriceTest extends TestCase
         $this->assertEquals($product->id, $price->purchasable->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_default_price()
     {
         $product = Product::factory()->create();
@@ -77,7 +78,7 @@ class ProductPriceTest extends TestCase
         $this->assertEquals($price2->id, $product->defaultPrice()->first()->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_recurring_price()
     {
         $product = Product::factory()->create();
@@ -99,7 +100,7 @@ class ProductPriceTest extends TestCase
         $this->assertEquals(14, $price->trial_period_days);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_one_time_price()
     {
         $product = Product::factory()->create();
@@ -116,7 +117,7 @@ class ProductPriceTest extends TestCase
         $this->assertNull($price->interval);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_active_prices()
     {
         $product = Product::factory()->create();
@@ -143,7 +144,7 @@ class ProductPriceTest extends TestCase
         $this->assertTrue($activePrices->first()->active);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_current_price_based_on_sale()
     {
         $product = Product::factory()->create();
@@ -160,7 +161,7 @@ class ProductPriceTest extends TestCase
         $this->assertEquals(100.00, $price->getCurrentPrice(false));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_multiple_currencies()
     {
         $product = Product::factory()->create();
@@ -184,7 +185,7 @@ class ProductPriceTest extends TestCase
         $this->assertEquals('EUR', $eurPrice->currency);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_store_price_metadata()
     {
         $product = Product::factory()->create();
@@ -204,7 +205,7 @@ class ProductPriceTest extends TestCase
         $this->assertEquals(['feature1', 'feature2'], $price->meta->features);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_deactivate_price()
     {
         $product = Product::factory()->create();
@@ -224,7 +225,7 @@ class ProductPriceTest extends TestCase
         $this->assertFalse($price->fresh()->active);
     }
 
-    /** @test */
+    #[Test]
     public function product_can_have_multiple_price_tiers()
     {
         $product = Product::factory()->create();
@@ -256,7 +257,7 @@ class ProductPriceTest extends TestCase
         $this->assertCount(3, $product->prices);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_billing_scheme()
     {
         $product = Product::factory()->create();

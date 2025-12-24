@@ -11,6 +11,7 @@ use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolProductPricingTest extends TestCase
 {
@@ -58,7 +59,7 @@ class PoolProductPricingTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_inherits_price_from_single_items_when_no_pool_price_set()
     {
         // Set price on single items
@@ -85,7 +86,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(5000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_uses_own_price_when_explicitly_set()
     {
         // Set different prices on single items
@@ -111,7 +112,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(4500, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_inherits_average_price_from_single_items_with_different_prices()
     {
         // Set different prices on single items
@@ -140,7 +141,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(6000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_returns_null_when_no_prices_available()
     {
         // No prices set on pool or single items
@@ -149,7 +150,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertNull($price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_inherits_lowest_price_from_single_items()
     {
         ProductPrice::factory()->create([
@@ -173,7 +174,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(5000, $lowestPrice);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_inherits_highest_price_from_single_items()
     {
         ProductPrice::factory()->create([
@@ -197,7 +198,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(7000, $highestPrice);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_bulk_discount_applied_for_multiple_items()
     {
         // Set pool price with bulk discount
@@ -229,7 +230,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(20000, $total);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_pricing_strategy_can_be_set_to_average()
     {
         ProductPrice::factory()->create([
@@ -255,7 +256,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(6000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_pricing_strategy_can_be_set_to_lowest()
     {
         ProductPrice::factory()->create([
@@ -281,7 +282,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(5000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_pricing_strategy_can_be_set_to_highest()
     {
         ProductPrice::factory()->create([
@@ -307,7 +308,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(7000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_price_range_returns_min_and_max()
     {
         ProductPrice::factory()->create([
@@ -331,7 +332,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(['min' => 5000, 'max' => 7000], $priceRange);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_sale_price_applies_discount()
     {
         ProductPrice::factory()->create([
@@ -354,7 +355,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(8000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_ignores_single_items_without_prices()
     {
         // Only set price on one item
@@ -372,7 +373,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(5000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_pricing_updates_when_single_item_prices_change()
     {
         $price1 = ProductPrice::factory()->create([
@@ -405,7 +406,7 @@ class PoolProductPricingTest extends TestCase
         $this->assertEquals(5500, $updatedPrice); // Average of 6000 and 5000
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_custom_pricing_strategy_in_meta()
     {
         ProductPrice::factory()->create([

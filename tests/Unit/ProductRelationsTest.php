@@ -6,12 +6,13 @@ use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductRelationsTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_filters_relations_by_relation_type()
     {
         $product = Product::factory()->create();
@@ -41,7 +42,7 @@ class ProductRelationsTest extends TestCase
         $this->assertSame(1, $product->relatedProducts()->first()->pivot->sort_order);
     }
 
-    /** @test */
+    #[Test]
     public function relations_by_type_accepts_enum_or_string()
     {
         $product = Product::factory()->create();
@@ -55,7 +56,7 @@ class ProductRelationsTest extends TestCase
         $this->assertTrue($product->relationsByType('related')->exists());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_be_queried_by_specific_relation_types()
     {
         $withUpsell = Product::factory()->create();

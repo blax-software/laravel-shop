@@ -10,6 +10,7 @@ use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PaymentProviderTest extends TestCase
 {
@@ -32,7 +33,7 @@ class PaymentProviderTest extends TestCase
 
 
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_customer_on_stripe()
     {
         $user = User::factory()->create([
@@ -72,7 +73,7 @@ class PaymentProviderTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_existing_customer_identity_if_already_exists()
     {
         $user = User::factory()->create();
@@ -93,7 +94,7 @@ class PaymentProviderTest extends TestCase
         $this->assertEquals('cus_existing123', $identity->customer_identification_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_a_payment_method()
     {
         $user = User::factory()->create();
@@ -152,7 +153,7 @@ class PaymentProviderTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function first_payment_method_is_automatically_set_as_default()
     {
         $user = User::factory()->create();
@@ -195,7 +196,7 @@ class PaymentProviderTest extends TestCase
         $this->assertTrue($paymentMethod->fresh()->is_default);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_list_payment_methods()
     {
         $user = User::factory()->create();
@@ -231,7 +232,7 @@ class PaymentProviderTest extends TestCase
         $this->assertCount(3, $allMethods);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_a_payment_method_as_default()
     {
         $user = User::factory()->create();
@@ -270,7 +271,7 @@ class PaymentProviderTest extends TestCase
         $this->assertEquals(1, $defaultCount);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_remove_a_payment_method()
     {
         $user = User::factory()->create();
@@ -300,7 +301,7 @@ class PaymentProviderTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function removing_default_payment_method_sets_another_as_default()
     {
         $user = User::factory()->create();
@@ -339,7 +340,7 @@ class PaymentProviderTest extends TestCase
         $this->assertTrue($method2->fresh()->is_default);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_use_trait_to_add_payment_methods()
     {
         // Use actual User model since it doesn't have the trait yet - test with direct service calls
@@ -395,7 +396,7 @@ class PaymentProviderTest extends TestCase
         // Test identity and method relationships
         $this->assertEquals($user->id, $identity->customer_id);
         $this->assertEquals(get_class($user), $identity->customer_type);
-        
+
         $methods = $this->paymentProviderService->listPaymentMethods($identity);
         $this->assertCount(1, $methods);
 
@@ -404,7 +405,7 @@ class PaymentProviderTest extends TestCase
         $this->assertEquals($paymentMethod->id, $defaultMethod->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_sync_payment_methods_from_stripe()
     {
         $user = User::factory()->create();
@@ -475,7 +476,7 @@ class PaymentProviderTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function payment_method_can_check_if_expired()
     {
         $paymentMethod = PaymentMethod::factory()->create([
@@ -493,7 +494,7 @@ class PaymentProviderTest extends TestCase
         $this->assertFalse($validMethod->isExpired());
     }
 
-    /** @test */
+    #[Test]
     public function payment_method_has_display_name_attribute()
     {
         $method1 = PaymentMethod::factory()->create([
@@ -513,7 +514,7 @@ class PaymentProviderTest extends TestCase
         $this->assertEquals('Mastercard ending in 5555', $method2->display_name);
     }
 
-    /** @test */
+    #[Test]
     public function payment_method_has_formatted_expiration()
     {
         $paymentMethod = PaymentMethod::factory()->create([

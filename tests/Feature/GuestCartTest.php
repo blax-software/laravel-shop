@@ -8,12 +8,13 @@ use Blax\Shop\Models\Cart as CartModel;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class GuestCartTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_guest_cart()
     {
         $guestCart = Cart::guest();
@@ -24,7 +25,7 @@ class GuestCartTest extends TestCase
         $this->assertNull($guestCart->customer_type);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_guest_cart_with_specific_session_id()
     {
         $sessionId = 'test-session-123';
@@ -35,7 +36,7 @@ class GuestCartTest extends TestCase
         $this->assertNull($guestCart->customer_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_retrieves_same_guest_cart_for_same_session()
     {
         $sessionId = 'persistent-session-456';
@@ -55,7 +56,7 @@ class GuestCartTest extends TestCase
         $this->assertCount(1, $cart2->items);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_items_to_guest_cart()
     {
         $guestCart = Cart::guest('guest-session');
@@ -67,7 +68,7 @@ class GuestCartTest extends TestCase
         $this->assertEquals(2, $cartItem->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_guest_cart_total()
     {
         $guestCart = Cart::guest('guest-session-2');
@@ -82,7 +83,7 @@ class GuestCartTest extends TestCase
         $this->assertEquals(250.00, $total);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_guest_cart_item_count()
     {
         $guestCart = Cart::guest('guest-session-3');
@@ -95,7 +96,7 @@ class GuestCartTest extends TestCase
         $this->assertEquals(5, $count);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_remove_items_from_guest_cart()
     {
         $guestCart = Cart::guest('guest-session-4');
@@ -110,7 +111,7 @@ class GuestCartTest extends TestCase
         $this->assertEquals(3, $items[0]->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_clear_guest_cart()
     {
         $guestCart = Cart::guest('guest-session-5');
@@ -126,7 +127,7 @@ class GuestCartTest extends TestCase
         $this->assertTrue(Cart::isEmpty($guestCart));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_guest_cart_is_empty()
     {
         $guestCart = Cart::guest('guest-session-6');
@@ -140,7 +141,7 @@ class GuestCartTest extends TestCase
         $this->assertFalse(Cart::isEmpty($guestCart));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_find_guest_cart_by_id()
     {
         $guestCart = Cart::guest('guest-session-7');
@@ -152,7 +153,7 @@ class GuestCartTest extends TestCase
         $this->assertEquals($cartId, $foundCart->id);
     }
 
-    /** @test */
+    #[Test]
     public function guest_and_authenticated_carts_are_separate()
     {
         // Create guest cart
@@ -177,7 +178,7 @@ class GuestCartTest extends TestCase
         $this->assertNotEquals($guestCart->id, Cart::current()->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_convert_guest_cart_to_user_cart()
     {
         // Guest adds items
@@ -198,7 +199,7 @@ class GuestCartTest extends TestCase
         $this->assertEquals(200.00, Cart::total($userCart));
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_true_for_empty_guest_cart_after_clear()
     {
         $guestCart = Cart::guest('guest-session-10');
@@ -210,7 +211,7 @@ class GuestCartTest extends TestCase
         $this->assertTrue(Cart::isEmpty($guestCart));
     }
 
-    /** @test */
+    #[Test]
     public function multiple_guests_have_separate_carts()
     {
         $sessionId1 = 'guest-session-11';
@@ -229,7 +230,7 @@ class GuestCartTest extends TestCase
         $this->assertEquals(300.00, Cart::total($guestCart2));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_update_items_in_guest_cart()
     {
         $guestCart = Cart::guest('guest-session-13');
@@ -244,7 +245,7 @@ class GuestCartTest extends TestCase
         $this->assertEquals(250.00, $updated->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function guest_cart_expires_based_on_configuration()
     {
         $guestCart = Cart::guest('guest-session-14');

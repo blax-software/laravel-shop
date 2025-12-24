@@ -9,12 +9,13 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductStock;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductStockTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_creates_stock_record_on_increase()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -28,7 +29,7 @@ class ProductStockTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_stock_record_on_decrease()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -43,7 +44,7 @@ class ProductStockTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function stock_belongs_to_product()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -55,7 +56,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals($product->id, $stock->product->id);
     }
 
-    /** @test */
+    #[Test]
     public function product_has_many_stock_records()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -67,7 +68,7 @@ class ProductStockTest extends TestCase
         $this->assertCount(3, $product->stocks);
     }
 
-    /** @test */
+    #[Test]
     public function available_stock_considers_all_records()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -79,7 +80,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(60, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function claim_reduces_available_stock()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -90,7 +91,7 @@ class ProductStockTest extends TestCase
         $this->assertNotNull($claim);
     }
 
-    /** @test */
+    #[Test]
     public function releasing_claim_increases_available_stock()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -103,7 +104,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(100, $product->refresh()->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function permanent_claim_has_no_expiry()
     {
         $product = Product::factory()->withStocks(50)->create();
@@ -114,7 +115,7 @@ class ProductStockTest extends TestCase
         $this->assertTrue($claim->isPermanent());
     }
 
-    /** @test */
+    #[Test]
     public function temporary_claim_has_expiry()
     {
         $product = Product::factory()->withStocks(50)->create();
@@ -128,7 +129,7 @@ class ProductStockTest extends TestCase
         $this->assertTrue($claim->isTemporary());
     }
 
-    /** @test */
+    #[Test]
     public function claim_can_have_note()
     {
         $product = Product::factory()->withStocks(50)->create();
@@ -142,7 +143,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals($note, $claim->note);
     }
 
-    /** @test */
+    #[Test]
     public function cannot_claim_more_than_available()
     {
         $product = Product::factory()->withStocks(10)->create();
@@ -152,7 +153,7 @@ class ProductStockTest extends TestCase
         $product->claimStock(15);
     }
 
-    /** @test */
+    #[Test]
     public function pending_scope_returns_unreleased_claims()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -167,7 +168,7 @@ class ProductStockTest extends TestCase
         $this->assertFalse($pendingClaims->contains($released));
     }
 
-    /** @test */
+    #[Test]
     public function released_scope_returns_released_claims()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -182,7 +183,7 @@ class ProductStockTest extends TestCase
         $this->assertTrue($releasedClaims->contains($released));
     }
 
-    /** @test */
+    #[Test]
     public function expired_claims_dont_affect_available_stock()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -198,7 +199,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $available->count());
     }
 
-    /** @test */
+    #[Test]
     public function cannot_release_stock_twice()
     {
         $product = Product::factory()->withStocks(50)->create();
@@ -209,7 +210,7 @@ class ProductStockTest extends TestCase
         $this->assertFalse($claim->release());
     }
 
-    /** @test */
+    #[Test]
     public function stock_status_is_tracked()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -221,7 +222,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(StockStatus::COMPLETED, $stock->status);
     }
 
-    /** @test */
+    #[Test]
     public function product_without_stock_management_returns_max_stock()
     {
         $product = Product::factory()->create(['manage_stock' => false]);
@@ -231,7 +232,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(PHP_INT_MAX, $available);
     }
 
-    /** @test */
+    #[Test]
     public function product_without_stock_management_doesnt_create_records()
     {
         $product = Product::factory()->create(['manage_stock' => false]);
@@ -242,7 +243,7 @@ class ProductStockTest extends TestCase
         $this->assertCount(0, $product->stocks);
     }
 
-    /** @test */
+    #[Test]
     public function claim_without_stock_management_returns_null()
     {
         $product = Product::factory()->create(['manage_stock' => false]);
@@ -252,7 +253,7 @@ class ProductStockTest extends TestCase
         $this->assertNull($claim);
     }
 
-    /** @test */
+    #[Test]
     public function available_stocks_attribute_accessor_works()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -263,7 +264,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(40, $product->AvailableStocks);
     }
 
-    /** @test */
+    #[Test]
     public function claims_method_filters_active_only()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -277,7 +278,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals($active->id, $claims->first()->id);
     }
 
-    /** @test */
+    #[Test]
     public function can_adjust_stock()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -314,7 +315,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(25, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_claim_stock_with_claimed_from_date()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -333,7 +334,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $claim->expires_at->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_available_stock_on_a_date()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -358,7 +359,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(100, $availableOnDay12);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_handle_multiple_overlapping_claims_on_date()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -394,7 +395,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(100, $availableOnDay20);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_claims_without_claimed_from_as_immediately_claimed()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -418,7 +419,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(100, $availableOnDay12);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_permanent_claims_without_expires_at()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -442,7 +443,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(60, $availableOnDay100);
     }
 
-    /** @test */
+    #[Test]
     public function available_on_date_scope_filters_correctly()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -483,7 +484,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals($claim2->id, $claimsOnDay12->first()->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_claimed_stock_amount()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -496,7 +497,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(40, $product->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_checks_if_claim_is_active()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -510,7 +511,7 @@ class ProductStockTest extends TestCase
         $this->assertFalse($claim->fresh()->isActive());
     }
 
-    /** @test */
+    #[Test]
     public function it_releases_expired_claims()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -535,7 +536,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(StockStatus::PENDING, $activeClaim->fresh()->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_has_reference_relationship()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -552,7 +553,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(get_class($user), $claim->reference_type);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_return_stock_type()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -578,7 +579,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(5, $returnEntry->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function temporary_scope_filters_correctly()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -595,7 +596,7 @@ class ProductStockTest extends TestCase
         $this->assertFalse($permanentStocks->contains($temporary));
     }
 
-    /** @test */
+    #[Test]
     public function it_tracks_stock_with_custom_status()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -619,7 +620,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(50, $product->fresh()->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function backward_compatibility_accessors_work()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -643,7 +644,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals($claim->fresh()->updated_at->format('Y-m-d H:i:s'), $claim->fresh()->released_at->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_increase_type_affects_available_stock_correctly()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -667,7 +668,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(80, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_decrease_type_affects_available_stock_correctly()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -691,7 +692,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(65, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_return_type_affects_available_stock_correctly()
     {
         $product = Product::factory()->withStocks(50)->create();
@@ -708,7 +709,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(48, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_claimed_type_affects_available_and_claimed_stock_correctly()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -730,7 +731,7 @@ class ProductStockTest extends TestCase
         // Claimed stock shows the pending claim (always positive now)
         $this->assertEquals(25, $product->getCurrentlyClaimedStock());
     }
-    /** @test */
+    #[Test]
     public function adjust_stock_with_until_parameter_expires_correctly()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -752,7 +753,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(100, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_claimed_with_from_and_until_affects_availability_by_date()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -779,7 +780,7 @@ class ProductStockTest extends TestCase
         $availableOnDay12 = $product->availableOnDate(now()->addDays(12));
         $this->assertEquals(100, $availableOnDay12); // After claim expires
     }
-    /** @test */
+    #[Test]
     public function adjust_stock_multiple_claimed_types_accumulate_in_claimed_stock()
     {
         $product = Product::factory()->withStocks(200)->create();
@@ -806,7 +807,7 @@ class ProductStockTest extends TestCase
         // Total claimed stock (always positive)
         $this->assertEquals(70, $product->getCurrentlyClaimedStock());
     }
-    /** @test */
+    #[Test]
     public function adjust_stock_claimed_with_completed_status_does_not_count_as_claimed()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -827,7 +828,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $product->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_with_mixed_types_calculates_correctly()
     {
         $product = Product::factory()->create(['manage_stock' => true]);
@@ -859,7 +860,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(85, $product->getAvailableStock());
         $this->assertEquals(30, $product->getCurrentlyClaimedStock());
     }
-    /** @test */
+    #[Test]
     public function adjust_stock_claimed_without_from_is_immediately_active()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -883,7 +884,7 @@ class ProductStockTest extends TestCase
         $availableAfter = $product->availableOnDate(now()->addDays(11));
         $this->assertEquals(100, $availableAfter);
     }
-    /** @test */
+    #[Test]
     public function adjust_stock_claimed_without_until_is_permanent_claim()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -907,7 +908,7 @@ class ProductStockTest extends TestCase
         $availableOnDay100 = $product->availableOnDate(now()->addDays(100));
         $this->assertEquals(65, $availableOnDay100);
     }
-    /** @test */
+    #[Test]
     public function adjust_stock_with_overlapping_claimed_periods_calculates_correctly()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -970,7 +971,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(50, $product->getActiveAndPlannedClaimedStock());
         $this->assertEquals(0, $product->getFutureClaimedStock());
     }
-    /** @test */
+    #[Test]
     public function adjust_stock_with_note_and_reference_tracks_correctly()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -996,7 +997,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(get_class($user), $claim->reference_type);
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_expired_claims_dont_affect_current_availability()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1020,7 +1021,7 @@ class ProductStockTest extends TestCase
         $this->assertCount(0, $activeClaims);
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_releasing_claimed_updates_calculations()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1049,7 +1050,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(100, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function stock_claim_creates_correct_transactions()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1083,7 +1084,7 @@ class ProductStockTest extends TestCase
         $this->assertNotNull($claimedEntry->expires_at);
     }
 
-    /** @test */
+    #[Test]
     public function claimed_stock_reduces_available_and_increases_claimed()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1111,7 +1112,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(50, $product->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function expired_claims_automatically_restore_available_stock()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1141,7 +1142,7 @@ class ProductStockTest extends TestCase
         // No manual release() was called!
     }
 
-    /** @test */
+    #[Test]
     public function multiple_claims_with_different_expirations_restore_progressively()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1169,7 +1170,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $product->getCurrentlyClaimedStock());     // No claims
     }
 
-    /** @test */
+    #[Test]
     public function permanent_claims_without_expiration_never_auto_restore()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1201,7 +1202,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $product->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function adjust_stock_claimed_also_auto_restores_after_expiration()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1225,7 +1226,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $product->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function claimed_stock_transactions_maintain_data_integrity()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1270,7 +1271,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(35, $allClaimed);
     }
 
-    /** @test */
+    #[Test]
     public function can_get_all_stocks_including_pending_and_expired()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1314,7 +1315,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $product->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function get_claimed_stock_returns_active_pending_claims_only()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1340,7 +1341,7 @@ class ProductStockTest extends TestCase
         $this->assertCount(4, $allClaims);
     }
 
-    /** @test */
+    #[Test]
     public function get_claimed_stock_excludes_released_claims()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -1364,7 +1365,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $product->fresh()->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function get_claimed_stock_accounts_for_claim_expiration()
     {
         $product = Product::factory()->withStocks(200)->create();
@@ -1390,7 +1391,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(30, $product->fresh()->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function get_total_planned_claimed_stock_includes_future_claims()
     {
         $product = Product::factory()->withStocks(300)->create();
@@ -1413,7 +1414,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(25, $product->getCurrentlyClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function get_total_planned_claimed_stock_excludes_expired_claims()
     {
         $product = Product::factory()->withStocks(200)->create();
@@ -1427,7 +1428,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(90, $product->getActiveAndPlannedClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function get_total_planned_claimed_stock_excludes_released_claims()
     {
         $product = Product::factory()->withStocks(200)->create();
@@ -1452,7 +1453,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(25, $product->fresh()->getActiveAndPlannedClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function get_future_claimed_stock_without_from_date_parameter()
     {
         $product = Product::factory()->withStocks(300)->create();
@@ -1480,7 +1481,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $product->fresh()->getFutureClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function get_future_claimed_stock_with_from_date_parameter()
     {
         $product = Product::factory()->withStocks(300)->create();
@@ -1504,7 +1505,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(0, $fromDay20);
     }
 
-    /** @test */
+    #[Test]
     public function get_future_claimed_stock_excludes_expired_claims()
     {
         $product = Product::factory()->withStocks(300)->create();
@@ -1527,7 +1528,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(50, $product->fresh()->getFutureClaimedStock());
     }
 
-    /** @test */
+    #[Test]
     public function claimed_stock_methods_work_together()
     {
         $product = Product::factory()->withStocks(500)->create();
@@ -1559,7 +1560,7 @@ class ProductStockTest extends TestCase
         $this->assertEquals(115, $product->fresh()->getFutureClaimedStock()); // future ones unchanged
     }
 
-    /** @test */
+    #[Test]
     public function claimed_stock_methods_return_zero_for_unmanaged_stock()
     {
         $product = Product::factory()->create(['manage_stock' => false]);

@@ -3,15 +3,14 @@
 namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Enums\ProductType;
-use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
-use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Test stock validation during checkout process.
@@ -89,7 +88,7 @@ class CheckoutStockValidationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function validate_for_checkout_checks_stock_availability()
     {
         $this->createPoolWithManagedStock();
@@ -113,7 +112,7 @@ class CheckoutStockValidationTest extends TestCase
         $this->assertFalse($this->cart->fresh()->validateForCheckout(false));
     }
 
-    /** @test */
+    #[Test]
     public function validate_for_checkout_fails_for_out_of_stock_items()
     {
         $this->createPoolWithManagedStock();
@@ -134,7 +133,7 @@ class CheckoutStockValidationTest extends TestCase
         $this->assertFalse($this->cart->validateForCheckout(false));
     }
 
-    /** @test */
+    #[Test]
     public function validate_for_checkout_fails_for_converted_cart()
     {
         $this->createPoolWithManagedStock();
@@ -152,7 +151,7 @@ class CheckoutStockValidationTest extends TestCase
         $this->assertFalse($this->cart->fresh()->validateForCheckout(false));
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_returns_null_for_converted_cart()
     {
         $this->createPoolWithManagedStock();
@@ -170,7 +169,7 @@ class CheckoutStockValidationTest extends TestCase
         $this->assertFalse($this->cart->fresh()->validateForCheckout(false));
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_returns_null_for_out_of_stock()
     {
         $this->createPoolWithManagedStock();
@@ -190,7 +189,7 @@ class CheckoutStockValidationTest extends TestCase
         $this->assertFalse($this->cart->fresh()->validateForCheckout(false));
     }
 
-    /** @test */
+    #[Test]
     public function different_date_ranges_allow_booking_same_items()
     {
         $this->createPoolWithManagedStock();
@@ -215,7 +214,7 @@ class CheckoutStockValidationTest extends TestCase
         $this->assertTrue($cart2->validateForCheckout(false));
     }
 
-    /** @test */
+    #[Test]
     public function overlapping_dates_block_double_booking()
     {
         $this->createPoolWithManagedStock();
@@ -245,7 +244,7 @@ class CheckoutStockValidationTest extends TestCase
         $cart2->addToCart($this->pool, 1, [], $from2, $until2);
     }
 
-    /** @test */
+    #[Test]
     public function partial_stock_allows_partial_booking()
     {
         $this->createPoolWithManagedStock();

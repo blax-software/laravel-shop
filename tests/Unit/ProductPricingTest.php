@@ -5,12 +5,14 @@ namespace Blax\Shop\Tests\Unit;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
+
 
 class ProductPricingTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_returns_regular_price_when_not_on_sale()
     {
         $product = Product::factory()->withPrices(2, 100)->create();
@@ -21,7 +23,7 @@ class ProductPricingTest extends TestCase
         $this->assertEquals(100, $product->getCurrentPrice());
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_sale_price_when_on_sale()
     {
         $product = Product::factory()
@@ -39,7 +41,7 @@ class ProductPricingTest extends TestCase
         $this->assertEquals(80, $product->getCurrentPrice());
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_regular_price_when_sale_has_ended()
     {
         $product = Product::factory()->withPrices(1, 100)->create([
@@ -48,7 +50,7 @@ class ProductPricingTest extends TestCase
         ]);
 
         $price = $product->prices()->first();
-        $price->sale_unit_amount = 80;        
+        $price->sale_unit_amount = 80;
         $price->save();
 
         $this->assertEquals(80, $product->getCurrentPrice());
@@ -60,7 +62,7 @@ class ProductPricingTest extends TestCase
         $this->assertEquals(100, $product->getCurrentPrice());
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_regular_price_when_sale_hasnt_started()
     {
         $product = Product::factory()->withPrices(1, 100)->create([
@@ -69,7 +71,7 @@ class ProductPricingTest extends TestCase
         ]);
 
         $price = $product->prices()->first();
-        $price->sale_unit_amount = 80;        
+        $price->sale_unit_amount = 80;
         $price->save();
 
         $this->assertEquals(100, $product->getCurrentPrice());

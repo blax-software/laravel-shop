@@ -7,8 +7,8 @@ use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
-use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests for cart item validation when dates change and items become unavailable.
@@ -84,7 +84,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         return $pool;
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_with_null_price_is_not_ready_for_checkout()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -105,7 +105,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->assertFalse($this->cart->fresh()->is_ready_to_checkout, 'Cart with null-price item should not be ready');
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_with_zero_price_is_not_ready_for_checkout()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -126,7 +126,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->assertFalse($this->cart->fresh()->is_ready_to_checkout, 'Cart with 0-price item should not be ready');
     }
 
-    /** @test */
+    #[Test]
     public function unallocated_pool_item_with_null_price_is_not_ready_for_checkout()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -158,7 +158,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->assertFalse($this->cart->fresh()->is_ready_to_checkout, 'Cart with unavailable item should not be ready');
     }
 
-    /** @test */
+    #[Test]
     public function setDates_does_not_throw_when_items_become_unavailable()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -195,7 +195,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function partial_availability_marks_some_items_unavailable()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -244,7 +244,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->assertFalse($this->cart->is_ready_to_checkout, 'Cart with unavailable items should not be ready');
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_without_allocated_single_for_pool_is_not_ready()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -266,7 +266,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->assertTrue($this->cart->fresh()->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function removing_unavailable_items_makes_cart_ready()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -293,7 +293,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->assertTrue($this->cart->fresh()->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function getItemsRequiringAdjustments_includes_null_price_items()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -330,7 +330,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->assertEquals('unavailable', $adjustments['price']);
     }
 
-    /** @test */
+    #[Test]
     public function changing_dates_to_available_period_makes_items_available_again()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -371,7 +371,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->assertTrue($this->cart->is_ready_to_checkout, 'Cart should be ready after changing to available dates');
     }
 
-    /** @test */
+    #[Test]
     public function checkout_throws_when_items_are_unavailable()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -388,7 +388,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->cart->checkout();
     }
 
-    /** @test */
+    #[Test]
     public function checkoutSessionLink_throws_when_items_have_null_price()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -408,7 +408,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->cart->checkoutSessionLink();
     }
 
-    /** @test */
+    #[Test]
     public function checkoutSessionLink_throws_when_items_have_zero_price()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -428,7 +428,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         $this->cart->checkoutSessionLink();
     }
 
-    /** @test */
+    #[Test]
     public function pool_items_maintain_consistent_pricing_after_date_changes()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
@@ -460,7 +460,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function price_zero_is_treated_as_unavailable()
     {
         $pool = $this->createPoolWithLimitedSingles(3);

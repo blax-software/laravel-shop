@@ -10,6 +10,7 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolProductPriceIdTest extends TestCase
 {
@@ -79,7 +80,7 @@ class PoolProductPriceIdTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_single_item_price_id_when_adding_pool_to_cart_with_lowest_strategy()
     {
         // Set pricing strategy to lowest (default)
@@ -94,7 +95,7 @@ class PoolProductPriceIdTest extends TestCase
         $this->assertEquals(2000, $cartItem->price); // $20
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_correct_price_id_for_second_pool_item_with_progressive_pricing()
     {
         // Set pricing strategy to lowest
@@ -111,7 +112,7 @@ class PoolProductPriceIdTest extends TestCase
         $this->assertEquals(5000, $cartItem2->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_single_item_price_id_with_highest_strategy()
     {
         // Set pricing strategy to highest
@@ -126,7 +127,7 @@ class PoolProductPriceIdTest extends TestCase
         $this->assertEquals(5000, $cartItem->price); // $50
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_allocated_single_item_in_meta()
     {
         // Set pricing strategy to lowest
@@ -142,7 +143,7 @@ class PoolProductPriceIdTest extends TestCase
         $this->assertEquals($this->singleItem1->name, $meta->allocated_single_item_name);
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_different_single_items_in_meta_for_progressive_pricing()
     {
         // Set pricing strategy to lowest
@@ -159,7 +160,7 @@ class PoolProductPriceIdTest extends TestCase
         $this->assertEquals($this->singleItem2->id, $meta2->allocated_single_item_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_pool_price_id_when_pool_has_direct_price_and_no_single_item_prices()
     {
         // Remove prices from single items
@@ -193,7 +194,7 @@ class PoolProductPriceIdTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_price_id_with_average_pricing_strategy()
     {
         // Set pricing strategy to average
@@ -213,7 +214,7 @@ class PoolProductPriceIdTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_correct_price_id_with_booking_dates()
     {
         // Set pricing strategy to lowest

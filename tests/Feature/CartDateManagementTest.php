@@ -3,7 +3,6 @@
 namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Exceptions\InvalidDateRangeException;
-use Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
@@ -11,10 +10,11 @@ use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Enums\PriceType;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartDateManagementTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function it_can_set_cart_dates()
     {
         $cart = Cart::factory()->create();
@@ -28,7 +28,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_dates_as_provided_even_if_backwards()
     {
         $cart = Cart::factory()->create();
@@ -44,7 +44,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_from_date_individually()
     {
         $cart = Cart::factory()->create();
@@ -56,7 +56,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($from->toDateTimeString(), $cart->from->toDateTimeString());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_until_date_individually()
     {
         $cart = Cart::factory()->create();
@@ -68,7 +68,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_from_date_even_if_after_existing_until_date()
     {
         $until = Carbon::now()->addDays(2);
@@ -85,7 +85,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_until_date_even_if_before_existing_from_date()
     {
         $from = Carbon::now()->addDays(3);
@@ -102,7 +102,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($until->toDateTimeString(), $cart->until->toDateTimeString());
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_uses_own_dates_when_set()
     {
         $product = Product::factory()->create([
@@ -133,7 +133,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($itemUntilDate->toDateString(), $item->getEffectiveUntilDate()->toDateString());
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_falls_back_to_cart_dates_when_no_own_dates()
     {
         $product = Product::factory()->create([
@@ -163,7 +163,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($cartUntilDate->toDateString(), $item->getEffectiveUntilDate()->toDateString());
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_returns_null_when_no_dates_available()
     {
         $product = Product::factory()->create([
@@ -187,7 +187,7 @@ class CartDateManagementTest extends TestCase
         $this->assertFalse($item->hasEffectiveDates());
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_has_effective_dates_returns_true_when_dates_are_set()
     {
         $product = Product::factory()->create([
@@ -213,7 +213,7 @@ class CartDateManagementTest extends TestCase
         $this->assertTrue($item->hasEffectiveDates());
     }
 
-    /** @test */
+    #[Test]
     public function apply_dates_to_items_sets_dates_on_items_without_dates()
     {
         $product = Product::factory()->create([
@@ -248,7 +248,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($untilDate->toDateString(), $item->until->toDateString());
     }
 
-    /** @test */
+    #[Test]
     public function apply_dates_to_items_does_not_override_existing_item_dates()
     {
         $product = Product::factory()->create([
@@ -283,7 +283,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($itemUntilDate->toDateString(), $item->until->toDateString());
     }
 
-    /** @test */
+    #[Test]
     public function apply_dates_to_items_overwrites_when_overwrite_is_true()
     {
         $product = Product::factory()->create([
@@ -318,7 +318,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($cartUntilDate->toDateString(), $item->until->toDateString());
     }
 
-    /** @test */
+    #[Test]
     public function apply_dates_to_items_fills_only_null_from_date_when_overwrite_false()
     {
         $product = Product::factory()->create([
@@ -354,7 +354,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($itemUntilDate->toDateString(), $item->until->toDateString());
     }
 
-    /** @test */
+    #[Test]
     public function apply_dates_to_items_fills_only_null_until_date_when_overwrite_false()
     {
         $product = Product::factory()->create([
@@ -390,7 +390,7 @@ class CartDateManagementTest extends TestCase
         $this->assertEquals($cartUntilDate->toDateString(), $item->until->toDateString());
     }
 
-    /** @test */
+    #[Test]
     public function is_ready_to_checkout_uses_cart_fallback_dates()
     {
         $product = Product::factory()->create([
@@ -417,7 +417,7 @@ class CartDateManagementTest extends TestCase
         $this->assertTrue($item->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_set_from_date_throws_invalid_date_range_exception()
     {
         $product = Product::factory()->create([
@@ -442,7 +442,7 @@ class CartDateManagementTest extends TestCase
         $item->setFromDate(Carbon::now()->addDays(3));
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_set_until_date_throws_invalid_date_range_exception()
     {
         $product = Product::factory()->create([
@@ -467,7 +467,7 @@ class CartDateManagementTest extends TestCase
         $item->setUntilDate(Carbon::now()->addDays(2));
     }
 
-    /** @test */
+    #[Test]
     public function validate_date_availability_marks_items_unavailable_when_product_not_available()
     {
         $product = Product::factory()->create([
@@ -499,7 +499,7 @@ class CartDateManagementTest extends TestCase
         $this->assertFalse($item->is_ready_to_checkout, 'Unavailable item should not be ready for checkout');
     }
 
-    /** @test */
+    #[Test]
     public function apply_dates_to_items_marks_items_unavailable_when_product_not_available()
     {
         $product = Product::factory()->create([
@@ -538,7 +538,7 @@ class CartDateManagementTest extends TestCase
         $this->assertFalse($item->is_ready_to_checkout, 'Unavailable item should not be ready for checkout');
     }
 
-    /** @test */
+    #[Test]
     public function can_skip_validation_when_setting_dates()
     {
         $product = Product::factory()->create([

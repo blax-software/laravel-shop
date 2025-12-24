@@ -11,6 +11,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductPricingValidationTest extends TestCase
 {
@@ -25,7 +26,7 @@ class ProductPricingValidationTest extends TestCase
         auth()->login($this->user);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_product_has_no_prices()
     {
         $product = Product::factory()->create([
@@ -39,7 +40,7 @@ class ProductPricingValidationTest extends TestCase
         Cart::add($product, 1);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_product_has_multiple_prices_but_no_default()
     {
         $product = Product::factory()->create([
@@ -68,7 +69,7 @@ class ProductPricingValidationTest extends TestCase
         Cart::add($product, 1);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_product_has_single_price_not_marked_as_default()
     {
         $product = Product::factory()->create([
@@ -89,7 +90,7 @@ class ProductPricingValidationTest extends TestCase
         Cart::add($product, 1);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_product_has_multiple_default_prices()
     {
         $product = Product::factory()->create([
@@ -125,7 +126,7 @@ class ProductPricingValidationTest extends TestCase
         Cart::add($product, 1);
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_adding_product_with_valid_default_price()
     {
         $product = Product::factory()->create([
@@ -148,7 +149,7 @@ class ProductPricingValidationTest extends TestCase
         $this->assertEquals($product->id, $cartItem->purchasable_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_product_with_one_default_and_multiple_non_default_prices()
     {
         $product = Product::factory()->create([
@@ -187,7 +188,7 @@ class ProductPricingValidationTest extends TestCase
         $this->assertEquals($product->id, $cartItem->purchasable_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_pool_has_no_price_and_single_items_have_no_prices()
     {
         $pool = Product::factory()->create([
@@ -213,7 +214,7 @@ class ProductPricingValidationTest extends TestCase
         Cart::add($pool, 1);
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_pool_with_no_direct_price_but_single_items_have_prices()
     {
         $pool = Product::factory()->create([
@@ -246,7 +247,7 @@ class ProductPricingValidationTest extends TestCase
         $this->assertEquals($pool->id, $cartItem->purchasable_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_pool_with_direct_price_even_if_single_items_have_no_prices()
     {
         $pool = Product::factory()->create([
@@ -279,7 +280,7 @@ class ProductPricingValidationTest extends TestCase
         $this->assertEquals($pool->id, $cartItem->purchasable_id);
     }
 
-    /** @test */
+    #[Test]
     public function validate_pricing_returns_errors_array_without_throwing()
     {
         $product = Product::factory()->create([
@@ -294,7 +295,7 @@ class ProductPricingValidationTest extends TestCase
         $this->assertStringContainsString('no prices', $result['errors'][0]);
     }
 
-    /** @test */
+    #[Test]
     public function validate_pricing_with_valid_price_returns_valid()
     {
         $product = Product::factory()->create([

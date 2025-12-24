@@ -6,11 +6,11 @@ use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Models\ProductPurchase;
-use Blax\Shop\Models\Cart;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
 use Carbon\Carbon;
+use PHPUnit\Framework\Attributes\Test;
 
 class BookingFeatureTest extends TestCase
 {
@@ -48,7 +48,7 @@ class BookingFeatureTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_booking_product()
     {
         $this->assertNotNull($this->bookingProduct);
@@ -56,7 +56,7 @@ class BookingFeatureTest extends TestCase
         $this->assertTrue($this->bookingProduct->isBooking());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_purchase_a_booking_with_dates()
     {
         $from = Carbon::now()->addDays(1);
@@ -77,7 +77,7 @@ class BookingFeatureTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $purchase->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_booking_without_dates()
     {
         $this->expectException(\Exception::class);
@@ -86,7 +86,7 @@ class BookingFeatureTest extends TestCase
         $this->user->purchase($this->price, 1);
     }
 
-    /** @test */
+    #[Test]
     public function it_decreases_stock_for_booking_duration()
     {
         $from = Carbon::now()->addDays(1);
@@ -108,7 +108,7 @@ class BookingFeatureTest extends TestCase
         $this->assertEquals($initialStock - 2, $remainingStock);
     }
 
-    /** @test */
+    #[Test]
     public function it_releases_stock_after_booking_period()
     {
         $from = Carbon::now()->subDays(3);
@@ -134,7 +134,7 @@ class BookingFeatureTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $claim->expires_at->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_booking_availability()
     {
         $from = Carbon::now()->addDays(5);
@@ -147,7 +147,7 @@ class BookingFeatureTest extends TestCase
         $this->assertFalse($this->bookingProduct->isAvailableForBooking($from, $until, 15));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_booking_to_cart_with_dates()
     {
         $cart = $this->user->currentCart();
@@ -172,7 +172,7 @@ class BookingFeatureTest extends TestCase
         $this->assertEquals($until->toDateTimeString(), $cartItem->parameters['until']);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_checkout_cart_with_booking_product()
     {
         $cart = $this->user->currentCart();
@@ -207,7 +207,7 @@ class BookingFeatureTest extends TestCase
         $this->assertEquals($initialStock - 2, $this->bookingProduct->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_prevents_overbooking()
     {
         $from = Carbon::now()->addDays(20);
@@ -234,7 +234,7 @@ class BookingFeatureTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_booking_purchases()
     {
         $from = Carbon::now()->addDays(25);
@@ -267,7 +267,7 @@ class BookingFeatureTest extends TestCase
         $this->assertTrue($bookingPurchases->first()->isBooking());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_ended_bookings()
     {
         $pastFrom = Carbon::now()->subDays(5);
@@ -302,7 +302,7 @@ class BookingFeatureTest extends TestCase
         $this->assertFalse($futurePurchase->isBookingEnded());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_booking_products()
     {
         // Create regular product
@@ -315,7 +315,7 @@ class BookingFeatureTest extends TestCase
         $this->assertEquals($this->bookingProduct->id, $bookingProducts->first()->id);
     }
 
-    /** @test */
+    #[Test]
     public function booking_stock_expires_after_until_date()
     {
         $from = Carbon::now()->addDays(1);
@@ -340,7 +340,7 @@ class BookingFeatureTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $stockRecord->expires_at->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function multiple_bookings_with_different_dates_work_independently()
     {
         $booking1From = Carbon::now()->addDays(1);

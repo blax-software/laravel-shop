@@ -6,10 +6,10 @@ use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Enums\ProductType;
-use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Exceptions\HasNoPriceException;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolProductPricingFlexibilityTest extends TestCase
 {
@@ -23,7 +23,7 @@ class PoolProductPricingFlexibilityTest extends TestCase
         $this->user = \Workbench\App\Models\User::factory()->create();
     }
 
-    /** @test */
+    #[Test]
     public function pool_without_direct_price_uses_single_item_prices()
     {
         $pool = Product::factory()->create([
@@ -64,7 +64,7 @@ class PoolProductPricingFlexibilityTest extends TestCase
         $this->assertEquals(5000, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_validation_does_not_throw_when_single_items_have_prices()
     {
         $pool = Product::factory()->create([
@@ -99,7 +99,7 @@ class PoolProductPricingFlexibilityTest extends TestCase
         $this->assertStringContainsString('inherited pricing', $result['warnings'][0]);
     }
 
-    /** @test */
+    #[Test]
     public function pool_validation_warns_when_no_prices_available_but_does_not_throw()
     {
         $pool = Product::factory()->create([
@@ -126,7 +126,7 @@ class PoolProductPricingFlexibilityTest extends TestCase
         $this->assertStringContainsString('Price will be needed when adding to cart', $result['warnings'][0]);
     }
 
-    /** @test */
+    #[Test]
     public function pool_throws_exception_only_when_adding_to_cart_without_any_prices()
     {
         $pool = Product::factory()->create([
@@ -157,7 +157,7 @@ class PoolProductPricingFlexibilityTest extends TestCase
         $cart->addToCart($pool, 1);
     }
 
-    /** @test */
+    #[Test]
     public function pool_with_direct_price_used_as_fallback_when_single_items_have_no_prices()
     {
         $pool = Product::factory()->create([
@@ -190,7 +190,7 @@ class PoolProductPricingFlexibilityTest extends TestCase
         $this->assertEquals(4000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_prefers_single_item_prices_over_direct_price()
     {
         $pool = Product::factory()->create([
@@ -231,7 +231,7 @@ class PoolProductPricingFlexibilityTest extends TestCase
         $this->assertEquals(5000, $price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_can_be_created_without_price_if_single_items_will_have_prices()
     {
         // This test verifies that pools can exist in a "not fully configured" state
@@ -278,7 +278,7 @@ class PoolProductPricingFlexibilityTest extends TestCase
         $this->assertEquals(5000, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function pool_uses_pricing_strategy_with_multiple_single_item_prices()
     {
         $pool = Product::factory()->create([

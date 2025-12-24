@@ -8,12 +8,14 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
+
 
 class CartTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function cart_can_add_product_price_directly()
     {
         $cart = Cart::create();
@@ -27,7 +29,7 @@ class CartTest extends TestCase
         $this->assertEquals(100.00, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function cart_calculates_subtotal_automatically()
     {
         $cart = Cart::create();
@@ -39,7 +41,7 @@ class CartTest extends TestCase
         $this->assertEquals(150.00, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function cart_respects_sale_prices()
     {
         $cart = Cart::create();
@@ -72,7 +74,7 @@ class CartTest extends TestCase
         $this->assertEquals(100.00, $cartItem->regular_price);
     }
 
-    /** @test */
+    #[Test]
     public function cart_can_add_items_with_custom_parameters()
     {
         $cart = Cart::create();
@@ -92,7 +94,7 @@ class CartTest extends TestCase
         $this->assertEquals('Custom text', $cartItem->parameters['engraving']);
     }
 
-    /** @test */
+    #[Test]
     public function cart_total_sums_all_items()
     {
         $cart = Cart::create();
@@ -111,7 +113,7 @@ class CartTest extends TestCase
         $this->assertEquals(200.00, $total);
     }
 
-    /** @test */
+    #[Test]
     public function cart_tracks_last_activity()
     {
         $cart = Cart::create([
@@ -122,7 +124,7 @@ class CartTest extends TestCase
         $this->assertTrue($cart->last_activity_at->isPast());
     }
 
-    /** @test */
+    #[Test]
     public function cart_can_be_converted()
     {
         $cart = Cart::create();
@@ -134,7 +136,7 @@ class CartTest extends TestCase
         $this->assertTrue($cart->fresh()->isConverted());
     }
 
-    /** @test */
+    #[Test]
     public function active_scope_filters_correctly()
     {
         // Active cart (not expired, not converted)
@@ -166,7 +168,7 @@ class CartTest extends TestCase
         $this->assertCount(2, $active);
     }
 
-    /** @test */
+    #[Test]
     public function cart_deletes_items_on_deletion()
     {
         $cart = Cart::create();
@@ -183,7 +185,7 @@ class CartTest extends TestCase
         $this->assertDatabaseMissing('cart_items', ['id' => $cartItemId]);
     }
 
-    /** @test */
+    #[Test]
     public function cart_can_have_currency()
     {
         $cart = Cart::create([
@@ -193,7 +195,7 @@ class CartTest extends TestCase
         $this->assertEquals('EUR', $cart->currency);
     }
 
-    /** @test */
+    #[Test]
     public function cart_can_have_status()
     {
         $cart = Cart::create([
@@ -207,7 +209,7 @@ class CartTest extends TestCase
         $this->assertEquals(CartStatus::CONVERTED, $cart->fresh()->status);
     }
 
-    /** @test */
+    #[Test]
     public function cart_can_store_metadata()
     {
         $cart = Cart::create([
@@ -221,7 +223,7 @@ class CartTest extends TestCase
         $this->assertEquals('Gift wrapped', $cart->meta->notes);
     }
 
-    /** @test */
+    #[Test]
     public function cart_can_have_session_id()
     {
         $sessionId = 'sess_' . str()->random(40);
@@ -233,7 +235,7 @@ class CartTest extends TestCase
         $this->assertEquals($sessionId, $cart->session_id);
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_throws_when_stripe_disabled()
     {
         config(['shop.stripe.enabled' => false]);
@@ -245,7 +247,7 @@ class CartTest extends TestCase
         $cart->checkoutSessionLink();
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_throws_when_cart_empty()
     {
         config(['shop.stripe.enabled' => true]);
@@ -257,7 +259,7 @@ class CartTest extends TestCase
         $cart->checkoutSessionLink();
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_throws_when_cart_empty_even_with_meta()
     {
         config(['shop.stripe.enabled' => true]);
@@ -271,7 +273,7 @@ class CartTest extends TestCase
         $cart->checkoutSessionLink();
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_returns_false_on_stripe_error()
     {
         config(['shop.stripe.enabled' => true]);
@@ -292,7 +294,7 @@ class CartTest extends TestCase
         $this->assertNotNull($returnType);
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_returns_null_when_session_not_found()
     {
         config(['shop.stripe.enabled' => true]);
@@ -307,7 +309,7 @@ class CartTest extends TestCase
         $this->assertTrue(method_exists($cart, 'checkoutSessionLink'));
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_handles_meta_as_array()
     {
         config(['shop.stripe.enabled' => true]);
@@ -320,7 +322,7 @@ class CartTest extends TestCase
         $this->assertEquals('cs_test_123', $cart->meta->stripe_session_id);
     }
 
-    /** @test */
+    #[Test]
     public function checkout_session_link_handles_meta_as_object()
     {
         config(['shop.stripe.enabled' => true]);

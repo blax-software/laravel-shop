@@ -9,6 +9,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartCheckoutSessionTest extends TestCase
 {
@@ -28,7 +29,7 @@ class CartCheckoutSessionTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_stripe_is_disabled()
     {
         config(['shop.stripe.enabled' => false]);
@@ -50,7 +51,7 @@ class CartCheckoutSessionTest extends TestCase
         $this->cart->checkoutSession();
     }
 
-    /** @test */
+    #[Test]
     public function it_builds_checkout_session_with_simple_product_without_stripe_api()
     {
         // Enable Stripe but don't actually call the API
@@ -87,7 +88,7 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertEquals('mock_session_id', $session->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_short_description_for_product_name_if_available()
     {
         config(['shop.stripe.enabled' => true]);
@@ -127,7 +128,7 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertEquals('Short Name', $sessionParams['line_items'][0]['price_data']['product_data']['name']);
     }
 
-    /** @test */
+    #[Test]
     public function it_includes_booking_dates_in_product_name()
     {
         config(['shop.stripe.enabled' => true]);
@@ -174,7 +175,7 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertStringContainsString('to', $productName);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_correct_unit_amount_in_cents()
     {
         config(['shop.stripe.enabled' => true]);
@@ -210,7 +211,7 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertEquals(2550, $sessionParams['line_items'][0]['price_data']['unit_amount']);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_booking_with_fractional_days()
     {
         config(['shop.stripe.enabled' => true]);
@@ -258,7 +259,7 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertEquals($cartItem->price, $sessionParams['line_items'][0]['price_data']['unit_amount']);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_separate_line_items_for_multiple_products()
     {
         config(['shop.stripe.enabled' => true]);
@@ -305,7 +306,7 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertEquals(1, $sessionParams['line_items'][1]['quantity']);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_configured_currency()
     {
         config(['shop.stripe.enabled' => true]);
@@ -341,7 +342,7 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertEquals('eur', $sessionParams['line_items'][0]['price_data']['currency']);
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_session_id_in_cart_meta()
     {
         config(['shop.stripe.enabled' => true]);

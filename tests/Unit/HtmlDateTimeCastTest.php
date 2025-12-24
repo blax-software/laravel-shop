@@ -3,14 +3,15 @@
 namespace Blax\Shop\Tests\Unit;
 
 use Blax\Shop\Models\Cart;
-use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
+use PHPUnit\Framework\Attributes\Test;
+
 
 class HtmlDateTimeCastTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function it_accepts_carbon_instance_and_stores_as_timestamp()
     {
         $cart = Cart::factory()->create();
@@ -27,7 +28,7 @@ class HtmlDateTimeCastTest extends TestCase
         $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_accepts_datetime_interface_and_stores_as_timestamp()
     {
         $cart = Cart::factory()->create();
@@ -42,7 +43,7 @@ class HtmlDateTimeCastTest extends TestCase
         $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_accepts_string_and_stores_as_timestamp()
     {
         $cart = Cart::factory()->create();
@@ -57,7 +58,7 @@ class HtmlDateTimeCastTest extends TestCase
         $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_accepts_html5_datetime_local_format()
     {
         $cart = Cart::factory()->create();
@@ -72,7 +73,7 @@ class HtmlDateTimeCastTest extends TestCase
         $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_format_for_html5_input()
     {
         $cart = Cart::factory()->create();
@@ -86,7 +87,7 @@ class HtmlDateTimeCastTest extends TestCase
         $this->assertEquals('2025-12-25T14:30', $htmlFormat);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_null_values()
     {
         $cart = Cart::factory()->create();
@@ -98,7 +99,7 @@ class HtmlDateTimeCastTest extends TestCase
         $this->assertNull($cart->from);
     }
 
-    /** @test */
+    #[Test]
     public function it_works_with_cart_items()
     {
         $product = Product::factory()->create();
@@ -122,7 +123,7 @@ class HtmlDateTimeCastTest extends TestCase
         $this->assertEquals('2025-12-27T10:00', $item->until->format('Y-m-d\TH:i'));
     }
 
-    /** @test */
+    #[Test]
     public function it_accepts_unix_timestamp()
     {
         $cart = Cart::factory()->create();
@@ -137,7 +138,7 @@ class HtmlDateTimeCastTest extends TestCase
         $this->assertEquals('2025-12-25 14:30:00', $cart->from->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_maintains_carbon_methods()
     {
         $cart = Cart::factory()->create();

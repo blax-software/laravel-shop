@@ -7,8 +7,8 @@ use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
-use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests to ensure pool products cannot exceed available single items
@@ -75,7 +75,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         return $pool;
     }
 
-    /** @test */
+    #[Test]
     public function cannot_add_more_items_than_available_singles_without_dates()
     {
         $pool = $this->createPoolWith7Singles();
@@ -94,7 +94,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         $this->cart->addToCart($pool, 1);
     }
 
-    /** @test */
+    #[Test]
     public function cannot_add_more_items_than_available_singles_with_dates()
     {
         $pool = $this->createPoolWith7Singles();
@@ -116,7 +116,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         $this->cart->addToCart($pool, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function cannot_add_batch_exceeding_available_singles_without_dates()
     {
         $pool = $this->createPoolWith7Singles();
@@ -128,7 +128,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         $this->cart->addToCart($pool, 8);
     }
 
-    /** @test */
+    #[Test]
     public function cannot_add_batch_exceeding_available_singles_with_dates()
     {
         $pool = $this->createPoolWith7Singles();
@@ -143,7 +143,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         $this->cart->addToCart($pool, 8, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function adding_items_without_dates_then_adding_more_validates_correctly()
     {
         $pool = $this->createPoolWith7Singles();
@@ -161,7 +161,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         $this->cart->addToCart($pool, 1);
     }
 
-    /** @test */
+    #[Test]
     public function checkoutSessionLink_throws_exception_when_cart_invalid()
     {
         $pool = $this->createPoolWith7Singles();
@@ -177,7 +177,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         $this->cart->checkoutSessionLink();
     }
 
-    /** @test */
+    #[Test]
     public function checkoutSessionLink_throws_exception_when_not_enough_stock()
     {
         $pool = $this->createPoolWith7Singles();
@@ -204,7 +204,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         $this->cart->fresh()->checkoutSessionLink();
     }
 
-    /** @test */
+    #[Test]
     public function cart_aware_validation_accounts_for_items_already_in_cart()
     {
         $pool = $this->createPoolWith7Singles();
@@ -229,7 +229,7 @@ class PoolMaxQuantityValidationTest extends TestCase
         $this->cart->addToCart($pool, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function validation_message_shows_correct_remaining_availability()
     {
         $pool = $this->createPoolWith7Singles();

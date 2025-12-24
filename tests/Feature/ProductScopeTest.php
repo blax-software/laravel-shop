@@ -7,12 +7,13 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductScopeTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_scope_by_category()
     {
         $category1 = ProductCategory::factory()->create();
@@ -33,7 +34,7 @@ class ProductScopeTest extends TestCase
         $this->assertTrue($productsInCategory1->contains($product2));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_search_products_by_slug()
     {
         Product::factory()->create(['slug' => 'awesome-product']);
@@ -45,7 +46,7 @@ class ProductScopeTest extends TestCase
         $this->assertCount(2, $results);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_search_products_by_sku()
     {
         Product::factory()->create(['sku' => 'SKU-001']);
@@ -57,7 +58,7 @@ class ProductScopeTest extends TestCase
         $this->assertCount(2, $results);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_by_price_range()
     {
         $product1 = Product::factory()->withPrices(1, 50)->create();
@@ -70,7 +71,7 @@ class ProductScopeTest extends TestCase
         $this->assertTrue($inRange->contains($product2));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_by_minimum_price_only()
     {
         $product1 = Product::factory()->withPrices(1, 50)->create();
@@ -84,7 +85,7 @@ class ProductScopeTest extends TestCase
         $this->assertTrue($minPrice->contains($product3));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_by_maximum_price_only()
     {
         $product1 = Product::factory()->withPrices(1, 50)->create();
@@ -98,7 +99,7 @@ class ProductScopeTest extends TestCase
         $this->assertTrue($maxPrice->contains($product2));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_order_products_by_price_ascending()
     {
         $product1 = Product::factory()->withPrices(1, 150)->create(['name' => 'Expensive']);
@@ -111,7 +112,7 @@ class ProductScopeTest extends TestCase
         $this->assertEquals($product1->id, $ordered->last()->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_order_products_by_price_descending()
     {
         $product1 = Product::factory()->withPrices(1, 150)->create(['name' => 'Expensive']);
@@ -124,7 +125,7 @@ class ProductScopeTest extends TestCase
         $this->assertEquals($product2->id, $ordered->last()->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_combine_price_range_and_order_by_price()
     {
         $product1 = Product::factory()->withPrices(1, 50)->create();
@@ -139,7 +140,7 @@ class ProductScopeTest extends TestCase
         $this->assertEquals($product3->id, $filtered->last()->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_low_stock_products()
     {
         $lowStockProduct = Product::factory()->create([
@@ -160,7 +161,7 @@ class ProductScopeTest extends TestCase
         $this->assertFalse($lowStock->contains($normalStockProduct));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_featured_products()
     {
         Product::factory()->create(['featured' => true]);
@@ -173,7 +174,7 @@ class ProductScopeTest extends TestCase
         $this->assertTrue($featured->every(fn($p) => $p->featured === true));
     }
 
-    /** @test */
+    #[Test]
     public function visible_scope_excludes_unpublished_products()
     {
         Product::factory()->create([
@@ -196,7 +197,7 @@ class ProductScopeTest extends TestCase
         $this->assertCount(1, $visible);
     }
 
-    /** @test */
+    #[Test]
     public function visible_scope_respects_published_at_date()
     {
         Product::factory()->create([
@@ -216,7 +217,7 @@ class ProductScopeTest extends TestCase
         $this->assertCount(1, $visible);
     }
 
-    /** @test */
+    #[Test]
     public function in_stock_scope_includes_products_without_stock_management()
     {
         Product::factory()->create(['manage_stock' => false]);
@@ -229,7 +230,7 @@ class ProductScopeTest extends TestCase
         $this->assertGreaterThanOrEqual(2, $inStock->count());
     }
 
-    /** @test */
+    #[Test]
     public function in_stock_scope_excludes_out_of_stock_products()
     {
         $outOfStock = Product::factory()->create(['manage_stock' => true]);
@@ -243,7 +244,7 @@ class ProductScopeTest extends TestCase
         $this->assertTrue($products->contains($inStock));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_combine_multiple_scopes()
     {
         Product::factory()->create([
@@ -273,7 +274,7 @@ class ProductScopeTest extends TestCase
         $this->assertCount(1, $products);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_products_by_type()
     {
         Product::factory()->create(['type' => ProductType::SIMPLE]);
@@ -286,7 +287,7 @@ class ProductScopeTest extends TestCase
         $this->assertCount(2, $simpleProducts);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_downloadable_products()
     {
         Product::factory()->create(['downloadable' => true]);
@@ -298,7 +299,7 @@ class ProductScopeTest extends TestCase
         $this->assertCount(2, $downloadable);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_virtual_products()
     {
         Product::factory()->create(['virtual' => true]);

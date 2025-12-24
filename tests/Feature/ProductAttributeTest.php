@@ -6,12 +6,13 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductAttribute;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductAttributeTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_product_attribute()
     {
         $product = Product::factory()->create();
@@ -30,7 +31,7 @@ class ProductAttributeTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function attribute_belongs_to_product()
     {
         $product = Product::factory()->create();
@@ -45,7 +46,7 @@ class ProductAttributeTest extends TestCase
         $this->assertEquals($product->id, $attribute->product->id);
     }
 
-    /** @test */
+    #[Test]
     public function product_can_have_multiple_attributes()
     {
         $product = Product::factory()->create();
@@ -71,7 +72,7 @@ class ProductAttributeTest extends TestCase
         $this->assertCount(3, $product->fresh()->attributes);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_a_sort_order()
     {
         $product = Product::factory()->create();
@@ -98,7 +99,7 @@ class ProductAttributeTest extends TestCase
         $this->assertEquals($attr2->id, $attributes[1]->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_store_metadata()
     {
         $product = Product::factory()->create();
@@ -120,7 +121,7 @@ class ProductAttributeTest extends TestCase
         $this->assertEquals('cm', $unitAttr->value);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_update_attribute_value()
     {
         $product = Product::factory()->create();
@@ -136,7 +137,7 @@ class ProductAttributeTest extends TestCase
         $this->assertEquals('Out of Stock', $attribute->fresh()->value);
     }
 
-    /** @test */
+    #[Test]
     public function deleting_product_deletes_attributes()
     {
         $product = Product::factory()->create();
@@ -154,7 +155,7 @@ class ProductAttributeTest extends TestCase
         $this->assertDatabaseMissing('product_attributes', ['id' => $attributeId]);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_attributes_by_key()
     {
         $product = Product::factory()->create();
@@ -184,7 +185,7 @@ class ProductAttributeTest extends TestCase
         $this->assertCount(2, $colorAttributes);
     }
 
-    /** @test */
+    #[Test]
     public function multiple_products_can_have_same_attribute_keys()
     {
         $product1 = Product::factory()->create();
@@ -208,7 +209,7 @@ class ProductAttributeTest extends TestCase
         $this->assertEquals('Brand B', $product2->attributes->first()->value);
     }
 
-    /** @test */
+    #[Test]
     public function attributes_are_hidden_in_api_responses()
     {
         $product = Product::factory()->create();

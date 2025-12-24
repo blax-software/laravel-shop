@@ -7,12 +7,13 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ShopFacadeTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_get_all_products()
     {
         Product::factory()->create();
@@ -24,7 +25,7 @@ class ShopFacadeTest extends TestCase
         $this->assertCount(3, $products);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_a_single_product_by_id()
     {
         $product = Product::factory()->create();
@@ -35,7 +36,7 @@ class ShopFacadeTest extends TestCase
         $this->assertEquals($product->id, $foundProduct->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_null_for_nonexistent_product()
     {
         $product = Shop::product(999);
@@ -43,7 +44,7 @@ class ShopFacadeTest extends TestCase
         $this->assertNull($product);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_all_categories()
     {
         ProductCategory::factory()->create();
@@ -54,7 +55,7 @@ class ShopFacadeTest extends TestCase
         $this->assertCount(2, $categories);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_in_stock_products()
     {
         Product::factory()->withStocks()->create();
@@ -66,7 +67,7 @@ class ShopFacadeTest extends TestCase
         $this->assertGreaterThanOrEqual(2, $inStockProducts->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_featured_products()
     {
         Product::factory()->create(['featured' => true]);
@@ -78,7 +79,7 @@ class ShopFacadeTest extends TestCase
         $this->assertCount(2, $featured);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_published_and_visible_products()
     {
         Product::factory()->create(['status' => 'published', 'is_visible' => true]);
@@ -90,7 +91,7 @@ class ShopFacadeTest extends TestCase
         $this->assertGreaterThanOrEqual(1, $published->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_search_products_by_name()
     {
         Product::factory()->create();
@@ -103,7 +104,7 @@ class ShopFacadeTest extends TestCase
         $this->assertGreaterThanOrEqual(1, $results->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_search_products_by_description()
     {
         Product::factory()->count(2)->create();
@@ -114,7 +115,7 @@ class ShopFacadeTest extends TestCase
         $this->assertIsObject($results);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_stock_availability_for_managed_stock_product()
     {
         $product = Product::factory()->withStocks(10)->create(['manage_stock' => true]);
@@ -124,7 +125,7 @@ class ShopFacadeTest extends TestCase
         $this->assertTrue($hasStock);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_false_when_not_enough_stock()
     {
         $product = Product::factory()->withStocks(5)->create(['manage_stock' => true]);
@@ -134,7 +135,7 @@ class ShopFacadeTest extends TestCase
         $this->assertFalse($hasStock);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_true_for_unmanaged_stock_products()
     {
         $product = Product::factory()->create(['manage_stock' => false]);
@@ -144,7 +145,7 @@ class ShopFacadeTest extends TestCase
         $this->assertTrue($hasStock);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_available_stock()
     {
         $product = Product::factory()->withStocks(15)->create(['manage_stock' => true]);
@@ -154,7 +155,7 @@ class ShopFacadeTest extends TestCase
         $this->assertEquals(15, $available);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_max_int_for_unmanaged_stock_products()
     {
         $product = Product::factory()->create(['manage_stock' => false]);
@@ -164,7 +165,7 @@ class ShopFacadeTest extends TestCase
         $this->assertEquals(PHP_INT_MAX, $available);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_product_is_on_sale()
     {
         // Just verify the method exists and returns a boolean
@@ -175,7 +176,7 @@ class ShopFacadeTest extends TestCase
         $this->assertIsBool($isOnSale);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_shop_configuration()
     {
         $currency = Shop::config('currency', 'USD');
@@ -183,7 +184,7 @@ class ShopFacadeTest extends TestCase
         $this->assertIsString($currency);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_default_config_value_for_nonexistent_key()
     {
         $value = Shop::config('nonexistent.key', 'default');
@@ -191,7 +192,7 @@ class ShopFacadeTest extends TestCase
         $this->assertEquals('default', $value);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_default_currency()
     {
         $currency = Shop::currency();
@@ -200,7 +201,7 @@ class ShopFacadeTest extends TestCase
         $this->assertNotEmpty($currency);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_chain_query_builder_methods()
     {
         Product::factory()->create(['featured' => true, 'is_visible' => true]);
@@ -215,7 +216,7 @@ class ShopFacadeTest extends TestCase
         $this->assertCount(1, $products);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_paginate_products()
     {
         Product::factory()->count(15)->create();
@@ -226,7 +227,7 @@ class ShopFacadeTest extends TestCase
         $this->assertEquals(3, $page->lastPage());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_count_products()
     {
         Product::factory()->count(7)->create();
@@ -236,7 +237,7 @@ class ShopFacadeTest extends TestCase
         $this->assertEquals(7, $count);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_featured_and_in_stock_products()
     {
         Product::factory()->withStocks()->create(['featured' => true]);

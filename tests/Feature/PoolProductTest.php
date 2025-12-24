@@ -5,13 +5,13 @@ namespace Blax\Shop\Tests\Feature;
 use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Enums\StockType;
-use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolProductTest extends TestCase
 {
@@ -107,7 +107,7 @@ class PoolProductTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_pool_product()
     {
         $this->assertNotNull($this->parkingPool);
@@ -115,7 +115,7 @@ class PoolProductTest extends TestCase
         $this->assertTrue($this->parkingPool->isPool());
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_has_single_items_linked()
     {
         $singleItems = $this->parkingPool->singleProducts;
@@ -126,7 +126,7 @@ class PoolProductTest extends TestCase
         $this->assertTrue($singleItems->contains($this->parkingSpot3));
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_max_quantity_equals_number_of_single_items()
     {
         $maxQuantity = $this->parkingPool->getPoolMaxQuantity();
@@ -134,13 +134,13 @@ class PoolProductTest extends TestCase
         $this->assertEquals(3, $maxQuantity);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_detects_booking_single_items()
     {
         $this->assertTrue($this->parkingPool->hasBookingSingleItems());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_pool_product_to_cart_with_timespan()
     {
         $cart = $this->user->currentCart();
@@ -161,7 +161,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $cartItem->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_quantity_is_limited_by_available_single_items()
     {
         $from = Carbon::now()->addDays(1);
@@ -179,7 +179,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(2, $maxQuantity);
     }
 
-    /** @test */
+    #[Test]
     public function booking_price_is_calculated_based_on_timespan_and_quantity()
     {
         $from = Carbon::now()->addDays(1)->startOfDay();
@@ -194,7 +194,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(80.00, $expectedTotal);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_overlapping_bookings_reduces_available_quantity()
     {
         $from = Carbon::now()->addDays(5);
@@ -211,7 +211,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(1, $this->parkingPool->getPoolMaxQuantity($from, $until));
     }
 
-    /** @test */
+    #[Test]
     public function different_timespan_bookings_dont_conflict()
     {
         $from1 = Carbon::now()->addDays(1);
@@ -230,7 +230,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(2, $this->parkingPool->getPoolMaxQuantity($from1, $until1));
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_unavailable_when_all_single_items_booked()
     {
         $from = Carbon::now()->addDays(1);
@@ -245,7 +245,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(0, $this->parkingPool->getPoolMaxQuantity($from, $until));
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_can_be_cross_sell_of_hotel_room()
     {
         $crossSells = $this->hotelRoom->crossSellProducts;
@@ -254,7 +254,7 @@ class PoolProductTest extends TestCase
         $this->assertTrue($crossSells->contains($this->parkingPool));
     }
 
-    /** @test */
+    #[Test]
     public function booking_cancellation_releases_stock_of_single_items()
     {
         $from = Carbon::now()->addDays(10);
@@ -282,7 +282,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(3, $this->parkingPool->getPoolMaxQuantity($from, $until));
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_respects_partial_overlapping_bookings()
     {
         // Booking 1: Days 1-3
@@ -301,7 +301,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(2, $this->parkingPool->getPoolMaxQuantity($from2, $until2));
     }
 
-    /** @test */
+    #[Test]
     public function multiple_pool_products_can_exist_independently()
     {
         // Create a second pool for bikes
@@ -338,7 +338,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(2, $bikePool->getPoolMaxQuantity());
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_stock_calculated_correctly_with_mixed_availability()
     {
         $from = Carbon::now()->addDays(1);
@@ -357,7 +357,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(2, $this->parkingPool->getPoolMaxQuantity($from, $until));
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_zero_single_items_returns_zero_max_quantity()
     {
         $emptyPool = Product::factory()->create([
@@ -369,7 +369,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(0, $emptyPool->getPoolMaxQuantity());
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_non_booking_single_items_doesnt_require_timespan()
     {
         $simplePool = Product::factory()->create([
@@ -391,7 +391,7 @@ class PoolProductTest extends TestCase
         $this->assertFalse($simplePool->hasBookingSingleItems());
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_mixed_booking_and_non_booking_single_items()
     {
         $mixedPool = Product::factory()->create([
@@ -425,7 +425,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(1, $mixedPool->getPoolMaxQuantity());
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_checkout_claims_exactly_the_right_number_of_single_items()
     {
         $from = Carbon::now()->addDays(1);
@@ -456,7 +456,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(2, $claimedCount);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_checkout_stores_claimed_single_items_in_metadata()
     {
         $from = Carbon::now()->addDays(1);
@@ -483,7 +483,7 @@ class PoolProductTest extends TestCase
         $this->assertCount(2, $claimedItems);
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_different_stock_quantities_on_single_items()
     {
         $from = Carbon::now()->addDays(1);
@@ -511,7 +511,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(2, $customPool->getPoolMaxQuantity($from, $until));
     }
 
-    /** @test */
+    #[Test]
     public function claim_pool_stock_throws_exception_when_not_enough_single_items_available()
     {
         $from = Carbon::now()->addDays(1);
@@ -528,7 +528,7 @@ class PoolProductTest extends TestCase
         $this->parkingPool->claimPoolStock(2, null, $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function claim_pool_stock_throws_exception_when_called_on_non_pool_product()
     {
         $from = Carbon::now()->addDays(1);
@@ -540,7 +540,7 @@ class PoolProductTest extends TestCase
         $this->hotelRoom->claimPoolStock(1, null, $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function release_pool_stock_correctly_releases_all_claims()
     {
         $from = Carbon::now()->addDays(1);
@@ -561,7 +561,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(3, $this->parkingPool->getPoolMaxQuantity($from, $until));
     }
 
-    /** @test */
+    #[Test]
     public function release_pool_stock_throws_exception_when_called_on_non_pool_product()
     {
         $this->expectException(\Exception::class);
@@ -570,7 +570,7 @@ class PoolProductTest extends TestCase
         $this->hotelRoom->releasePoolStock($this->user->currentCart());
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_single_item_already_claimed_for_entire_period()
     {
         $from = Carbon::now()->addDays(1);
@@ -594,7 +594,7 @@ class PoolProductTest extends TestCase
         $this->assertEquals(1, $this->parkingPool->getPoolMaxQuantity($partialFrom, $partialUntil));
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_maximum_quantity_with_edge_of_timespan()
     {
         // Claim 1: Days 1-3

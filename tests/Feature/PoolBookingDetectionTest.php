@@ -10,6 +10,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolBookingDetectionTest extends TestCase
 {
@@ -23,7 +24,7 @@ class PoolBookingDetectionTest extends TestCase
         $this->user = User::factory()->create();
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_with_booking_items_is_detected_as_booking()
     {
         // Create pool
@@ -61,7 +62,7 @@ class PoolBookingDetectionTest extends TestCase
         $this->assertTrue($pool->hasBookingSingleItems(), 'Pool should have booking single items');
     }
 
-    /** @test */
+    #[Test]
     public function pool_product_without_booking_items_is_not_booking()
     {
         // Create pool
@@ -99,7 +100,7 @@ class PoolBookingDetectionTest extends TestCase
         $this->assertFalse($pool->hasBookingSingleItems(), 'Pool should not have booking single items');
     }
 
-    /** @test */
+    #[Test]
     public function pool_cart_item_with_booking_items_is_detected_as_booking()
     {
         // Create pool
@@ -151,7 +152,7 @@ class PoolBookingDetectionTest extends TestCase
         $this->assertTrue($cartItem->is_booking, 'Cart item for pool with booking items should be detected as booking');
     }
 
-    /** @test */
+    #[Test]
     public function pool_cart_item_without_booking_items_is_not_booking()
     {
         // Create pool
@@ -203,7 +204,7 @@ class PoolBookingDetectionTest extends TestCase
         $this->assertFalse($cartItem->is_booking, 'Cart item for pool without booking items should not be detected as booking');
     }
 
-    /** @test */
+    #[Test]
     public function cart_with_pool_booking_items_detects_booking_correctly()
     {
         // Create pool with booking items
@@ -253,7 +254,7 @@ class PoolBookingDetectionTest extends TestCase
         $this->assertEquals(1, $cart->bookingItems(), 'Cart should have 1 booking item');
     }
 
-    /** @test */
+    #[Test]
     public function mixed_cart_with_pool_and_regular_items_not_full_booking()
     {
         // Create pool with booking items
@@ -327,7 +328,7 @@ class PoolBookingDetectionTest extends TestCase
         $this->assertEquals(1, $cart->bookingItems(), 'Cart should have 1 booking item');
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_isBooking_method_works()
     {
         // Create pool with booking items
@@ -377,7 +378,7 @@ class PoolBookingDetectionTest extends TestCase
         $this->assertEquals($cartItem->is_booking, $cartItem->isBooking(), 'isBooking() should match is_booking attribute');
     }
 
-    /** @test */
+    #[Test]
     public function cart_isBooking_method_works()
     {
         // Create pool with booking items

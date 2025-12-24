@@ -3,17 +3,16 @@
 namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Console\Commands\ShopAddExampleProducts;
-use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
-use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class CommandProductExamplesTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_creates_example_products_and_related_data(): void
     {
         $this->artisan(ShopAddExampleProducts::class, ['--clean' => true, '--count' => 2])
@@ -42,7 +41,7 @@ class CommandProductExamplesTest extends TestCase
         $this->assertNotEmpty(Product::first()->getLocalized('name'));
     }
 
-    /** @test */
+    #[Test]
     public function it_cleans_existing_examples_when_option_provided(): void
     {
         // Seed examples
@@ -57,7 +56,7 @@ class CommandProductExamplesTest extends TestCase
         $this->assertEquals(6, \Blax\Shop\Models\ProductCategory::where('slug', 'like', 'example-%')->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_honors_the_count_option_for_each_type(): void
     {
         $this->artisan(ShopAddExampleProducts::class, ['--clean' => true, '--count' => 3])

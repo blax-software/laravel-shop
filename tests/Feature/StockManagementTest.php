@@ -6,14 +6,14 @@ use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductStock;
 use Blax\Shop\Tests\TestCase;
-use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class StockManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_claim_stock_for_a_product()
     {
         $product = Product::factory()
@@ -30,7 +30,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals(90, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_cannot_claim_more_stock_than_available()
     {
         $product = Product::factory()
@@ -45,7 +45,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals(5, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_release_claimed_stock()
     {
         $product = Product::factory()
@@ -65,7 +65,7 @@ class StockManagementTest extends TestCase
         $this->assertNotNull($claim->fresh()->released_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_stock_is_pending()
     {
         $product = Product::factory()->withStocks(10)->create();
@@ -78,7 +78,7 @@ class StockManagementTest extends TestCase
         $this->assertNull($pending->released_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_stock_is_released()
     {
         $product = Product::factory()->withStocks(50)->create();
@@ -93,7 +93,7 @@ class StockManagementTest extends TestCase
         $this->assertNotNull($released->released_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_distinguish_temporary_and_permanent_claims()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -114,7 +114,7 @@ class StockManagementTest extends TestCase
         $this->assertFalse($temporaryClaim->isPermanent());
     }
 
-    /** @test */
+    #[Test]
     public function it_belongs_to_a_product()
     {
         $product = Product::factory()->withStocks(20)->create();
@@ -125,7 +125,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals($product->id, $claim->product->id);
     }
 
-    /** @test */
+    #[Test]
     public function product_has_many_stock_records()
     {
         $product = Product::factory()->withStocks(30)->create();
@@ -139,7 +139,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals(30 + 10 + 10 + 50, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_active_stock_claims()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -160,7 +160,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals($activeClaim->id, $activeClaims->first()->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_cannot_release_stock_twice()
     {
         $product = Product::factory()->withStocks()->create();
@@ -171,7 +171,7 @@ class StockManagementTest extends TestCase
         $this->assertFalse($claim->release());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_store_claim_note()
     {
         $product = Product::factory()->withStocks()->create();
@@ -186,7 +186,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals($note, $claim->note);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_available_stock_correctly()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -207,7 +207,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals(85, $product->refresh()->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function product_tracks_low_stock_threshold()
     {
         $product = Product::factory()
@@ -223,7 +223,7 @@ class StockManagementTest extends TestCase
         $this->assertTrue($product->fresh()->isLowStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_in_stock_status_automatically()
     {
         $product = Product::factory()
@@ -235,7 +235,7 @@ class StockManagementTest extends TestCase
         $this->assertFalse($product->fresh()->isInStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_adjust_stock_with_from_parameter_for_claimed_type()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -265,7 +265,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals(-15, $decreaseStock->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_now_as_default_from_date_for_claimed_type()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -283,7 +283,7 @@ class StockManagementTest extends TestCase
         $this->assertNull($claimedStock->claimed_from);
     }
 
-    /** @test */
+    #[Test]
     public function it_does_not_set_claimed_from_for_non_claimed_types()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -298,7 +298,7 @@ class StockManagementTest extends TestCase
         $this->assertNull($stock->claimed_from);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_adjust_stock_with_note_parameter()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -317,7 +317,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals($note, $stock->note);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_adjust_stock_with_referencable_model()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -337,7 +337,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals($referencedProduct->id, $stock->reference_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_adjust_stock_with_all_parameters_combined()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -369,7 +369,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals($referencedProduct->id, $stock->reference_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_adjusts_stock_with_correct_quantity_signs_based_on_type()
     {
         $product = Product::factory()->withStocks(100)->create();
@@ -416,7 +416,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals(-5, $claimedDecrease->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_false_when_adjusting_stock_with_management_disabled()
     {
         $product = Product::factory()->create([

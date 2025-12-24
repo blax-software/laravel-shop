@@ -3,13 +3,13 @@
 namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Models\Cart;
-use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartDateStringParsingTest extends TestCase
 {
@@ -46,7 +46,7 @@ class CartDateStringParsingTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function cart_set_dates_accepts_string_dates()
     {
         $cart = $this->cart->setDates('2025-12-20', '2025-12-25', false);
@@ -57,7 +57,7 @@ class CartDateStringParsingTest extends TestCase
         $this->assertEquals('2025-12-25', $cart->until->format('Y-m-d'));
     }
 
-    /** @test */
+    #[Test]
     public function cart_set_dates_accepts_datetime_objects()
     {
         $from = Carbon::parse('2025-12-20');
@@ -69,7 +69,7 @@ class CartDateStringParsingTest extends TestCase
         $this->assertEquals('2025-12-25', $cart->until->format('Y-m-d'));
     }
 
-    /** @test */
+    #[Test]
     public function cart_set_from_date_accepts_string()
     {
         $cart = $this->cart->setFromDate('2025-12-20', false);
@@ -78,7 +78,7 @@ class CartDateStringParsingTest extends TestCase
         $this->assertEquals('2025-12-20', $cart->from->format('Y-m-d'));
     }
 
-    /** @test */
+    #[Test]
     public function cart_set_until_date_accepts_string()
     {
         $this->cart->update(['from' => Carbon::parse('2025-12-20')]);
@@ -88,7 +88,7 @@ class CartDateStringParsingTest extends TestCase
         $this->assertEquals('2025-12-25', $cart->until->format('Y-m-d'));
     }
 
-    /** @test */
+    #[Test]
     public function cart_set_dates_parses_various_string_formats()
     {
         // Test different date string formats that Carbon can parse
@@ -112,7 +112,7 @@ class CartDateStringParsingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_set_from_date_accepts_string()
     {
         $cartItem = $this->cart->addToCart(
@@ -128,7 +128,7 @@ class CartDateStringParsingTest extends TestCase
         $this->assertEquals('2025-12-21', $cartItem->from->format('Y-m-d'));
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_set_until_date_accepts_string()
     {
         $cartItem = $this->cart->addToCart(
@@ -144,7 +144,7 @@ class CartDateStringParsingTest extends TestCase
         $this->assertEquals('2025-12-26', $cartItem->until->format('Y-m-d'));
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_update_dates_accepts_string_dates()
     {
         $cartItem = $this->cart->addToCart(
@@ -165,7 +165,7 @@ class CartDateStringParsingTest extends TestCase
         $this->assertEquals($expectedPrice, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_update_dates_accepts_mixed_string_and_datetime()
     {
         $cartItem = $this->cart->addToCart(
@@ -183,7 +183,7 @@ class CartDateStringParsingTest extends TestCase
         $this->assertEquals('2025-12-27', $cartItem->until->format('Y-m-d'));
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_date_parsing_works_with_now_relative_strings()
     {
         $cartItem = $this->cart->addToCart(

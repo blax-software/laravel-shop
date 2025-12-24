@@ -6,12 +6,13 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductCategoryTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_category()
     {
         $category = ProductCategory::factory()->create([
@@ -24,7 +25,7 @@ class ProductCategoryTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_automatically_generates_slug_from_name()
     {
         $category = ProductCategory::create([
@@ -34,7 +35,7 @@ class ProductCategoryTest extends TestCase
         $this->assertNotNull($category->slug);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_a_parent_category()
     {
         $parent = ProductCategory::factory()->create([
@@ -49,7 +50,7 @@ class ProductCategoryTest extends TestCase
         $this->assertEquals($parent->id, $child->parent->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_multiple_children()
     {
         $parent = ProductCategory::factory()->create();
@@ -61,7 +62,7 @@ class ProductCategoryTest extends TestCase
         $this->assertCount(3, $parent->fresh()->children);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_attach_products_to_category()
     {
         $category = ProductCategory::factory()->create();
@@ -75,7 +76,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($category->products->contains($product2));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_count_products_in_category()
     {
         $category = ProductCategory::factory()->create();
@@ -88,7 +89,7 @@ class ProductCategoryTest extends TestCase
         $this->assertEquals(3, $category->products()->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_visibility()
     {
         $visibleCategory = ProductCategory::factory()->create([
@@ -103,7 +104,7 @@ class ProductCategoryTest extends TestCase
         $this->assertFalse($hiddenCategory->is_visible);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_a_sort_order()
     {
         $category1 = ProductCategory::factory()->create(['sort_order' => 1]);
@@ -117,7 +118,7 @@ class ProductCategoryTest extends TestCase
         $this->assertEquals($category3->id, $sorted[2]->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_store_meta_data()
     {
         $category = ProductCategory::factory()->create([
@@ -131,7 +132,7 @@ class ProductCategoryTest extends TestCase
         $this->assertEquals(['test', 'category'], $category->meta->keywords);
     }
 
-    /** @test */
+    #[Test]
     public function product_can_belong_to_multiple_categories()
     {
         $product = Product::factory()->create();
@@ -144,7 +145,7 @@ class ProductCategoryTest extends TestCase
         $this->assertCount(3, $product->fresh()->categories);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_all_products_from_category_hierarchy()
     {
         $parent = ProductCategory::factory()->create();
@@ -160,7 +161,7 @@ class ProductCategoryTest extends TestCase
         $this->assertCount(1, $child->products);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_detach_products_from_category()
     {
         $category = ProductCategory::factory()->create();
@@ -173,7 +174,7 @@ class ProductCategoryTest extends TestCase
         $this->assertCount(0, $category->fresh()->products);
     }
 
-    /** @test */
+    #[Test]
     public function deleting_category_does_not_delete_products()
     {
         $category = ProductCategory::factory()->create();
@@ -187,7 +188,7 @@ class ProductCategoryTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => $productId]);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_visible_categories()
     {
         ProductCategory::factory()->create(['is_visible' => true]);
@@ -199,7 +200,7 @@ class ProductCategoryTest extends TestCase
         $this->assertCount(2, $visible);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_root_categories()
     {
         $root1 = ProductCategory::factory()->create(['parent_id' => null]);
@@ -214,7 +215,7 @@ class ProductCategoryTest extends TestCase
         $this->assertFalse($roots->contains($child));
     }
 
-    /** @test */
+    #[Test]
     public function it_maintains_category_hierarchy_integrity()
     {
         $grandparent = ProductCategory::factory()->create();
@@ -226,7 +227,7 @@ class ProductCategoryTest extends TestCase
         $this->assertNull($grandparent->parent);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_products_by_category_using_instance()
     {
         $category1 = ProductCategory::factory()->create();
@@ -248,7 +249,7 @@ class ProductCategoryTest extends TestCase
         $this->assertFalse($results->contains($product3));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_products_by_category_using_id_string()
     {
         $category = ProductCategory::factory()->create();
@@ -268,7 +269,7 @@ class ProductCategoryTest extends TestCase
         $this->assertFalse($results->contains($product3));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_products_by_multiple_categories()
     {
         $category1 = ProductCategory::factory()->create();
@@ -299,7 +300,7 @@ class ProductCategoryTest extends TestCase
         $this->assertFalse($results->contains($product4));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_products_without_specific_category()
     {
         $category1 = ProductCategory::factory()->create();
@@ -321,7 +322,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($results->contains($product3));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_products_without_category_using_instance()
     {
         $category = ProductCategory::factory()->create();
@@ -338,7 +339,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($results->contains($product2));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_products_without_multiple_categories()
     {
         $category1 = ProductCategory::factory()->create();
@@ -368,7 +369,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($results->contains($product4));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_assign_a_category_to_product()
     {
         $product = Product::factory()->create();
@@ -380,7 +381,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($product->categories->contains($category));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_assign_multiple_categories_to_product()
     {
         $product = Product::factory()->create();
@@ -396,7 +397,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($product->categories->contains($category3));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_remove_a_category_from_product()
     {
         $product = Product::factory()->create();
@@ -413,7 +414,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($product->categories->contains($category2));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_remove_multiple_categories_from_product()
     {
         $product = Product::factory()->create();
@@ -432,7 +433,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($product->categories->contains($category3));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_sync_categories_on_product()
     {
         $product = Product::factory()->create();
@@ -453,7 +454,7 @@ class ProductCategoryTest extends TestCase
         $this->assertTrue($product->categories->contains($category3));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_assign_category_by_name()
     {
         $product = Product::factory()->create();
@@ -465,7 +466,7 @@ class ProductCategoryTest extends TestCase
         $this->assertEquals('Electronics', $category->name);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_assign_category_by_name_without_creating_duplicates()
     {
         $product1 = Product::factory()->create();
@@ -477,7 +478,7 @@ class ProductCategoryTest extends TestCase
         $this->assertCount(1, ProductCategory::where('name', 'Electronics')->get());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_assign_multiple_categories_by_names()
     {
         $product = Product::factory()->create();
@@ -491,7 +492,7 @@ class ProductCategoryTest extends TestCase
         $this->assertContains('Accessories', $categoryNames);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_assign_category_by_slug()
     {
         $product = Product::factory()->create();
@@ -503,7 +504,7 @@ class ProductCategoryTest extends TestCase
         $this->assertEquals('electronics', $category->slug);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_assign_category_by_slug_without_creating_duplicates()
     {
         $product1 = Product::factory()->create();
@@ -515,7 +516,7 @@ class ProductCategoryTest extends TestCase
         $this->assertCount(1, ProductCategory::where('slug', 'electronics')->get());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_assign_multiple_categories_by_slugs()
     {
         $product = Product::factory()->create();

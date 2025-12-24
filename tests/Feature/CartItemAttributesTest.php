@@ -10,13 +10,13 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartItemAttributesTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function cart_item_has_is_booking_attribute_for_booking_products()
     {
         $bookingProduct = Product::factory()
@@ -29,7 +29,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertTrue($cartItem->is_booking);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_has_is_booking_false_for_regular_products()
     {
         $regularProduct = Product::factory()
@@ -42,7 +42,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertFalse($cartItem->is_booking);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_is_booking_works_via_price_id()
     {
         $bookingProduct = Product::factory()
@@ -60,7 +60,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertTrue($reloadedItem->is_booking);
     }
 
-    /** @test */
+    #[Test]
     public function cart_is_full_booking_is_true_when_all_items_are_bookings()
     {
         $booking1 = Product::factory()
@@ -78,7 +78,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertTrue($cart->is_full_booking);
     }
 
-    /** @test */
+    #[Test]
     public function cart_is_full_booking_is_false_when_mixed_products()
     {
         $booking = Product::factory()
@@ -96,7 +96,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertFalse($cart->is_full_booking);
     }
 
-    /** @test */
+    #[Test]
     public function cart_is_full_booking_is_false_when_empty()
     {
         $cart = Cart::create();
@@ -104,7 +104,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertFalse($cart->is_full_booking);
     }
 
-    /** @test */
+    #[Test]
     public function cart_booking_items_returns_correct_count()
     {
         $booking1 = Product::factory()
@@ -127,7 +127,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertEquals(2, $cart->bookingItems());
     }
 
-    /** @test */
+    #[Test]
     public function cart_booking_items_returns_zero_when_no_bookings()
     {
         $regular = Product::factory()
@@ -140,7 +140,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertEquals(0, $cart->bookingItems());
     }
 
-    /** @test */
+    #[Test]
     public function price_id_is_automatically_assigned_when_adding_product_to_cart()
     {
         $product = Product::factory()
@@ -156,7 +156,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertInstanceOf(ProductPrice::class, $cartItem->price()->first());
     }
 
-    /** @test */
+    #[Test]
     public function price_id_is_assigned_when_adding_product_price_to_cart()
     {
         $product = Product::factory()->create();
@@ -176,7 +176,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertInstanceOf(ProductPrice::class, $cartItem->price()->first());
     }
 
-    /** @test */
+    #[Test]
     public function cart_stripe_price_ids_returns_array_of_stripe_price_ids()
     {
         $product1 = Product::factory()->create();
@@ -208,7 +208,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertContains('price_456', $stripePriceIds);
     }
 
-    /** @test */
+    #[Test]
     public function cart_stripe_price_ids_returns_nulls_for_items_without_stripe_price_id()
     {
         $product1 = Product::factory()->create();
@@ -240,7 +240,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertNull($stripePriceIds[1]);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_is_ready_to_checkout_is_true_for_regular_products()
     {
         $product = Product::factory()
@@ -253,7 +253,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertTrue($cartItem->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_is_ready_to_checkout_is_false_for_booking_without_dates()
     {
         $bookingProduct = Product::factory()
@@ -266,7 +266,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertFalse($cartItem->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_is_ready_to_checkout_is_true_for_booking_with_valid_dates()
     {
         $bookingProduct = Product::factory()
@@ -283,7 +283,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertTrue($cartItem->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_is_ready_to_checkout_is_false_for_booking_with_invalid_date_range()
     {
         $bookingProduct = Product::factory()
@@ -303,7 +303,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertFalse($cartItem->fresh()->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function cart_is_ready_to_checkout_is_true_when_all_items_are_ready()
     {
         $product1 = Product::factory()
@@ -321,7 +321,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertTrue($cart->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function cart_is_ready_to_checkout_is_false_when_at_least_one_item_not_ready()
     {
         $regularProduct = Product::factory()
@@ -339,7 +339,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertFalse($cart->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function cart_allows_adding_items_without_dates_that_require_them()
     {
         $bookingProduct = Product::factory()
@@ -358,7 +358,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertFalse($cartItem->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function update_dates_allows_setting_any_dates()
     {
         $bookingProduct = Product::factory()
@@ -382,7 +382,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertTrue($cartItem->fresh()->is_ready_to_checkout);
     }
 
-    /** @test */
+    #[Test]
     public function cart_calculates_correctly_when_dates_are_adjusted()
     {
         $bookingProduct = Product::factory()
@@ -409,7 +409,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertEquals(500.00, $cartItem->fresh()->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function set_from_date_recalculates_pricing_when_both_dates_set()
     {
         $bookingProduct = Product::factory()
@@ -434,7 +434,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertEquals(400.00, $cartItem->fresh()->price);
     }
 
-    /** @test */
+    #[Test]
     public function set_until_date_recalculates_pricing_when_both_dates_set()
     {
         $bookingProduct = Product::factory()
@@ -459,7 +459,7 @@ class CartItemAttributesTest extends TestCase
         $this->assertEquals(400.00, $cartItem->fresh()->price);
     }
 
-    /** @test */
+    #[Test]
     public function is_ready_to_checkout_checks_stock_for_regular_products_with_stock_management()
     {
         $product = Product::factory()

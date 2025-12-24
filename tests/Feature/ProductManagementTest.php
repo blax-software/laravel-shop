@@ -11,12 +11,13 @@ use Blax\Shop\Models\ProductAttribute;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_product()
     {
         $product = Product::factory()
@@ -35,7 +36,7 @@ class ProductManagementTest extends TestCase
         $this->assertEquals(99.99, $product->prices->first()->unit_amount);
     }
 
-    /** @test */
+    #[Test]
     public function it_automatically_generates_slug_if_not_provided()
     {
         $product = Product::factory()->create(['slug' => null]);
@@ -44,7 +45,7 @@ class ProductManagementTest extends TestCase
         $this->assertStringStartsWith('new-product-', $product->slug);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_manage_stock()
     {
         $product = Product::factory()->create([
@@ -58,7 +59,7 @@ class ProductManagementTest extends TestCase
         $this->assertEquals(55, $product->AvailableStocks);
     }
 
-    /** @test */
+    #[Test]
     public function it_cannot_decrease_stock_below_zero()
     {
         $product = Product::factory()->create([
@@ -70,7 +71,7 @@ class ProductManagementTest extends TestCase
         }, \Blax\Shop\Exceptions\NotEnoughStockException::class);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_available_stock()
     {
         $product = Product::factory()->create([
@@ -82,7 +83,7 @@ class ProductManagementTest extends TestCase
         $this->assertEquals(20, $product->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_in_stock()
     {
         $productInStock = Product::factory()->create([
@@ -98,7 +99,7 @@ class ProductManagementTest extends TestCase
         $this->assertFalse($productOutOfStock->isInStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_attach_categories()
     {
         $product = Product::factory()->create();
@@ -109,7 +110,7 @@ class ProductManagementTest extends TestCase
         $this->assertTrue($product->categories->contains($category));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_attributes()
     {
         $product = Product::factory()->create();
@@ -125,7 +126,7 @@ class ProductManagementTest extends TestCase
         $this->assertEquals('Blue', $product->attributes->first()->value);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_multiple_prices()
     {
         $product = Product::factory()->create();
@@ -152,7 +153,7 @@ class ProductManagementTest extends TestCase
         $this->assertCount(2, $product->prices);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_related_products()
     {
         $product = Product::factory()->create();
@@ -165,7 +166,7 @@ class ProductManagementTest extends TestCase
         $this->assertTrue($product->relatedProducts()->get()->contains($relatedProduct));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_upsell_products()
     {
         $product = Product::factory()->create();
@@ -178,7 +179,7 @@ class ProductManagementTest extends TestCase
         $this->assertTrue($product->upsellProducts()->get()->contains($upsellProduct));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_cross_sell_products()
     {
         $product = Product::factory()->create();
@@ -191,7 +192,7 @@ class ProductManagementTest extends TestCase
         $this->assertTrue($product->crossSellProducts()->get()->contains($crossSellProduct));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_published_products()
     {
         Product::factory()->create(['status' => 'published']);
@@ -203,7 +204,7 @@ class ProductManagementTest extends TestCase
         $this->assertEquals(ProductStatus::PUBLISHED, $published->first()->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_in_stock_products()
     {
         Product::factory()->create([
@@ -223,7 +224,7 @@ class ProductManagementTest extends TestCase
         $this->assertTrue((bool) ($inStock->reverse()->first()->isInStock()));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_visible_products()
     {
         Product::factory()->create([
@@ -242,7 +243,7 @@ class ProductManagementTest extends TestCase
         $this->assertTrue($visible->first()->is_visible);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_parent_child_relationships()
     {
         $parent = Product::factory()->create([
@@ -258,7 +259,7 @@ class ProductManagementTest extends TestCase
         $this->assertEquals($parent->id, $child->parent->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_validates_virtual_and_downloadable_flags()
     {
         $virtualProduct = Product::factory()->create([
@@ -277,7 +278,7 @@ class ProductManagementTest extends TestCase
         $this->assertFalse($downloadableProduct->virtual);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_featured_status()
     {
         $featured = Product::factory()->create(['featured' => true]);

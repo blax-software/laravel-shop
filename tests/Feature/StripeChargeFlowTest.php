@@ -2,21 +2,16 @@
 
 namespace Blax\Shop\Tests\Feature;
 
-use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
-use Blax\Shop\Models\ProductPurchase;
-use Blax\Shop\Models\ProductPrice;
-use Blax\Shop\Models\Cart;
-use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\PaymentProviderIdentity;
 use Blax\Shop\Models\PaymentMethod as ShopPaymentMethod;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
-use Laravel\Cashier\Cashier;
 use Stripe\PaymentMethod;
 use Stripe\Customer;
 use Stripe\Stripe;
+use PHPUnit\Framework\Attributes\Test;
 
 class StripeChargeFlowTest extends TestCase
 {
@@ -45,7 +40,7 @@ class StripeChargeFlowTest extends TestCase
         Stripe::setApiKey(config('cashier.secret'));
     }
 
-    /** @test */
+    #[Test]
     public function user_can_be_created()
     {
         $user = User::factory()->create([
@@ -61,7 +56,7 @@ class StripeChargeFlowTest extends TestCase
         $this->assertInstanceOf(User::class, $user);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_have_stripe_account()
     {
         $user = User::factory()->create();
@@ -80,7 +75,7 @@ class StripeChargeFlowTest extends TestCase
         $stripeCustomer->delete();
     }
 
-    /** @test */
+    #[Test]
     public function user_has_stripe_account_trait()
     {
         $user = User::factory()->create();
@@ -91,7 +86,7 @@ class StripeChargeFlowTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function user_can_update_billing_address()
     {
         $user = User::factory()->create();
@@ -130,7 +125,7 @@ class StripeChargeFlowTest extends TestCase
         $stripeCustomer->delete();
     }
 
-    /** @test */
+    #[Test]
     public function user_can_checkout_with_stripe()
     {
         $user = User::factory()->create();
@@ -164,7 +159,7 @@ class StripeChargeFlowTest extends TestCase
         $this->assertSame('succeeded', $charge->status);
     }
 
-    /** @test */
+    #[Test]
     public function payment_method_model_can_store_stripe_details()
     {
         $user = User::factory()->create();
@@ -225,7 +220,7 @@ class StripeChargeFlowTest extends TestCase
         $stripeCustomer->delete();
     }
 
-    /** @test */
+    #[Test]
     public function can_switch_default_payment_method_for_provider_identity()
     {
         // No need to hit Stripe here; use local records

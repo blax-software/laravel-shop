@@ -5,12 +5,13 @@ namespace Blax\Shop\Tests\Unit;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class StockManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_detects_low_stock()
     {
         $product = Product::factory()->create([
@@ -22,7 +23,7 @@ class StockManagementTest extends TestCase
         $this->assertTrue($product->isLowStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_detects_sufficient_stock()
     {
         $product = Product::factory()->withStocks(50)->create([
@@ -32,7 +33,7 @@ class StockManagementTest extends TestCase
         $this->assertFalse($product->isLowStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_marks_product_as_out_of_stock()
     {
         $product = Product::factory()->create([
@@ -46,7 +47,7 @@ class StockManagementTest extends TestCase
         $this->assertEquals('outofstock', $product->stock_status);
     }
 
-    /** @test */
+    #[Test]
     public function products_without_stock_management_are_always_in_stock()
     {
         $product = Product::factory()->create([

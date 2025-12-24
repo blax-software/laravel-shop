@@ -12,6 +12,7 @@ use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PoolPerMinutePricingTest extends TestCase
 {
@@ -81,7 +82,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->poolProduct->setPricingStrategy(PricingStrategy::LOWEST);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_for_12_hours()
     {
         $from = Carbon::now()->addDays(5)->setTime(8, 0, 0);
@@ -94,7 +95,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(1500, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_for_36_hours()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -107,7 +108,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(4500, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_for_6_hours()
     {
         $from = Carbon::now()->addDays(5)->setTime(10, 0, 0);
@@ -120,7 +121,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(750, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_for_90_minutes()
     {
         $from = Carbon::now()->addDays(5)->setTime(14, 0, 0);
@@ -132,7 +133,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(188, round($cartItem->price, 2));
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_direct_pool_price_for_fractional_days()
     {
         // Set direct price on pool - this is now used as fallback for single items without prices
@@ -158,7 +159,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(1500, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_with_quantity_for_fractional_days()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -172,7 +173,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(1500, $cartItem->subtotal); // total for 2 units
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_highest_pricing_strategy_for_fractional_days()
     {
         // Change to HIGHEST pricing strategy
@@ -188,7 +189,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(2500, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_average_pricing_strategy_for_fractional_days()
     {
         // Change to AVERAGE pricing strategy
@@ -204,7 +205,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(2000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_for_multiple_fractional_bookings_in_cart()
     {
         $from1 = Carbon::now()->addDays(10)->setTime(10, 0, 0);
@@ -231,7 +232,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(1500, $cart->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_for_very_short_durations()
     {
         // 30 minutes
@@ -253,7 +254,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(31, $cartItem2->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_multiple_pool_bookings_with_different_durations()
     {
         $cart = \Blax\Shop\Models\Cart::factory()->create([
@@ -278,7 +279,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(750, $item2->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_for_3_hours()
     {
         $from = Carbon::now()->addDays(5)->setTime(14, 0, 0);
@@ -290,7 +291,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(375, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_pool_price_for_odd_duration_5_hours_30_minutes()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 30, 0);
@@ -303,7 +304,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals($expectedPrice, round($cartItem->price));
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_pool_booking_over_multiple_days_with_hours()
     {
         // Monday 2pm to Wednesday 5pm = 51 hours = 2.125 days
@@ -317,7 +318,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals($expectedPrice, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_prices_pool_correctly_when_both_spots_have_different_prices_for_fractional_time()
     {
         // Create a third spot with an even different price
@@ -349,7 +350,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(750, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_exact_24_hours_pool()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -362,7 +363,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(3000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_pool_cart_item_from_date_recalculates_per_minute_price()
     {
         $now = Carbon::now();
@@ -386,7 +387,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(3750, $cartItem->fresh()->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_booking_spanning_exactly_two_days()
     {
         $from = Carbon::now()->addDays(5)->setTime(0, 0, 0);
@@ -399,7 +400,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(6000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_business_hours_booking()
     {
         // 9 AM to 5 PM = 8 hours
@@ -412,7 +413,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(1000, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_overnight_booking()
     {
         // 10 PM to 6 AM next day = 8 hours
@@ -425,7 +426,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(1000, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_with_minutes_precision()
     {
         // 2 hours and 45 minutes
@@ -438,7 +439,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(344, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_maintains_precision_for_multiple_quantity()
     {
         // 6 hours
@@ -454,7 +455,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertGreaterThan(1000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_weekend_hourly_booking()
     {
         // Friday 6 PM to Sunday 6 PM = 48 hours exactly
@@ -467,7 +468,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(6000, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_different_pricing_strategies_for_fractional_time()
     {
         // Test LOWEST (already set in setUp)
@@ -500,7 +501,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(500, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_single_minute_booking()
     {
         // Just 1 minute
@@ -513,7 +514,7 @@ class PoolPerMinutePricingTest extends TestCase
         $this->assertEquals(2, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_booking_with_seconds_precision()
     {
         // 2 hours, 30 minutes, 30 seconds (Carbon truncates seconds to minutes)

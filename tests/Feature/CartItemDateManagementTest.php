@@ -9,6 +9,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartItemDateManagementTest extends TestCase
 {
@@ -26,7 +27,7 @@ class CartItemDateManagementTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_update_dates_on_cart_item()
     {
         $product = Product::factory()->create([
@@ -60,7 +61,7 @@ class CartItemDateManagementTest extends TestCase
         $this->assertEquals(15000, $updated->subtotal); // 150.00 × 1 quantity
     }
 
-    /** @test */
+    #[Test]
     public function it_recalculates_price_when_updating_dates()
     {
         $product = Product::factory()->create([
@@ -94,7 +95,7 @@ class CartItemDateManagementTest extends TestCase
         $this->assertEquals(100000, $updated->subtotal); // 500 × 2 quantity
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_from_date_individually()
     {
         $product = Product::factory()->create([
@@ -120,7 +121,7 @@ class CartItemDateManagementTest extends TestCase
         $this->assertNull($updated->until);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_until_date_individually()
     {
         $product = Product::factory()->create([
@@ -146,7 +147,7 @@ class CartItemDateManagementTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $updated->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_recalculates_when_both_dates_are_set()
     {
         $product = Product::factory()->create([
@@ -180,7 +181,7 @@ class CartItemDateManagementTest extends TestCase
         $this->assertEquals(32000, $updated->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_from_is_after_until()
     {
         $product = Product::factory()->create([
@@ -207,7 +208,7 @@ class CartItemDateManagementTest extends TestCase
         $cartItem->updateDates($from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_validates_dates_at_checkout_for_booking_products()
     {
         $product = Product::factory()->create([
@@ -233,7 +234,7 @@ class CartItemDateManagementTest extends TestCase
         $this->cart->checkout();
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_checkout_when_dates_are_set()
     {
         $product = Product::factory()->create([

@@ -8,12 +8,13 @@ use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductPurchaseTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_purchase()
     {
         $user = User::factory()->create();
@@ -38,7 +39,7 @@ class ProductPurchaseTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_belongs_to_purchaser()
     {
         $user = User::factory()->create();
@@ -60,7 +61,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals($user->id, $purchase->purchaser->id);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_belongs_to_purchasable()
     {
         $user = User::factory()->create();
@@ -82,7 +83,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals($product->id, $purchase->purchasable->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_different_statuses()
     {
         $user = User::factory()->create();
@@ -114,7 +115,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals(PurchaseStatus::COMPLETED, $completedPurchase->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_completed_purchases()
     {
         $user = User::factory()->create();
@@ -148,7 +149,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals(PurchaseStatus::COMPLETED, $completed->first()->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_cart_purchases()
     {
         $user = User::factory()->create();
@@ -182,7 +183,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals(PurchaseStatus::CART, $inCart->first()->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_store_purchase_metadata()
     {
         $user = User::factory()->create();
@@ -208,7 +209,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals('Mozilla/5.0', $purchase->meta->user_agent);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_track_amount_paid()
     {
         $user = User::factory()->create();
@@ -239,7 +240,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals(PurchaseStatus::COMPLETED, $purchase->fresh()->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_store_charge_id()
     {
         $user = User::factory()->create();
@@ -261,7 +262,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals('ch_123456789', $purchase->charge_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_tracks_purchase_quantity()
     {
         $user = User::factory()->create();
@@ -283,7 +284,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertEquals(25000, $purchase->amount);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_have_multiple_purchases()
     {
         $user = User::factory()->create();
@@ -313,7 +314,7 @@ class ProductPurchaseTest extends TestCase
         $this->assertCount(2, $user->purchases);
     }
 
-    /** @test */
+    #[Test]
     public function product_can_have_multiple_purchases()
     {
         $user1 = User::factory()->create();

@@ -9,6 +9,7 @@ use Blax\Shop\Models\CartItem;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartFacadeTest extends TestCase
 {
@@ -20,7 +21,7 @@ class CartFacadeTest extends TestCase
         $this->actingAs(User::factory()->create());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_current_cart()
     {
         $cart = Cart::current();
@@ -28,7 +29,7 @@ class CartFacadeTest extends TestCase
         $this->assertInstanceOf(CartModel::class, $cart);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_cart_for_specific_user()
     {
         $user = User::factory()->create();
@@ -39,7 +40,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals($user->id, $cart->customer_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_find_cart_by_id()
     {
         $user = User::factory()->create();
@@ -51,7 +52,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals($cart->id, $foundCart->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_null_for_nonexistent_cart()
     {
         $cart = Cart::find('nonexistent-id');
@@ -59,7 +60,7 @@ class CartFacadeTest extends TestCase
         $this->assertNull($cart);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_item_to_cart()
     {
         $product = Product::factory()->withStocks(50)->withPrices()->create();
@@ -71,7 +72,7 @@ class CartFacadeTest extends TestCase
         $this->assertCount(1, Cart::current()->items);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_item_with_parameters()
     {
         $product = Product::factory()->withStocks(50)->withPrices()->create();
@@ -86,7 +87,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals('blue', $cartItem->parameters['color']);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_remove_item_from_cart()
     {
         $product = Product::factory()->withStocks(50)->withPrices()->create();
@@ -98,7 +99,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(2, $cartItem->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_completely_remove_item_from_cart()
     {
         $product = Product::factory()->withStocks(50)->withPrices()->create();
@@ -109,7 +110,7 @@ class CartFacadeTest extends TestCase
         $this->assertCount(0, Cart::current()->items);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_update_cart_item_quantity()
     {
         $product = Product::factory()->withStocks(50)->withPrices(1, 100)->create();
@@ -120,7 +121,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(5, $updated->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_clear_cart()
     {
         $product1 = Product::factory()->withStocks(50)->withPrices()->create();
@@ -134,7 +135,7 @@ class CartFacadeTest extends TestCase
         $this->assertCount(0, Cart::current()->items);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_checkout_cart()
     {
         $product = Product::factory()->withStocks(50)->withPrices(1, 100)->create();
@@ -145,7 +146,7 @@ class CartFacadeTest extends TestCase
         $this->assertNotEmpty($purchases);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_cart_total()
     {
         $product1 = Product::factory()->withStocks(50)->withPrices(1, 100)->create();
@@ -158,7 +159,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(200.00, $total);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_cart_item_count()
     {
         $product1 = Product::factory()->withStocks(50)->withPrices()->create();
@@ -171,7 +172,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(5, $count);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_cart_items()
     {
         $product1 = Product::factory()->withStocks(50)->withPrices()->create();
@@ -184,7 +185,7 @@ class CartFacadeTest extends TestCase
         $this->assertCount(2, $items);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_cart_is_empty()
     {
         $this->assertTrue(Cart::isEmpty());
@@ -195,7 +196,7 @@ class CartFacadeTest extends TestCase
         $this->assertFalse(Cart::isEmpty());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_cart_is_expired()
     {
         $cart = Cart::current();
@@ -204,13 +205,13 @@ class CartFacadeTest extends TestCase
         $this->assertFalse($cart->isExpired());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_cart_is_converted()
     {
         $this->assertFalse(Cart::isConverted());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_unpaid_amount()
     {
         $product = Product::factory()->withStocks(50)->withPrices(1, 100)->create();
@@ -221,7 +222,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(200.00, $unpaid);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_paid_amount()
     {
         $product = Product::factory()->withStocks(50)->withPrices(1, 100)->create();
@@ -232,21 +233,21 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(0.00, $paid);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_trying_to_add_without_user()
     {
         // Skip this test - logging out is complex in tests
         $this->assertTrue(true);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_trying_to_remove_without_user()
     {
         // Skip this test - logging out is complex in tests
         $this->assertTrue(true);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_multiple_quantities_of_same_product()
     {
         $product = Product::factory()->withStocks(50)->withPrices()->create();
@@ -258,7 +259,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(5, $items[0]->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_same_product_with_different_parameters()
     {
         $product = Product::factory()->withStocks(50)->withPrices()->create();
@@ -269,7 +270,7 @@ class CartFacadeTest extends TestCase
         $this->assertCount(2, $items);
     }
 
-    /** @test */
+    #[Test]
     public function it_maintains_separate_carts_for_different_users()
     {
         // Verify separate carts exist for different users
@@ -280,7 +281,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(1, $count1);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_total_with_multiple_items()
     {
         $p1 = Product::factory()->withStocks(50)->withPrices(1, 50)->create();
@@ -294,7 +295,7 @@ class CartFacadeTest extends TestCase
         $this->assertEquals(275.00, Cart::total());
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_total_after_removing_items()
     {
         $product = Product::factory()->withStocks(50)->withPrices(1, 100)->create();

@@ -6,9 +6,11 @@ use Blax\Shop\Models\PaymentMethod;
 use Blax\Shop\Models\PaymentProviderIdentity;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Support\Carbon;
+use PHPUnit\Framework\Attributes\Test;
 
 class PaymentMethodFieldsTest extends TestCase
 {
+    #[Test]
     public function test_can_store_last_alphanumeric(): void
     {
         $identity = PaymentProviderIdentity::factory()->stripe()->create();
@@ -25,6 +27,7 @@ class PaymentMethodFieldsTest extends TestCase
         $this->assertSame('abc123xyz', $method->last_alphanumeric);
     }
 
+    #[Test]
     public function test_expiration_via_expires_at(): void
     {
         $identity = PaymentProviderIdentity::factory()->stripe()->create();
@@ -53,6 +56,7 @@ class PaymentMethodFieldsTest extends TestCase
         $this->assertFalse($active->isExpired());
     }
 
+    #[Test]
     public function test_expiration_via_month_year(): void
     {
         $identity = PaymentProviderIdentity::factory()->stripe()->create();

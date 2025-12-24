@@ -4,18 +4,19 @@ namespace Blax\Shop\Tests\Unit;
 
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Models\Cart;
-use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
+
 
 class CartItemTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function cart_item_stores_prices_as_integers_in_cents()
     {
         $cart = Cart::create();
@@ -37,7 +38,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(3100, $cartItem->subtotal); // 1550 * 2
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_unit_amount_represents_base_price_per_day()
     {
         $cart = Cart::create();
@@ -51,7 +52,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(5000, $cartItem->price); // Same as unit_amount for 1 day
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_calculates_price_correctly_for_booking_timespan()
     {
         $cart = Cart::create();
@@ -73,7 +74,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(6000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_calculates_price_with_partial_days()
     {
         $cart = Cart::create();
@@ -93,7 +94,7 @@ class CartItemTest extends TestCase
         $this->assertEqualsWithDelta(2400, $cartItem->price, 1);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_handles_multiple_quantities_correctly()
     {
         $cart = Cart::create();
@@ -107,7 +108,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(5000, $cartItem->subtotal); // 1000 * 5
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_updates_prices_when_dates_change()
     {
         $cart = Cart::create();
@@ -140,7 +141,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(15000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_handles_fractional_days_with_multiple_quantities()
     {
         $cart = Cart::create();
@@ -162,7 +163,7 @@ class CartItemTest extends TestCase
         $this->assertEqualsWithDelta(10800, $cartItem->subtotal, 3);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_subtotal_recalculates_on_quantity_change()
     {
         $cart = Cart::create();
@@ -179,7 +180,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(7500, $cartItem->fresh()->subtotal); // 1500 * 5
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_stores_unit_amount_for_non_booking_products()
     {
         $cart = Cart::create();
@@ -194,7 +195,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(9999, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_handles_sale_prices_in_cents()
     {
         $cart = Cart::create();
@@ -229,7 +230,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(7500, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_rounds_prices_consistently()
     {
         $cart = Cart::create();
@@ -249,7 +250,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(5000, $cartItem->price); // Rounded to 5000
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_unit_amount_remains_constant_across_date_updates()
     {
         $cart = Cart::create();
@@ -274,7 +275,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(31500, $cartItem->price); // 4500 * 7
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_validates_database_storage_as_integer()
     {
         $cart = Cart::create();
@@ -293,7 +294,7 @@ class CartItemTest extends TestCase
         $this->assertIsInt($dbItem->unit_amount);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_getSubtotal_method_returns_correct_value()
     {
         $cart = Cart::create();
@@ -307,7 +308,7 @@ class CartItemTest extends TestCase
         $this->assertEquals(3702, $cartItem->getSubtotal()); // 1234 * 3
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_handles_zero_prices()
     {
         $cart = Cart::create();
@@ -322,11 +323,14 @@ class CartItemTest extends TestCase
         $this->assertEquals(0, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_handles_very_long_booking_periods()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 500)->create(['type' => ProductType::BOOKING]); // $5.00 per day
+        $product = Product::factory()
+            ->withPrices(unit_amount: 500)
+            ->create(['type' => ProductType::BOOKING]); // $5.00 per day
+
         $price = $product->defaultPrice()->first();
 
         // 365 days (1 year)

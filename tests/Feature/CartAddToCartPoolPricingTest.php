@@ -12,6 +12,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartAddToCartPoolPricingTest extends TestCase
 {
@@ -62,7 +63,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_adds_pool_with_direct_price_to_cart_without_dates()
     {
         // Set direct price on pool
@@ -85,7 +86,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertNull($cartItem->until);
     }
 
-    /** @test */
+    #[Test]
     public function it_adds_pool_with_inherited_price_to_cart_without_dates()
     {
         // Set prices on single items (20€ and 50€)
@@ -118,7 +119,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(3500, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_adds_pool_with_direct_price_to_cart_with_booking_dates()
     {
         // Set direct price on pool
@@ -145,7 +146,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $cartItem->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_adds_pool_with_inherited_price_to_cart_with_booking_dates()
     {
         // Set prices on single items (20€ and 50€)
@@ -184,7 +185,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals($until->format('Y-m-d H:i:s'), $cartItem->until->format('Y-m-d H:i:s'));
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_multiple_pool_items_with_booking_dates()
     {
         // Set direct price on pool
@@ -213,7 +214,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(25000, $this->cart->fresh()->getTotal()); // 125.00 × 2 units = 250.00
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_lowest_pricing_strategy_with_mixed_single_item_prices()
     {
         // Set prices on single items (20€ and 50€)
@@ -242,7 +243,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(2000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_highest_pricing_strategy_with_mixed_single_item_prices()
     {
         // Set prices on single items (20€ and 50€)
@@ -271,7 +272,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(5000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_lowest_pricing_strategy_with_booking_dates()
     {
         // Set prices on single items (20€ and 50€)
@@ -303,7 +304,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(6000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_adds_regular_product_to_cart_without_dates()
     {
         $regularProduct = Product::factory()->create([
@@ -330,7 +331,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertNull($cartItem->until);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_separate_items_when_adding_same_pool_product_with_same_dates()
     {
         ProductPrice::factory()->create([
@@ -360,7 +361,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(12000, $this->cart->fresh()->getTotal()); // 6000 × 2 = 12000
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_separate_cart_items_for_same_pool_with_different_dates()
     {
         ProductPrice::factory()->create([
@@ -386,7 +387,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(2, $this->cart->items()->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_correct_total_for_cart_with_multiple_pool_items()
     {
         ProductPrice::factory()->create([
@@ -409,7 +410,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(15000, $total);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_pool_with_sale_price()
     {
         ProductPrice::factory()->create([
@@ -436,7 +437,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(10000, $cartItem->regular_price); // 50.00 × 2 days (regular price)
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_pool_with_inherited_sale_price()
     {
         ProductPrice::factory()->create([
@@ -482,7 +483,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(6000, $cartItem->regular_price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_zero_days_as_one_day_minimum()
     {
         ProductPrice::factory()->create([
@@ -503,7 +504,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals('5.00', $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_adding_pool_without_any_pricing()
     {
         // Pool with no direct price and single items with no prices
@@ -528,7 +529,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($pool, 1);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_pool_not_available_for_booking_period()
     {
         ProductPrice::factory()->create([
@@ -552,7 +553,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_booking_product_not_available_for_period()
     {
         $bookingProduct = Product::factory()->create([
@@ -582,7 +583,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($bookingProduct, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_only_from_date_provided()
     {
         ProductPrice::factory()->create([
@@ -600,7 +601,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($this->poolProduct, 1, [], $from, null);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_only_until_date_provided()
     {
         ProductPrice::factory()->create([
@@ -618,7 +619,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($this->poolProduct, 1, [], null, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_from_is_after_until()
     {
         ProductPrice::factory()->create([
@@ -637,7 +638,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_from_equals_until()
     {
         ProductPrice::factory()->create([
@@ -655,7 +656,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($this->poolProduct, 1, [], $date, $date);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_separate_items_for_same_product_same_dates_different_parameters()
     {
         ProductPrice::factory()->create([
@@ -678,7 +679,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(['zone' => 'B'], $cartItem2->parameters);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_pool_quantity_exceeds_available_items()
     {
         ProductPrice::factory()->create([
@@ -698,7 +699,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($this->poolProduct, 3, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_partial_pool_availability()
     {
         ProductPrice::factory()->create([
@@ -724,7 +725,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($this->poolProduct, 2, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_for_regular_product_without_price()
     {
         $regularProduct = Product::factory()->create([
@@ -738,7 +739,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($regularProduct, 1);
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_adding_booking_product_without_dates()
     {
         $bookingProduct = Product::factory()->create([
@@ -766,7 +767,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(5000, $cartItem->price); // 1 day default
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_adding_pool_product_without_dates()
     {
         ProductPrice::factory()->create([
@@ -787,7 +788,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(3000, $cartItem->price); // 1 day default
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_updating_cart_item_dates_later()
     {
         ProductPrice::factory()->create([
@@ -820,7 +821,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(6000, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_limits_pool_in_cart_quantity_by_single_products()
     {
         // Set price on pool
@@ -857,7 +858,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_counts_single_item_stock_quantities_in_pool_availability()
     {
         // Create a pool with multiple single items having different stock quantities
@@ -929,7 +930,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $cart->addToCart($pool, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function it_counts_available_stock_with_booking_dates()
     {
         // Create pool with single items having stock
@@ -983,7 +984,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(5, $cart->fresh()->items->sum('quantity'));
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_unlimited_pool_when_single_items_dont_manage_stock()
     {
         // Create pool with single items that don't manage stock
@@ -1037,7 +1038,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->assertEquals(500, $cartItem2->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_picks_correct_price_for_pool_and_items_and_respects_stocks()
     {
         $this->actingAs($this->user);
@@ -1182,7 +1183,7 @@ class CartAddToCartPoolPricingTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_picks_correct_price_respects_stocks_respects_timespan_for_price()
     {
         $this->actingAs($this->user);

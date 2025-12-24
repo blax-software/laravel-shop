@@ -9,6 +9,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests for smart pool allocation and flexible cart behavior
@@ -83,7 +84,7 @@ class PoolSmartAllocationTest extends TestCase
     /**
      * Test: Items can be added to cart without dates
      */
-    /** @test */
+    #[Test]
     public function items_can_be_added_to_cart_without_dates()
     {
         $this->createPoolWithVaryingPrices();
@@ -100,7 +101,7 @@ class PoolSmartAllocationTest extends TestCase
     /**
      * Test: Items can be added even if currently claimed but will be available in future
      */
-    /** @test */
+    #[Test]
     public function items_can_be_added_even_if_currently_claimed_but_available_in_future()
     {
         $this->createPoolWithVaryingPrices();
@@ -131,7 +132,7 @@ class PoolSmartAllocationTest extends TestCase
     /**
      * Test: Cart is not ready for checkout if items added without dates
      */
-    /** @test */
+    #[Test]
     public function cart_is_not_ready_for_checkout_without_dates_for_booking_products()
     {
         $this->createPoolWithVaryingPrices();
@@ -147,7 +148,7 @@ class PoolSmartAllocationTest extends TestCase
     /**
      * Test: Cart becomes ready after setting dates
      */
-    /** @test */
+    #[Test]
     public function cart_becomes_ready_after_setting_valid_dates()
     {
         $this->createPoolWithVaryingPrices();
@@ -169,7 +170,7 @@ class PoolSmartAllocationTest extends TestCase
     /**
      * Test: User1 purchases items, User2 can add same items but only available ones get allocated
      */
-    /** @test */
+    #[Test]
     public function user2_can_book_same_items_for_different_dates_after_user1_purchase()
     {
         $this->createPoolWithVaryingPrices();
@@ -216,7 +217,7 @@ class PoolSmartAllocationTest extends TestCase
     /**
      * Test: User2 can successfully book after setting different dates
      */
-    /** @test */
+    #[Test]
     public function user2_can_successfully_book_after_setting_different_dates()
     {
         $this->createPoolWithVaryingPrices();
@@ -257,7 +258,7 @@ class PoolSmartAllocationTest extends TestCase
      * Scenario: 3 items claimed for future, 3 available now
      * When adding 3 items, should get the 3 currently available ones
      */
-    /** @test */
+    #[Test]
     public function pool_prioritizes_currently_available_items_when_adding_to_cart()
     {
         $this->createPoolWithVaryingPrices();
@@ -291,7 +292,7 @@ class PoolSmartAllocationTest extends TestCase
      * - Change to different date when cheaper items become available
      * - Cart should reallocate to cheaper items
      */
-    /** @test */
+    #[Test]
     public function cart_reallocates_to_cheaper_items_when_dates_change_with_lowest_strategy()
     {
         $this->createPoolWithVaryingPrices();
@@ -325,7 +326,7 @@ class PoolSmartAllocationTest extends TestCase
     /**
      * Test: Verify allocated items change when reallocating
      */
-    /** @test */
+    #[Test]
     public function allocated_single_items_change_when_reallocating_to_better_prices()
     {
         $this->createPoolWithVaryingPrices();

@@ -6,10 +6,12 @@ use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
+
 
 class PoolProductRelationsTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function it_creates_reverse_pool_relation_when_attaching_single_items()
     {
         // Create pool product
@@ -48,7 +50,7 @@ class PoolProductRelationsTest extends TestCase
         $this->assertEquals(ProductRelationType::POOL->value, $spot1Pivot->pivot->type);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_attach_single_item_using_id()
     {
         $pool = Product::factory()->create([
@@ -70,7 +72,7 @@ class PoolProductRelationsTest extends TestCase
         $this->assertTrue($spot->poolProducts->contains($pool));
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_non_pool_tries_to_attach_single_items()
     {
         $regularProduct = Product::factory()->create([
@@ -86,7 +88,7 @@ class PoolProductRelationsTest extends TestCase
         $regularProduct->attachSingleItems($spot->id);
     }
 
-    /** @test */
+    #[Test]
     public function single_item_can_belong_to_multiple_pools()
     {
         // Create two pools
@@ -120,7 +122,7 @@ class PoolProductRelationsTest extends TestCase
         $this->assertTrue($pool2->singleProducts->contains($spot));
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_all_pools_for_a_single_item()
     {
         $pool1 = Product::factory()->create(['type' => ProductType::POOL, 'name' => 'Pool 1']);
@@ -141,7 +143,7 @@ class PoolProductRelationsTest extends TestCase
         $this->assertTrue($pools->contains('name', 'Pool 3'));
     }
 
-    /** @test */
+    #[Test]
     public function legacy_manual_attach_still_works()
     {
         // Test that old way of attaching still works (without reverse relation)

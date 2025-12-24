@@ -11,6 +11,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartItemRequiredAdjustmentsTest extends TestCase
 {
@@ -28,7 +29,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_empty_array_for_simple_product()
     {
         $product = Product::factory()->create([
@@ -51,7 +52,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertEmpty($adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_from_and_until_for_booking_product_without_dates()
     {
         $product = Product::factory()->create([
@@ -78,7 +79,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         ], $adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_only_until_for_booking_product_with_from_date()
     {
         $product = Product::factory()->create([
@@ -107,7 +108,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         ], $adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_only_from_for_booking_product_with_until_date()
     {
         $product = Product::factory()->create([
@@ -136,7 +137,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         ], $adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_empty_array_for_booking_product_with_both_dates()
     {
         $product = Product::factory()->create([
@@ -164,7 +165,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertEmpty($adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_dates_for_pool_with_booking_single_items_without_dates()
     {
         // Create pool product
@@ -222,7 +223,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         ], $adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_empty_array_for_pool_with_booking_items_with_dates()
     {
         // Create pool product
@@ -263,7 +264,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertEmpty($adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_empty_array_for_pool_with_simple_single_items()
     {
         // Create pool product
@@ -318,7 +319,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertEmpty($adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_dates_for_pool_with_mixed_single_items_containing_bookings()
     {
         // Create pool product
@@ -378,7 +379,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         ], $adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_empty_array_for_non_product_purchasable()
     {
         // Create a cart item with a non-product purchasable
@@ -396,7 +397,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertEmpty($adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_null_purchasable_gracefully()
     {
         // Create a cart item with invalid purchasable_id
@@ -414,7 +415,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertEmpty($adjustments);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_validate_entire_cart_before_checkout()
     {
         // Create mixed cart with booking and simple products
@@ -456,7 +457,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertEquals($bookingProduct->id, $itemsNeedingAdjustments->first()->purchasable_id);
     }
 
-    /** @test */
+    #[Test]
     public function cart_can_get_items_requiring_adjustments()
     {
         $simpleProduct = Product::factory()->create([
@@ -492,7 +493,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertEquals($bookingProduct->id, $incompleteItems->first()->purchasable_id);
     }
 
-    /** @test */
+    #[Test]
     public function cart_is_not_ready_for_checkout_when_items_need_adjustments()
     {
         $bookingProduct = Product::factory()->create([
@@ -512,7 +513,7 @@ class CartItemRequiredAdjustmentsTest extends TestCase
         $this->assertFalse($this->cart->isReadyForCheckout());
     }
 
-    /** @test */
+    #[Test]
     public function cart_is_ready_for_checkout_when_all_items_complete()
     {
         $simpleProduct = Product::factory()->create([

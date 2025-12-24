@@ -10,6 +10,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Test to reproduce and fix the production bug where:
@@ -172,7 +173,7 @@ class PoolProductionBugTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function pool_max_quantity_returns_sum_of_single_item_stocks()
     {
         $this->createProductionPool();
@@ -183,7 +184,7 @@ class PoolProductionBugTest extends TestCase
         $this->assertEquals(6, $maxQty);
     }
 
-    /** @test */
+    #[Test]
     public function adding_7_items_should_throw_not_enough_stock_exception()
     {
         $this->createProductionPool();
@@ -199,7 +200,7 @@ class PoolProductionBugTest extends TestCase
         $this->cart->addToCart($this->pool, 7, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function adding_6_items_gives_correct_progressive_pricing()
     {
         $this->createProductionPool();
@@ -239,7 +240,7 @@ class PoolProductionBugTest extends TestCase
         $this->assertEquals(85003, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function adding_6_items_at_once_gives_correct_pricing()
     {
         $this->createProductionPool();
@@ -252,7 +253,7 @@ class PoolProductionBugTest extends TestCase
         $this->assertEquals(85003, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function cart_items_have_correct_allocated_single_items()
     {
         $this->createProductionPool();
@@ -281,7 +282,7 @@ class PoolProductionBugTest extends TestCase
         $this->assertEquals(85003, $this->cart->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function set_dates_updates_cart_item_dates_and_recalculates_prices()
     {
         $this->createProductionPool();
@@ -321,7 +322,7 @@ class PoolProductionBugTest extends TestCase
         $this->assertEquals(30000, $cart->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function set_dates_updates_all_items_with_different_prices()
     {
         $this->createProductionPool();
@@ -356,7 +357,7 @@ class PoolProductionBugTest extends TestCase
         $this->assertEquals(170006, $cart->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function adding_items_without_dates_then_setting_dates_works()
     {
         $this->createProductionPool();
@@ -394,7 +395,7 @@ class PoolProductionBugTest extends TestCase
      * If a user boys 5 single parking items, another can also buy 5 single items on different dates, 
      * but not on the same dates, if stock is claimed on date
      */
-    /** @test */
+    #[Test]
     public function pool_allows_adding_singel_to_cart_again_after_booked()
     {
         $this->createProductionPool();
@@ -471,7 +472,7 @@ class PoolProductionBugTest extends TestCase
      * Expected: Should be able to add 6 items for different dates
      * Actual: Can only add 2 items
      */
-    /** @test */
+    #[Test]
     public function user_can_add_pool_items_for_different_dates_after_stripe_purchase()
     {
         $this->createProductionPool();

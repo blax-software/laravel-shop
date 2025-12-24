@@ -6,18 +6,18 @@ use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPurchase;
-use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\CartItem;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class PurchaseFlowTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function user_can_purchase_a_product_directly()
     {
         $user = User::factory()->create();
@@ -36,7 +36,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals(PurchaseStatus::UNPAID, $purchase->status);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_add_product_to_cart()
     {
         $user = User::factory()->create();
@@ -51,7 +51,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals($product->id, $cartItem->purchasable_id);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_get_cart_items()
     {
         $user = User::factory()->create();
@@ -69,7 +69,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertCount(2, $cartItems);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_update_cart_item_quantity()
     {
         $user = User::factory()->create();
@@ -82,7 +82,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals(5, $cartItem->fresh()->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_remove_item_from_cart()
     {
         $user = User::factory()->create();
@@ -97,7 +97,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertCount(0, $user->refresh()->cartItems);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_checkout_cart()
     {
         $user = User::factory()->create();
@@ -126,7 +126,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals(PurchaseStatus::UNPAID, $purchases[1]->status);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_get_cart_total()
     {
         $user = User::factory()->create();
@@ -144,7 +144,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals(140.00, $total);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_get_cart_items_count()
     {
         $user = User::factory()->create();
@@ -159,7 +159,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals(5, $count);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_clear_cart()
     {
         $user = User::factory()->create();
@@ -176,7 +176,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertCount(0, $user->fresh()->cartItems);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_check_if_product_was_purchased()
     {
         $user = User::factory()->create();
@@ -191,7 +191,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertFalse($user->hasPurchased($notPurchasedProduct));
     }
 
-    /** @test */
+    #[Test]
     public function user_can_get_completed_purchases()
     {
         $user = User::factory()->create();
@@ -208,7 +208,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertCount(2, $completed);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_reduces_stock_when_managed()
     {
         $user = User::factory()->create();
@@ -220,7 +220,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals(7, $product->AvailableStocks);
     }
 
-    /** @test */
+    #[Test]
     public function cannot_purchase_more_than_available_stock()
     {
         $user = User::factory()->create();
@@ -231,7 +231,7 @@ class PurchaseFlowTest extends TestCase
         $user->purchase($product, quantity: 10);
     }
 
-    /** @test */
+    #[Test]
     public function adding_to_cart_checks_stock_availability()
     {
         $user = User::factory()->create();
@@ -240,7 +240,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertThrows(fn() => $user->addToCart($product, quantity: 5), NotEnoughStockException::class);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_can_store_metadata()
     {
         $user = User::factory()->create();
@@ -254,7 +254,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertEquals('Happy Birthday!', $purchase->meta->gift_message ?? null);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_can_be_associated_with_cart()
     {
         $user = User::factory()->create();
@@ -276,7 +276,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertTrue($cart->purchases->contains($purchase));
     }
 
-    /** @test */
+    #[Test]
     public function checkout_marks_cart_as_converted()
     {
         $user = User::factory()->create();
@@ -294,7 +294,7 @@ class PurchaseFlowTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function user_cannot_add_out_of_stock_product_to_cart()
     {
         $user = User::factory()->create();
@@ -309,7 +309,7 @@ class PurchaseFlowTest extends TestCase
         $user->addToCart($product, quantity: 1);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_stores_amount_correctly()
     {
         $user = User::factory()->create();
@@ -324,7 +324,7 @@ class PurchaseFlowTest extends TestCase
         $this->assertGreaterThan(0, $purchase->amount);
     }
 
-    /** @test */
+    #[Test]
     public function cart_total_is_correct_after_checkout()
     {
         $user = User::factory()->create();

@@ -4,16 +4,16 @@ namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductAction;
-use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class ProductActionTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_product_action()
     {
         $product = Product::factory()->create();
@@ -32,7 +32,7 @@ class ProductActionTest extends TestCase
         $this->assertContains('refunded', $action->events ?? []);
     }
 
-    /** @test */
+    #[Test]
     public function product_has_many_actions()
     {
         $product = Product::factory()->create();
@@ -52,7 +52,7 @@ class ProductActionTest extends TestCase
         $this->assertCount(2, $product->fresh()->actions);
     }
 
-    /** @test */
+    #[Test]
     public function action_belongs_to_product()
     {
         $product = Product::factory()->create();
@@ -66,7 +66,7 @@ class ProductActionTest extends TestCase
         $this->assertEquals($product->id, $action->product->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_enable_and_disable_actions()
     {
         $product = Product::factory()->create();
@@ -86,7 +86,7 @@ class ProductActionTest extends TestCase
         $this->assertFalse($action->fresh()->active);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_store_action_parameters()
     {
         $product = Product::factory()->create();
@@ -109,7 +109,7 @@ class ProductActionTest extends TestCase
         $this->assertEquals('Welcome to our service', $action->parameters['subject']);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_set_action_priority()
     {
         $product = Product::factory()->create();
@@ -134,7 +134,7 @@ class ProductActionTest extends TestCase
         $this->assertEquals($action2->id, $sorted[1]->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_different_events()
     {
         $product = Product::factory()->create();
@@ -157,7 +157,7 @@ class ProductActionTest extends TestCase
         $this->assertContains('refunded', $refundedAction->events);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_actions_for_specific_event()
     {
         $product = Product::factory()->create();
@@ -187,7 +187,7 @@ class ProductActionTest extends TestCase
         $this->assertCount(2, $purchaseActions);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_filter_enabled_actions()
     {
         $product = Product::factory()->create();
@@ -212,7 +212,7 @@ class ProductActionTest extends TestCase
         $this->assertCount(1, $enabledActions);
     }
 
-    /** @test */
+    #[Test]
     public function multiple_products_can_have_same_action()
     {
         $product1 = Product::factory()->create();
@@ -234,7 +234,7 @@ class ProductActionTest extends TestCase
         $this->assertCount(1, $product2->actions);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_update_action_parameters()
     {
         $product = Product::factory()->create();
@@ -262,7 +262,7 @@ class ProductActionTest extends TestCase
         $this->assertEquals('another_value', $fresh->parameters['another_key']);
     }
 
-    /** @test */
+    #[Test]
     public function deleting_product_deletes_actions()
     {
         $product = Product::factory()->create();
@@ -281,7 +281,7 @@ class ProductActionTest extends TestCase
         $this->assertDatabaseMissing('product_actions', ['id' => $actionId]);
     }
 
-    /** @test */
+    #[Test]
     public function action_can_have_empty_parameters()
     {
         $product = Product::factory()->create();
@@ -295,7 +295,7 @@ class ProductActionTest extends TestCase
         $this->assertNull($action->parameters);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_query_actions_by_priority_order()
     {
         $product = Product::factory()->create();
@@ -333,7 +333,7 @@ class ProductActionTest extends TestCase
         $this->assertEquals($high->id, $ordered[2]->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_be_triggered_on_purchase()
     {
         $user = User::factory()->create();

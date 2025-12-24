@@ -2,9 +2,7 @@
 
 namespace Blax\Shop\Tests\Feature;
 
-use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
-use Blax\Shop\Enums\PricingStrategy;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
@@ -12,6 +10,7 @@ use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Test pool product cart pricing with comprehensive scenarios.
@@ -148,7 +147,7 @@ class PoolParkingCartPricingTest extends TestCase
     // Configuration A: Pool HAS price, does NOT manage stock
     // ==========================================
 
-    /** @test */
+    #[Test]
     public function config_a_progressive_pricing_step_by_step()
     {
         $this->cart = $this->createCart();
@@ -188,7 +187,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart->addToCart($pool, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function config_a_cart_items_have_correct_price_ids()
     {
         $this->cart = $this->createCart();
@@ -220,7 +219,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals($spot3PriceId, $item1000->price_id);
     }
 
-    /** @test */
+    #[Test]
     public function config_a_set_dates_doubles_cart_total()
     {
         $this->cart = $this->createCart();
@@ -236,7 +235,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function config_a_set_dates_after_adding_recalculates_prices()
     {
         $this->cart = $this->createCart();
@@ -258,7 +257,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function config_a_set_from_date_and_until_date_separately()
     {
         $this->cart = $this->createCart();
@@ -285,7 +284,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function config_a_set_dates_overwrites_cart_item_dates()
     {
         $this->cart = $this->createCart();
@@ -314,7 +313,7 @@ class PoolParkingCartPricingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function config_a_marks_items_unavailable_when_setting_dates_to_unavailable_period()
     {
         $this->cart = $this->createCart();
@@ -347,7 +346,7 @@ class PoolParkingCartPricingTest extends TestCase
     // Configuration B: Pool does NOT have price, does NOT manage stock
     // ==========================================
 
-    /** @test */
+    #[Test]
     public function config_b_progressive_pricing_step_by_step()
     {
         $this->cart = $this->createCart();
@@ -380,7 +379,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart->addToCart($pool, 1);
     }
 
-    /** @test */
+    #[Test]
     public function config_b_cart_items_have_correct_price_ids()
     {
         $this->cart = $this->createCart();
@@ -406,7 +405,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals($spot3PriceId, $item1000->price_id);
     }
 
-    /** @test */
+    #[Test]
     public function config_b_set_dates_doubles_cart_total()
     {
         $this->cart = $this->createCart();
@@ -422,7 +421,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(5200, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function config_b_set_dates_after_adding_recalculates_prices()
     {
         $this->cart = $this->createCart();
@@ -448,7 +447,7 @@ class PoolParkingCartPricingTest extends TestCase
     // Configuration C: Pool HAS price, MANAGES stock
     // ==========================================
 
-    /** @test */
+    #[Test]
     public function config_c_progressive_pricing_step_by_step()
     {
         $this->cart = $this->createCart();
@@ -488,7 +487,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart->addToCart($pool, 1, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function config_c_cart_items_have_correct_price_ids()
     {
         $this->cart = $this->createCart();
@@ -520,7 +519,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals($spot3PriceId, $item1000->price_id);
     }
 
-    /** @test */
+    #[Test]
     public function config_c_set_dates_doubles_cart_total()
     {
         $this->cart = $this->createCart();
@@ -536,7 +535,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function config_c_set_dates_after_adding_recalculates_prices()
     {
         $this->cart = $this->createCart();
@@ -558,7 +557,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function config_c_pool_stock_is_ignored_when_single_items_manage_stock()
     {
         $this->cart = $this->createCart();
@@ -573,7 +572,7 @@ class PoolParkingCartPricingTest extends TestCase
     // Configuration D: Pool does NOT have price, MANAGES stock
     // ==========================================
 
-    /** @test */
+    #[Test]
     public function config_d_progressive_pricing_step_by_step()
     {
         $this->cart = $this->createCart();
@@ -603,7 +602,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart->addToCart($pool, 1);
     }
 
-    /** @test */
+    #[Test]
     public function config_d_cart_items_have_correct_price_ids()
     {
         $this->cart = $this->createCart();
@@ -629,7 +628,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals($spot3PriceId, $item1000->price_id);
     }
 
-    /** @test */
+    #[Test]
     public function config_d_set_dates_doubles_cart_total()
     {
         $this->cart = $this->createCart();
@@ -645,7 +644,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(5200, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function config_d_set_dates_after_adding_recalculates_prices()
     {
         $this->cart = $this->createCart();
@@ -671,7 +670,7 @@ class PoolParkingCartPricingTest extends TestCase
     // Additional tests for date management
     // ==========================================
 
-    /** @test */
+    #[Test]
     public function set_dates_marks_items_unavailable_when_all_claimed()
     {
         $this->cart = $this->createCart();
@@ -704,7 +703,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertFalse($this->cart->is_ready_to_checkout, 'Cart should not be ready');
     }
 
-    /** @test */
+    #[Test]
     public function cart_item_subtotal_updates_when_dates_change()
     {
         $this->cart = $this->createCart();
@@ -727,7 +726,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(1800, $item->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function cart_total_and_item_subtotals_match()
     {
         $this->cart = $this->createCart();
@@ -746,7 +745,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(7200, $this->cart->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function removing_items_updates_pool_availability()
     {
         $this->cart = $this->createCart();
@@ -764,7 +763,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function adding_quantity_greater_than_one_respects_availability()
     {
         $this->cart = $this->createCart();
@@ -778,7 +777,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart->addToCart($pool, 7, [], $from, $until);
     }
 
-    /** @test */
+    #[Test]
     public function pool_with_all_single_items_without_prices_throws_exception()
     {
         $pool = Product::factory()->create([

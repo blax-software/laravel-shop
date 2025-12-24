@@ -10,6 +10,8 @@ use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
+
 
 class BookingPerMinutePricingTest extends TestCase
 {
@@ -48,7 +50,7 @@ class BookingPerMinutePricingTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_exact_24_hours()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -61,7 +63,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(10000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_12_hours_as_half_day()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -74,7 +76,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(5000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_36_hours()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -87,7 +89,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(15000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_6_hours()
     {
         $from = Carbon::now()->addDays(5)->setTime(10, 0, 0);
@@ -100,7 +102,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(2500, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_90_minutes()
     {
         $from = Carbon::now()->addDays(5)->setTime(14, 0, 0);
@@ -114,7 +116,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(625, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_2_days_and_3_hours()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -128,7 +130,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(21250, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_with_quantity_for_fractional_days()
     {
         $from = Carbon::now()->addDays(5)->setTime(10, 0, 0);
@@ -142,7 +144,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(15000, $cartItem->subtotal); // total for 3 units
     }
 
-    /** @test */
+    #[Test]
     public function it_recalculates_price_when_dates_are_updated()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -162,7 +164,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(7500, $cartItem->fresh()->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_45_minutes()
     {
         $from = Carbon::now()->addDays(5)->setTime(14, 0, 0);
@@ -175,7 +177,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(313, round($cartItem->price, 2)); // Rounded due to decimal precision
     }
 
-    /** @test */
+    #[Test]
     public function it_purchases_booking_with_per_minute_pricing()
     {
         $from = Carbon::now()->addDays(5)->setTime(14, 0, 0);
@@ -197,7 +199,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(8, $this->bookingProduct->getAvailableStock());
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_cart_item_from_date_recalculates_per_minute_price()
     {
         $from = Carbon::now()->addDays(5)->setTime(12, 0, 0);
@@ -220,7 +222,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(12500, $cartItem->fresh()->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_cart_item_until_date_recalculates_per_minute_price()
     {
         $from = Carbon::now()->addDays(5)->setTime(10, 0, 0);
@@ -243,7 +245,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(7500, $cartItem->fresh()->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_weekend_booking_friday_to_monday()
     {
         // Friday 6pm to Monday 10am = 64 hours = 2.666... days
@@ -258,7 +260,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals($expectedPrice, $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_multiple_bookings_with_different_durations()
     {
         $cart = \Blax\Shop\Models\Cart::factory()->create([
@@ -283,7 +285,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(7500, $cart->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_precise_price_for_irregular_time_spans()
     {
         // Test various odd time spans
@@ -312,7 +314,7 @@ class BookingPerMinutePricingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_booking_removal_and_readdition()
     {
         $from = Carbon::now()->addDays(5)->setTime(10, 0, 0);
@@ -339,7 +341,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(7500, $cartItem2->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_half_hour_increments()
     {
         $testCases = [
@@ -366,7 +368,7 @@ class BookingPerMinutePricingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_exact_hour_boundaries()
     {
         // Test exact hour boundaries from 1-10 hours
@@ -389,7 +391,7 @@ class BookingPerMinutePricingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_maintains_price_consistency_across_cart_operations()
     {
         $from = Carbon::now()->addDays(5)->setTime(14, 0, 0);
@@ -416,7 +418,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(5000, $cart->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_very_long_booking_periods()
     {
         // 7 days = 168 hours
@@ -430,7 +432,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals(70000, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_price_for_7_hour_30_minute_booking()
     {
         $from = Carbon::now()->addDays(5)->setTime(9, 0, 0);
@@ -442,7 +444,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals('3125', $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_booking_crossing_midnight()
     {
         // 11 PM to 3 AM = 4 hours
@@ -455,7 +457,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertEquals('1667', $cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_validates_minimum_price_for_very_short_bookings()
     {
         // 2 minutes
@@ -471,7 +473,7 @@ class BookingPerMinutePricingTest extends TestCase
         $this->assertLessThan(100, (float)$cartItem->price);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_15_minute_interval_bookings()
     {
         $intervals = [15, 30, 45, 60, 75, 90, 105, 120];
@@ -493,5 +495,60 @@ class BookingPerMinutePricingTest extends TestCase
 
             $cartItem->delete();
         }
+    }
+
+    #[Test]
+    public function it_does_only_adjust_price_for_booking_not_for_other_products()
+    {
+        // 2 minutes
+        $from = Carbon::now()->addDays(5)->setTime(10, 0, 0);
+        $until = Carbon::now()->addDays(6)->setTime(10, 2, 0);
+
+        $cartItem = Cart::addBooking($this->bookingProduct, 1, $from, $until);
+        $cart = Cart::current();
+
+        $cart->setDates($from, $until);
+
+        $cart->refresh();
+
+        // 2 minutes = 0.001389 days, $100 * 0.001389 = $0.1389, rounds to $0.14
+        $this->assertEquals(10014, $cartItem->price);
+
+        $single_product = Product::factory()
+            ->withStocks(5)
+            ->withPrices(1, 5000) // $50.00
+            ->create([
+                'name' => 'Wine Bottle',
+                'slug' => 'wine-bottle',
+                'type' => ProductType::SIMPLE,
+                'manage_stock' => true,
+            ]);
+
+        $this->assertEquals(5, $single_product->getAvailableStock());
+        $this->assertEquals(5000, $single_product->getCurrentPrice());
+
+        $this->assertEquals(1, $cart->items()->count());
+        $this->assertEquals(10014, $cart->getTotal());
+
+        $cart->addToCart($single_product, 1);
+
+        $this->assertEquals(2, $cart->items()->count());
+        $this->assertEquals(15014, $cart->getTotal());
+
+        $cart->addToCart($single_product, 1);
+
+        $this->assertEquals(2, $cart->items()->count());
+        $this->assertEquals(20014, $cart->getTotal());
+
+
+        $until = $until->copy()->addDays(10);
+
+        $cart->setDates($from, $until);
+
+        $cart->refresh();
+
+        $this->assertEquals(110014, $cartItem->fresh()->price);
+        $this->assertEquals(5000, $single_product->getCurrentPrice());
+        $this->assertEquals(120014, $cart->getTotal());
     }
 }

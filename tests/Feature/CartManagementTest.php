@@ -5,16 +5,16 @@ namespace Blax\Shop\Tests\Feature;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\Product;
-use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Workbench\App\Models\User;
+use PHPUnit\Framework\Attributes\Test;
 
 class CartManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_can_create_a_cart()
     {
         $user = User::factory()->create();
@@ -33,7 +33,7 @@ class CartManagementTest extends TestCase
         $this->assertNotNull($cart->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_automatically_generates_uuid()
     {
         $cart = Cart::create();
@@ -42,7 +42,7 @@ class CartManagementTest extends TestCase
         $this->assertIsString($cart->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_items_to_cart()
     {
         $product = Product::factory()->withPrices()->create();
@@ -56,7 +56,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(2, $cart->items->first()->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_update_cart_item_quantity()
     {
         $cart = Cart::create();
@@ -69,7 +69,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(3, $cartItem->fresh()->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_remove_items_from_cart()
     {
         $cart = Cart::create();
@@ -85,7 +85,7 @@ class CartManagementTest extends TestCase
         $this->assertCount(0, $cart->refresh()->items);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_cart_total_correctly()
     {
         $cart = Cart::create();
@@ -103,7 +103,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(130.00, $total); // (50 * 2) + (30 * 1)
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_total_items_correctly()
     {
         $cart = Cart::create();
@@ -121,7 +121,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(5, $totalItems); // 3 + 2
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_cart_is_expired()
     {
         $expiredCart = Cart::create([
@@ -136,7 +136,7 @@ class CartManagementTest extends TestCase
         $this->assertFalse($activeCart->isExpired());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_cart_is_converted()
     {
         $convertedCart = Cart::create([
@@ -151,7 +151,7 @@ class CartManagementTest extends TestCase
         $this->assertFalse($activeCart->isConverted());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_active_carts()
     {
         Cart::create([
@@ -174,7 +174,7 @@ class CartManagementTest extends TestCase
         $this->assertCount(1, $activeCarts);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_scope_carts_for_user()
     {
         $user = User::factory()->create();
@@ -189,7 +189,7 @@ class CartManagementTest extends TestCase
         $this->assertCount(2, $userCarts);
     }
 
-    /** @test */
+    #[Test]
     public function it_belongs_to_a_user()
     {
         $user = User::factory()->create();
@@ -198,7 +198,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals($user->id, $cart->user->id);
     }
 
-    /** @test */
+    #[Test]
     public function cart_items_have_correct_relationships()
     {
         $cart = Cart::create();
@@ -211,7 +211,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals($productPrice->id, $cartItem->purchasable_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculates_cart_item_subtotal()
     {
         $cart = Cart::create();
@@ -223,7 +223,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(100.00, $cartItem->getSubtotal()); // 25 * 4
     }
 
-    /** @test */
+    #[Test]
     public function it_can_store_cart_item_attributes()
     {
         $cart = Cart::create();
@@ -243,7 +243,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals('large', $cartItem->parameters['size']);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_have_multiple_items_of_same_product_with_different_attributes()
     {
         $cart = Cart::create();
@@ -266,7 +266,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals($productPrice->unit_amount * 3, $cart->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function it_deletes_cart_items_when_cart_is_deleted()
     {
         $cart = Cart::create();
@@ -285,7 +285,7 @@ class CartManagementTest extends TestCase
         $this->assertDatabaseMissing('cart_items', ['id' => $cartItemId]);
     }
 
-    /** @test */
+    #[Test]
     public function it_calculats_unpaid_and_paid_and_can_scope()
     {
         $user = User::factory()->create();
@@ -304,7 +304,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals($user->currentCart()->id, Cart::unpaid()->first()->id, 'Unpaid cart scope should return the current cart.');
     }
 
-    /** @test */
+    #[Test]
     public function it_can_create_cart_with_factory()
     {
         $cart = Cart::factory()->create();
@@ -336,7 +336,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals((150.00 * 2) + (120 * 2), $cartWithProduct->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_remove_entire_cart_item()
     {
         $cart = Cart::create();
@@ -352,7 +352,7 @@ class CartManagementTest extends TestCase
         $this->assertTrue(true); // Item was deleted
     }
 
-    /** @test */
+    #[Test]
     public function it_can_decrease_cart_item_quantity()
     {
         $cart = Cart::create();
@@ -369,7 +369,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(75.00 * 3, $updatedItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_subtotal_correctly_when_decreasing_quantity()
     {
         $cart = Cart::create();
@@ -385,7 +385,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(300.00, $cartItem->subtotal);
     }
 
-    /** @test */
+    #[Test]
     public function it_respects_parameters_when_removing_from_cart()
     {
         $cart = Cart::create();
@@ -415,7 +415,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(3, $cart->items->first()->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_decreases_only_matching_parameters_when_removing()
     {
         $cart = Cart::create();
@@ -435,7 +435,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals('large', $cartItem->parameters['size']);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_cart_item_when_quantity_is_decreased()
     {
         $cart = Cart::create();
@@ -450,7 +450,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(3, $result->quantity);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_removing_nonexistent_item_gracefully()
     {
         $cart = Cart::create();
@@ -464,7 +464,7 @@ class CartManagementTest extends TestCase
         $this->assertCount(0, $cart->items);
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_cart_total_after_removing_items()
     {
         $cart = Cart::create();
@@ -479,7 +479,7 @@ class CartManagementTest extends TestCase
         $this->assertEquals(150.00, $cart->refresh()->getTotal());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_remove_from_cart_with_multiple_items()
     {
         $cart = Cart::create();

@@ -5,7 +5,6 @@ namespace Blax\Shop\Tests\Feature;
 use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Exceptions\NotPurchasable;
-use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Services\CartService;
@@ -13,6 +12,7 @@ use Workbench\App\Models\User;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class BookingTimespanValidationTest extends TestCase
 {
@@ -47,7 +47,7 @@ class BookingTimespanValidationTest extends TestCase
         $this->cartService = new CartService();
     }
 
-    /** @test */
+    #[Test]
     public function it_rejects_booking_when_from_is_after_until()
     {
         $from = now()->addDays(5);
@@ -64,7 +64,7 @@ class BookingTimespanValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_rejects_booking_when_from_equals_until()
     {
         $from = now()->addDays(3);
@@ -81,7 +81,7 @@ class BookingTimespanValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_rejects_booking_when_from_is_in_the_past()
     {
         $from = now()->subDays(2);
@@ -98,7 +98,7 @@ class BookingTimespanValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_accepts_booking_when_from_is_exactly_now()
     {
         $from = now()->addSeconds(1);  // Very slightly in the future to avoid timing issues
@@ -113,7 +113,7 @@ class BookingTimespanValidationTest extends TestCase
         $this->assertNotNull($cartItem->until);
     }
 
-    /** @test */
+    #[Test]
     public function it_validates_timespan_availability_across_date_range()
     {
         // Create a pool product with 1 single item
@@ -169,7 +169,7 @@ class BookingTimespanValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_back_to_back_bookings_without_overlap()
     {
         // Create a pool product with 2 single items so both bookings can succeed
@@ -245,7 +245,7 @@ class BookingTimespanValidationTest extends TestCase
         $this->assertCount(1, $newUser->currentCart()->items);
     }
 
-    /** @test */
+    #[Test]
     public function it_detects_overlap_when_new_booking_ends_during_existing_booking()
     {
         // Book days 5-10
@@ -276,7 +276,7 @@ class BookingTimespanValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_detects_overlap_when_new_booking_starts_during_existing_booking()
     {
         // Book days 5-10
@@ -307,7 +307,7 @@ class BookingTimespanValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_detects_overlap_when_new_booking_completely_contains_existing_booking()
     {
         // Book days 6-8
@@ -338,7 +338,7 @@ class BookingTimespanValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_detects_overlap_when_new_booking_is_completely_contained_by_existing_booking()
     {
         // Book days 5-10
@@ -369,7 +369,7 @@ class BookingTimespanValidationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_timezone_aware_timespan_validation()
     {
         Carbon::setTestNow(now('America/New_York'));
@@ -388,7 +388,7 @@ class BookingTimespanValidationTest extends TestCase
         $this->assertTrue($cartItem->from->lessThan($cartItem->until));
     }
 
-    /** @test */
+    #[Test]
     public function it_allows_same_product_multiple_non_overlapping_timespans()
     {
         // Create pool with 2 single items

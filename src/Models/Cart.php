@@ -849,8 +849,8 @@ class Cart extends Model
         Model $cartable,
         int $quantity = 1,
         array $parameters = [],
-        \DateTimeInterface $from = null,
-        \DateTimeInterface $until = null
+        null|\DateTimeInterface $from = null,
+        null|\DateTimeInterface $until = null
     ): CartItem {
         // $cartable must implement Cartable
         if (! $cartable instanceof Cartable) {
@@ -873,8 +873,20 @@ class Cart extends Model
             $until = $this->until;
         }
 
+        if ($cartable instanceof Product) {
+            $is_pool = $cartable->isPool();
+            $is_booking = $cartable->isBooking();
+        } elseif (
+            $cartable instanceof ProductPrice
+            && $cartable->purchasable instanceof Product
+        ) {
+            $is_pool = $cartable->purchasable->isPool();
+            $is_booking = $cartable->purchasable->isBooking();
+        }
+
+
         // For pool products with quantity > 1, add them one at a time to get progressive pricing
-        if ($cartable instanceof Product && $cartable->isPool() && $quantity > 1) {
+        if ($is_pool && $quantity > 1) {
             // Validate availability if dates are provided
             if ($from && $until) {
                 $available = $cartable->getPoolMaxQuantity($from, $until);
@@ -912,7 +924,9 @@ class Cart extends Model
                     ->where('purchasable_type', get_class($cartable))
                     ->sum('quantity');
 
-                $availableForThisRequest = $totalCapacity === PHP_INT_MAX ? PHP_INT_MAX : max(0, $totalCapacity - $itemsInCart);
+                $availableForThisRequest = $totalCapacity === PHP_INT_MAX
+                    ? PHP_INT_MAX
+                    : max(0, $totalCapacity - $itemsInCart);
 
                 if ($availableForThisRequest !== PHP_INT_MAX && $quantity > $availableForThisRequest) {
                     throw new NotEnoughStockException(
@@ -942,14 +956,18 @@ class Cart extends Model
                 }
 
                 // Check booking product availability if dates are provided
-                if ($cartable->isBooking() && !$cartable->isPool() && !$cartable->isAvailableForBooking($from, $until, $quantity)) {
+                if (
+                    $is_booking
+                    && !$is_pool
+                    && !$cartable->isAvailableForBooking($from, $until, $quantity)
+                ) {
                     throw new NotEnoughStockException(
                         "Product '{$cartable->name}' is not available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')})."
                     );
                 }
 
                 // Check pool product availability if dates are provided
-                if ($cartable->isPool()) {
+                if ($is_pool) {
                     $maxQuantity = $cartable->getPoolMaxQuantity($from, $until);
 
                     // Subtract items already in cart for the same period
@@ -987,7 +1005,7 @@ class Cart extends Model
             } else {
                 // When adding pool items without dates, validate against total pool capacity
                 // This allows adding items even if currently claimed - date-based validation happens later
-                if ($cartable->isPool()) {
+                if ($is_pool) {
                     $totalCapacity = $cartable->getPoolTotalCapacity(); // Total capacity ignoring claims
 
                     // Subtract items already in cart (without dates or with any dates)
@@ -1015,7 +1033,7 @@ class Cart extends Model
         $poolSingleItem = null;
         $poolPriceId = null;
 
-        if ($cartable instanceof Product && $cartable->isPool()) {
+        if ($is_pool) {
             $this->unsetRelation('items'); // Clear cached relationship
             $currentQuantityInCart = $this->items()
                 ->where('purchasable_id', $cartable->getKey())
@@ -1035,7 +1053,7 @@ class Cart extends Model
             ->where('purchasable_id', $cartable->getKey())
             ->where('purchasable_type', get_class($cartable))
             ->get()
-            ->first(function ($item) use ($parameters, $from, $until, $cartable, $poolPriceId) {
+            ->first(function ($item) use ($parameters, $from, $until, $cartable, $poolPriceId, $is_pool) {
                 $existingParams = is_array($item->parameters)
                     ? $item->parameters
                     : (array) $item->parameters;
@@ -1061,7 +1079,7 @@ class Cart extends Model
                 // This is critical because different single items have their own stock limits
                 // even if they happen to share the same price (e.g., via pool fallback price)
                 $priceMatch = true;
-                if ($cartable instanceof Product && $cartable->isPool()) {
+                if ($is_pool) {
                     // Calculate expected price for this item
                     $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);
                     $expectedPrice = $poolItemData['price'] ?? null;
@@ -1085,7 +1103,7 @@ class Cart extends Model
 
         // Calculate price per day (base price)
         // For pool products, get price based on how many items are already in cart
-        if ($cartable instanceof Product && $cartable->isPool()) {
+        if ($is_pool) {
             // Use smarter pricing that considers which price tiers are used
             $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);
 
@@ -1115,7 +1133,7 @@ class Cart extends Model
 
         // Ensure prices are not null
         if ($pricePerDay === null) {
-            if ($cartable instanceof Product && $cartable->isPool()) {
+            if ($is_pool) {
                 // For pool products, throw specific error when neither pool nor single items have prices
                 throw \Blax\Shop\Exceptions\HasNoPriceException::poolProductNoPriceAndNoSingleItemPrices($cartable->name);
             }
@@ -1129,8 +1147,15 @@ class Cart extends Model
         }
 
         // Calculate price per unit for the entire period and round to nearest cent for consistency
-        $pricePerUnit = (int) round($pricePerDay * $days);
-        $regularPricePerUnit = (int) round($regularPricePerDay * $days);
+        if ($is_booking) {
+            // For bookings, price scales with days
+            $pricePerUnit = (int) round($pricePerDay * $days);
+            $regularPricePerUnit = (int) round($regularPricePerDay * $days);
+        } else {
+            // For non-bookings, price is per unit regardless of days
+            $pricePerUnit = (int) round($pricePerDay);
+            $regularPricePerUnit = (int) round($regularPricePerDay);
+        }
 
         // Defensive check - ensure pricePerUnit is not null
         if ($pricePerUnit === null) {
@@ -1158,7 +1183,7 @@ class Cart extends Model
         $priceId = null;
         if ($cartable instanceof Product) {
             // For pool products, use the single item's price_id
-            if ($cartable->isPool() && $poolPriceId) {
+            if ($is_pool && $poolPriceId) {
                 $priceId = $poolPriceId;
             } else {
                 // Get the default price for the product
