@@ -490,6 +490,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         }
 
         $this->assertEquals(1, $readies, '1 item should be ready (1 single available)');
+        $this->assertFalse($cart->is_ready_to_checkout);
 
         $offset = 4;
         $cart->setDates(
@@ -505,6 +506,7 @@ class CartItemAvailabilityValidationTest extends TestCase
         }
 
         $this->assertEquals(3, $readies, '3 items should be ready');
+        $this->assertTrue($cart->is_ready_to_checkout);
 
         $offset = 3;
         $cart->setDates(
@@ -523,5 +525,22 @@ class CartItemAvailabilityValidationTest extends TestCase
         // In hotel-style bookings, checkout day = checkin day does NOT overlap,
         // so all 3 singles should be available.
         $this->assertEquals(3, $readies, '3 items should be ready (no overlap with offset 3)');
+        $this->assertTrue($cart->is_ready_to_checkout);
+
+        $offset = 2;
+        $cart->setDates(
+            $from->copy()->addDays($offset),
+            $until->copy()->addDays($offset)
+        );
+
+        $readies = 0;
+        foreach ($cart->items as $item) {
+            if ($item->is_ready_to_checkout) {
+                $readies++;
+            }
+        }
+
+        $this->assertEquals(1, $readies, '1 item should be ready (no overlap with offset 2)');
+        $this->assertFalse($cart->is_ready_to_checkout);
     }
 }
