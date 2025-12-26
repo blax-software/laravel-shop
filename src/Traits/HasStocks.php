@@ -6,6 +6,7 @@ use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Carbon\Carbon;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
@@ -509,5 +510,171 @@ trait HasStocks
         }
 
         return $this->getAvailableStock($date);
+    }
+
+    /**
+     * Gets the available amounts per date range, with $from and $until specified
+     * Returns associative array with keys 
+     *  - 'max_available' => Shows the peak available stock in the date range
+     *  - 'min_available' => Shows the lowest available stock in the date range
+     *  - 'dates' => An array of dates with their respective available stock
+     * 
+     * @param \DateTimeInterface $from Start date of the range (optional, defaults to today)
+     * @param \DateTimeInterface $until End date of the range (optional, defaults to 30 days)
+     * @return array Associative array with 'max_available', 'min_available', and 'dates'
+     */
+    public function calendarAvailability(
+        ?DateTimeInterface $from = null,
+        ?DateTimeInterface $until = null
+    ): array {
+        if ($this->manage_stock === false) {
+            return [
+                'max_available' => PHP_INT_MAX,
+                'min_available' => PHP_INT_MAX,
+                'dates' => [],
+            ];
+        }
+
+        $fromDate = Carbon::parse($from ?? now())->startOfDay();
+        $untilDate = Carbon::parse($until ?? $fromDate->copy()->addDays(30))->endOfDay();
+
+        // Fetch all relevant stocks once for performance
+        $allStocks = $this->stocks()
+            ->withoutGlobalScope('willExpire')
+            ->where(function ($query) {
+                $query->where('status', StockStatus::COMPLETED->value)
+                    ->where('type', '!=', StockType::CLAIMED->value);
+            })
+            ->orWhere(function ($query) {
+                $query->where('status', StockStatus::PENDING->value)
+                    ->where('type', StockType::CLAIMED->value);
+            })
+            ->get();
+
+        $dates = [];
+        $globalMax = PHP_INT_MIN;
+        $globalMin = PHP_INT_MAX;
+
+        $currentDate = $fromDate->copy();
+        while ($currentDate->lte($untilDate)) {
+            $dayStart = $currentDate->copy()->startOfDay();
+            $dayEnd = $currentDate->copy()->endOfDay();
+
+            // Find all "event" timestamps for this day where availability might change
+            $events = [$dayStart, $dayEnd];
+            foreach ($allStocks as $stock) {
+                if ($stock->claimed_from && $stock->claimed_from->between($dayStart, $dayEnd)) {
+                    $events[] = Carbon::parse($stock->claimed_from);
+                }
+                if ($stock->expires_at && $stock->expires_at->between($dayStart, $dayEnd)) {
+                    $events[] = Carbon::parse($stock->expires_at);
+                }
+            }
+
+            $dayMin = PHP_INT_MAX;
+            $dayMax = PHP_INT_MIN;
+
+            // Check availability at each event timestamp to find min/max for the day
+            foreach ($events as $eventTime) {
+                $available = 0;
+                foreach ($allStocks as $stock) {
+                    if ($stock->status === StockStatus::COMPLETED && $stock->type !== StockType::CLAIMED) {
+                        if (is_null($stock->expires_at) || $stock->expires_at > $eventTime) {
+                            $available += $stock->quantity;
+                        }
+                    } elseif ($stock->status === StockStatus::PENDING && $stock->type === StockType::CLAIMED) {
+                        // Add back if NOT active at this timestamp
+                        $isNotStarted = $stock->claimed_from && $stock->claimed_from > $eventTime;
+                        $isExpired = $stock->expires_at && $stock->expires_at <= $eventTime;
+                        if ($isNotStarted || $isExpired) {
+                            $available += $stock->quantity;
+                        }
+                    }
+                }
+
+                $available = max(0, $available);
+                $dayMin = min($dayMin, $available);
+                $dayMax = max($dayMax, $available);
+            }
+
+            $dates[$currentDate->toDateString()] = [
+                'min' => $dayMin,
+                'max' => $dayMax,
+            ];
+
+            $globalMin = min($globalMin, $dayMin);
+            $globalMax = max($globalMax, $dayMax);
+
+            $currentDate->addDay();
+        }
+
+        return [
+            'max_available' => $globalMax === PHP_INT_MIN ? 0 : $globalMax,
+            'min_available' => $globalMin === PHP_INT_MAX ? 0 : $globalMin,
+            'dates' => $dates,
+        ];
+    }
+
+    public function calendarAvailabilityDates(
+        ?DateTimeInterface $from = null,
+        ?DateTimeInterface $until = null
+    ): array {
+        $availability = $this->calendarAvailability($from, $until);
+        return $availability['dates'];
+    }
+
+    /**
+     * Gets the availability on the day by time. 00:00 shows the availables at the start of the day.
+     * Every other timestamp shows what total current availability is at that time.
+     * 
+     * @param null|DateTimeInterface $date
+     * @return array|int
+     */
+    public function dayAvailability(?DateTimeInterface $date = null)
+    {
+        if ($this->manage_stock === false) {
+            return PHP_INT_MAX;
+        }
+
+        $date = Carbon::parse($date ?? now());
+        $startOfDay = $date->copy()->startOfDay();
+        $endOfDay = $date->copy()->endOfDay();
+
+        $availability = [
+            '00:00' => $this->availableOnDate($startOfDay),
+        ];
+
+        $stocks = $this->stocks()
+            ->withoutGlobalScope('willExpire')
+            ->where(function ($query) use ($startOfDay, $endOfDay) {
+                $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                    $q->whereNotNull('claimed_from')
+                        ->whereBetween('claimed_from', [$startOfDay, $endOfDay]);
+                })->orWhere(function ($q) use ($startOfDay, $endOfDay) {
+                    $q->whereNotNull('expires_at')
+                        ->whereBetween('expires_at', [$startOfDay, $endOfDay]);
+                });
+            })
+            ->get();
+
+        foreach ($stocks as $stock) {
+            if ($stock->claimed_from && $stock->claimed_from->isSameDay($startOfDay)) {
+                $timeKey = $stock->claimed_from->format('H:i');
+                if (!isset($availability[$timeKey])) {
+                    $availability[$timeKey] = $this->availableOnDate($stock->claimed_from);
+                }
+            }
+
+            if ($stock->expires_at && $stock->expires_at->isSameDay($startOfDay)) {
+                $timeKey = $stock->expires_at->format('H:i');
+                if (!isset($availability[$timeKey])) {
+                    $availability[$timeKey] = $this->availableOnDate($stock->expires_at);
+                }
+            }
+        }
+
+        ksort($availability);
+
+        return $availability;
     }
 }

@@ -431,4 +431,78 @@ class StockManagementTest extends TestCase
         $this->assertFalse($result);
         $this->assertCount(0, $product->stocks);
     }
+
+    #[Test]
+    public function it_shows_calendar_availability_correctly_with_claimed_stock()
+    {
+        $product = Product::factory()->withStocks(50)->create();
+
+        // Claim stock from day 3 to day 7
+        $product->claimStock(
+            quantity: 20,
+            from: now()->endOfDay()->addDays(3),
+            until: now()->endOfDay()->subHours(6)->addDays(7)
+        );
+
+        $product->claimStock(
+            quantity: 2,
+            from: now()->endOfDay()->addDays(1),
+            until: now()->endOfDay()->addDays(2)
+        );
+
+        $product->claimStock(
+            quantity: 5,
+            from: now()->endOfDay()->addDays(10),
+            until: now()->endOfDay()->addDays(22)
+        );
+
+        $availability = $product->calendarAvailability();
+
+        $this->assertEquals(50, $availability['max_available']);
+        $this->assertEquals(30, $availability['min_available']);
+        $this->assertCount(31, $availability['dates']);
+
+        // Check specific dates
+        $this->assertEquals(['min' => 50, 'max' => 50], $availability['dates'][now()->toDateString()]);
+        $this->assertEquals(['min' => 48, 'max' => 50], $availability['dates'][now()->addDays(1)->toDateString()]);
+        $this->assertEquals(['min' => 48, 'max' => 50], $availability['dates'][now()->addDays(2)->toDateString()]);
+        $this->assertEquals(['min' => 30, 'max' => 50], $availability['dates'][now()->addDays(3)->toDateString()]);
+        $this->assertEquals(['min' => 30, 'max' => 30], $availability['dates'][now()->addDays(4)->toDateString()]);
+        $this->assertEquals(['min' => 30, 'max' => 50], $availability['dates'][now()->addDays(7)->toDateString()]);
+        $this->assertEquals(['min' => 50, 'max' => 50], $availability['dates'][now()->addDays(8)->toDateString()]);
+        $this->assertEquals(['min' => 45, 'max' => 45], $availability['dates'][now()->addDays(11)->toDateString()]);
+        $this->assertEquals(['min' => 45, 'max' => 50], $availability['dates'][now()->addDays(22)->toDateString()]);
+        $this->assertEquals(['min' => 50, 'max' => 50], $availability['dates'][now()->addDays(23)->toDateString()]);
+
+        $minValues = array_column($availability['dates'], 'min');
+        $valueCounts = array_count_values($minValues);
+
+        $this->assertEquals(11, $valueCounts['50']);
+        $this->assertEquals(2, $valueCounts['48']);
+        $this->assertEquals(13, $valueCounts['45']);
+        $this->assertEquals(5, $valueCounts['30']);
+
+        // Test custom range
+        $customAvailability = $product->calendarAvailability(
+            from: now()->addDays(3),
+            until: now()->addDays(10)
+        );
+
+        $this->assertCount(8, $customAvailability['dates']); // Day 3 to Day 10 inclusive
+        $this->assertEquals(50, $customAvailability['max_available']);
+        $this->assertEquals(30, $customAvailability['min_available']);
+
+        $customMinValues = array_column($customAvailability['dates'], 'min');
+        $customValueCounts = array_count_values($customMinValues);
+        $this->assertEquals(5, $customValueCounts['30']); // Days 3, 4, 5, 6, 7
+        $this->assertEquals(2, $customValueCounts['50']); // Days 8, 9
+        $this->assertEquals(1, $customValueCounts['45']); // Day 10
+
+        // dayAvailability
+        $dayAvailability = $product->dayAvailability(now()->addDays(7));
+
+        $this->assertEquals(30, $dayAvailability['00:00']);
+        $this->assertArrayHasKey(now()->endOfDay()->subHours(6)->addDays(7)->format('H:i'), $dayAvailability);
+        $this->assertEquals(50, @$dayAvailability[now()->endOfDay()->subHours(6)->addDays(7)->format('H:i')]);
+    }
 }
