@@ -527,6 +527,11 @@ trait HasStocks
         ?DateTimeInterface $from = null,
         ?DateTimeInterface $until = null
     ): array {
+        // For pool products, aggregate availability from all single items
+        if (method_exists($this, 'isPool') && $this->isPool()) {
+            return $this->getPoolCalendarAvailability($from, $until);
+        }
+
         if ($this->manage_stock === false) {
             return [
                 'max_available' => PHP_INT_MAX,
@@ -542,12 +547,14 @@ trait HasStocks
         $allStocks = $this->stocks()
             ->withoutGlobalScope('willExpire')
             ->where(function ($query) {
-                $query->where('status', StockStatus::COMPLETED->value)
-                    ->where('type', '!=', StockType::CLAIMED->value);
-            })
-            ->orWhere(function ($query) {
-                $query->where('status', StockStatus::PENDING->value)
-                    ->where('type', StockType::CLAIMED->value);
+                // Group conditions with OR to keep them within the product_id scope
+                $query->where(function ($q) {
+                    $q->where('status', StockStatus::COMPLETED->value)
+                        ->where('type', '!=', StockType::CLAIMED->value);
+                })->orWhere(function ($q) {
+                    $q->where('status', StockStatus::PENDING->value)
+                        ->where('type', StockType::CLAIMED->value);
+                });
             })
             ->get();
 
@@ -561,7 +568,7 @@ trait HasStocks
             $dayEnd = $currentDate->copy()->endOfDay();
 
             // Find all "event" timestamps for this day where availability might change
-            $events = [$dayStart, $dayEnd];
+            $events = [$dayStart, $dayEnd->startOfSecond()]; // Normalize dayEnd to remove microseconds
             foreach ($allStocks as $stock) {
                 if ($stock->claimed_from && $stock->claimed_from->between($dayStart, $dayEnd)) {
                     $events[] = Carbon::parse($stock->claimed_from);
@@ -570,6 +577,9 @@ trait HasStocks
                     $events[] = Carbon::parse($stock->expires_at);
                 }
             }
+
+            // Remove exact duplicates
+            $events = array_values(array_unique($events, SORT_REGULAR));
 
             $dayMin = PHP_INT_MAX;
             $dayMax = PHP_INT_MIN;
@@ -632,6 +642,11 @@ trait HasStocks
      */
     public function dayAvailability(?DateTimeInterface $date = null)
     {
+        // For pool products, aggregate availability from all single items
+        if (method_exists($this, 'isPool') && $this->isPool()) {
+            return $this->getPoolDayAvailability($date);
+        }
+
         if ($this->manage_stock === false) {
             return PHP_INT_MAX;
         }
@@ -676,5 +691,162 @@ trait HasStocks
         ksort($availability);
 
         return $availability;
+    }
+
+    /**
+     * Get calendar availability for pool products by aggregating all single items
+     * 
+     * @param \DateTimeInterface|null $from
+     * @param \DateTimeInterface|null $until
+     * @return array
+     */
+    protected function getPoolCalendarAvailability(
+        ?DateTimeInterface $from = null,
+        ?DateTimeInterface $until = null
+    ): array {
+        // Eager load single products if not already loaded
+        if (!$this->relationLoaded('singleProducts')) {
+            $this->load('singleProducts');
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            $fromDate = Carbon::parse($from ?? now())->startOfDay();
+            $untilDate = Carbon::parse($until ?? $fromDate->copy()->addDays(30))->endOfDay();
+
+            $dates = [];
+            $currentDate = $fromDate->copy();
+            while ($currentDate->lte($untilDate)) {
+                $dates[$currentDate->toDateString()] = ['min' => 0, 'max' => 0];
+                $currentDate->addDay();
+            }
+
+            return [
+                'max_available' => 0,
+                'min_available' => 0,
+                'dates' => $dates,
+            ];
+        }
+
+        // Filter to only include singles that manage stock
+        // Unmanaged singles have unlimited availability and don't need to be counted
+        $managedSingles = $singleItems->filter(fn($single) => $single->manage_stock);
+
+        if ($managedSingles->isEmpty()) {
+            // If no singles manage stock, the pool has unlimited availability
+            return [
+                'max_available' => PHP_INT_MAX,
+                'min_available' => PHP_INT_MAX,
+                'dates' => [],
+            ];
+        }
+
+        // Get availability for each managed single item
+        $singleAvailabilities = [];
+        foreach ($managedSingles as $single) {
+            $singleAvailabilities[] = $single->calendarAvailability($from, $until);
+        }
+
+        // Aggregate the availabilities
+        $dates = [];
+        $globalMin = PHP_INT_MAX;
+        $globalMax = PHP_INT_MIN;
+
+        // Get all date keys from first single (they should all have the same dates)
+        if (!empty($singleAvailabilities)) {
+            $firstAvailability = $singleAvailabilities[0];
+            foreach ($firstAvailability['dates'] as $dateKey => $dayData) {
+                $dayMin = 0;
+                $dayMax = 0;
+
+                // Sum up min and max from all singles for this date
+                foreach ($singleAvailabilities as $singleAvail) {
+                    if (isset($singleAvail['dates'][$dateKey])) {
+                        $dayMin += $singleAvail['dates'][$dateKey]['min'];
+                        $dayMax += $singleAvail['dates'][$dateKey]['max'];
+                    }
+                }
+
+                $dates[$dateKey] = [
+                    'min' => $dayMin,
+                    'max' => $dayMax,
+                ];
+
+                $globalMin = min($globalMin, $dayMin);
+                $globalMax = max($globalMax, $dayMax);
+            }
+        }
+
+        return [
+            'max_available' => $globalMax === PHP_INT_MIN ? 0 : $globalMax,
+            'min_available' => $globalMin === PHP_INT_MAX ? 0 : $globalMin,
+            'dates' => $dates,
+        ];
+    }
+
+    /**
+     * Get day availability for pool products by aggregating all single items
+     * 
+     * @param \DateTimeInterface|null $date
+     * @return array
+     */
+    protected function getPoolDayAvailability(?DateTimeInterface $date = null): array
+    {
+        // Eager load single products if not already loaded
+        if (!$this->relationLoaded('singleProducts')) {
+            $this->load('singleProducts');
+        }
+
+        $singleItems = $this->singleProducts;
+
+        if ($singleItems->isEmpty()) {
+            return ['00:00' => 0];
+        }
+
+        // Filter to only include singles that manage stock
+        $managedSingles = $singleItems->filter(fn($single) => $single->manage_stock);
+
+        if ($managedSingles->isEmpty()) {
+            return PHP_INT_MAX; // Unlimited availability
+        }
+
+        // Get day availability for each managed single item
+        $singleDayAvailabilities = [];
+        foreach ($managedSingles as $single) {
+            $singleDayAvailabilities[] = $single->dayAvailability($date);
+        }
+
+        // Collect all unique timestamps
+        $allTimestamps = [];
+        foreach ($singleDayAvailabilities as $singleAvail) {
+            // dayAvailability can return PHP_INT_MAX for unmanaged stock
+            if (is_array($singleAvail)) {
+                $allTimestamps = array_merge($allTimestamps, array_keys($singleAvail));
+            }
+        }
+        $allTimestamps = array_unique($allTimestamps);
+        sort($allTimestamps);
+
+        // Aggregate availability for each timestamp
+        $aggregated = [];
+        foreach ($allTimestamps as $timestamp) {
+            $total = 0;
+            foreach ($singleDayAvailabilities as $singleAvail) {
+                // Find the most recent timestamp <= current timestamp
+                $applicableValue = 0;
+                foreach ($singleAvail as $time => $value) {
+                    if ($time <= $timestamp) {
+                        $applicableValue = $value;
+                    } else {
+                        break;
+                    }
+                }
+                $total += $applicableValue;
+            }
+            $aggregated[$timestamp] = $total;
+        }
+
+        return $aggregated;
     }
 }
