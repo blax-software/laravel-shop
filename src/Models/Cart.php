@@ -857,22 +857,6 @@ class Cart extends Model
             throw new CartableInterfaceException();
         }
 
-        // Extract dates from parameters if not provided directly
-        if (!$from && isset($parameters['from'])) {
-            $from = is_string($parameters['from']) ? Carbon::parse($parameters['from']) : $parameters['from'];
-        }
-        if (!$until && isset($parameters['until'])) {
-            $until = is_string($parameters['until']) ? Carbon::parse($parameters['until']) : $parameters['until'];
-        }
-
-        // Fallback to cart dates if no dates provided
-        if (!$from && $this->from) {
-            $from = $this->from;
-        }
-        if (!$until && $this->until) {
-            $until = $this->until;
-        }
-
         if ($cartable instanceof Product) {
             $is_pool = $cartable->isPool();
             $is_booking = $cartable->isBooking();
@@ -882,6 +866,24 @@ class Cart extends Model
         ) {
             $is_pool = $cartable->purchasable->isPool();
             $is_booking = $cartable->purchasable->isBooking();
+        }
+
+        if ($is_booking) {
+            // Extract dates from parameters if not provided directly
+            if (!$from && isset($parameters['from'])) {
+                $from = is_string($parameters['from']) ? Carbon::parse($parameters['from']) : $parameters['from'];
+            }
+            if (!$until && isset($parameters['until'])) {
+                $until = is_string($parameters['until']) ? Carbon::parse($parameters['until']) : $parameters['until'];
+            }
+
+            // Fallback to cart dates if no dates provided
+            if (!$from && $this->from) {
+                $from = $this->from;
+            }
+            if (!$until && $this->until) {
+                $until = $this->until;
+            }
         }
 
 
@@ -1206,8 +1208,8 @@ class Cart extends Model
             'unit_amount' => $unitAmount,  // Base price for 1 quantity, 1 day (in cents)
             'subtotal' => $totalPrice,  // Total for all units
             'parameters' => $parameters,
-            'from' => $from,
-            'until' => $until,
+            'from' => ($is_booking) ? $from : null,
+            'until' => ($is_booking) ? $until : null,
         ]);
 
         // For pool products, store which single item is being used in meta
@@ -1420,6 +1422,55 @@ class Cart extends Model
         return true;
     }
 
+    /**
+     * Convert this cart into purchases (atomic checkout).
+     *
+     * This method performs an in-database checkout and is intended to be safe against
+     * concurrent requests. It does not take payment; it turns each cart item into a
+     * purchase and (where applicable) claims stock for the booked timespan.
+     *
+     * Step-by-step:
+     * 1) Start a database transaction so the entire checkout is atomic.
+     * 2) Lock the cart row (`lockForUpdate`) to prevent concurrent checkouts of the same cart.
+     * 3) Validate the cart via `validateForCheckout()`:
+     *    - cart is not already converted
+     *    - cart is not empty
+     *    - all items have required information (e.g. booking dates)
+     *    - stock is available for each item (including booking/pool checks when dates exist)
+     * 4) Load cart items with their `purchasable` models.
+     * 5) For each cart item:
+     *    a) Resolve the purchasable product and lock it (when supported) to reduce stock race conditions.
+     *    b) Determine quantity.
+     *    c) Resolve booking dates:
+     *       - Prefer the cart-item `from`/`until` columns.
+     *       - Fallback to legacy `$item->parameters['from'|'until']` for BOOKING/POOL items.
+     *       - Parse string dates into Carbon instances.
+     *    d) If the product is a pool:
+     *       - If the pool contains booking single items, a timespan is required.
+     *       - When a timespan exists and booking singles are used, claim stock:
+     *         - Use a pre-allocated single item from item meta (`allocated_single_item_id`) when present.
+     *         - Otherwise call the pool stock claiming logic (`claimPoolStock`).
+     *         - Persist claimed single-item IDs into cart item meta (`claimed_single_items`).
+     *    e) If the product is a non-pool booking product, require a timespan.
+     *    f) Create a purchase via `$this->customer->purchase(...)` using the product's first price,
+     *       passing quantity and booking dates.
+     *    g) Link the purchase back to the cart (`cart_id`) and link the cart item to the purchase (`purchase_id`).
+     * 6) Mark the cart as converted by setting `converted_at`.
+     * 7) Commit the transaction and return the updated cart instance.
+     *
+     * Side effects:
+     * - Creates one purchase record per cart item.
+     * - Claims stock for booking/pool items when dates are provided and required.
+     * - Updates cart items with `purchase_id` and the cart with `converted_at`.
+     *
+     * @return static The converted cart (fresh state within the transaction scope).
+     *
+     * @throws \Blax\Shop\Exceptions\CartAlreadyConvertedException
+     * @throws \Blax\Shop\Exceptions\CartEmptyException
+     * @throws \Blax\Shop\Exceptions\CartItemMissingInformationException
+     * @throws \Blax\Shop\Exceptions\NotEnoughStockException
+     * @throws \Throwable For any other unexpected failures during checkout/stock claiming.
+     */
     public function checkout(): static
     {
         return DB::transaction(function () {
@@ -1456,10 +1507,10 @@ class Cart extends Model
 
                         // Convert to Carbon instances if they're strings
                         if ($from && is_string($from)) {
-                            $from = \Carbon\Carbon::parse($from);
+                            $from = Carbon::parse($from);
                         }
                         if ($until && is_string($until)) {
-                            $until = \Carbon\Carbon::parse($until);
+                            $until = Carbon::parse($until);
                         }
                     }
                 }

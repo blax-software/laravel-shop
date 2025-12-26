@@ -4,6 +4,7 @@ namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Facades\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
@@ -33,49 +34,40 @@ class CartServiceBookingTest extends TestCase
         $this->actingAs($this->user);
 
         // Create booking product
-        $this->bookingProduct = Product::factory()->create([
-            'name' => 'Hotel Room',
-            'type' => ProductType::BOOKING,
-            'manage_stock' => true,
-        ]);
-        $this->bookingProduct->increaseStock(10);
-
-        $this->bookingPrice = ProductPrice::factory()->create([
-            'purchasable_id' => $this->bookingProduct->id,
-            'purchasable_type' => Product::class,
-            'unit_amount' => 10000, // $100.00
-            'currency' => 'USD',
-            'is_default' => true,
-        ]);
+        $this->bookingProduct = Product::factory()
+            ->withStocks(10)
+            ->withPrices(1, 10000)
+            ->create([
+                'name' => 'Hotel Room',
+                'type' => ProductType::BOOKING,
+                'manage_stock' => true,
+            ]);
 
         // Create pool product with single items
-        $this->poolProduct = Product::factory()->create([
-            'name' => 'Parking Spaces',
-            'type' => ProductType::POOL,
-            'manage_stock' => false,
-        ]);
+        $this->poolProduct = Product::factory()
+            ->withPrices(1, 2000)
+            ->create([
+                'name' => 'Parking Spaces',
+                'type' => ProductType::POOL,
+                'manage_stock' => false,
+            ]);
 
-        $this->poolPrice = ProductPrice::factory()->create([
-            'purchasable_id' => $this->poolProduct->id,
-            'purchasable_type' => Product::class,
-            'unit_amount' => 2000, // $20.00
-            'currency' => 'USD',
-            'is_default' => true,
-        ]);
 
-        $this->singleItem1 = Product::factory()->create([
-            'name' => 'Parking Spot 1',
-            'type' => ProductType::BOOKING,
-            'manage_stock' => true,
-        ]);
-        $this->singleItem1->increaseStock(1);
+        $this->singleItem1 = Product::factory()
+            ->withStocks(1)
+            ->create([
+                'name' => 'Parking Spot 1',
+                'type' => ProductType::BOOKING,
+                'manage_stock' => true,
+            ]);
 
-        $this->singleItem2 = Product::factory()->create([
-            'name' => 'Parking Spot 2',
-            'type' => ProductType::BOOKING,
-            'manage_stock' => true,
-        ]);
-        $this->singleItem2->increaseStock(1);
+        $this->singleItem2 = Product::factory()
+            ->withStocks(1)
+            ->create([
+                'name' => 'Parking Spot 2',
+                'type' => ProductType::BOOKING,
+                'manage_stock' => true,
+            ]);
 
         $this->poolProduct->productRelations()->attach($this->singleItem1->id, [
             'type' => ProductRelationType::SINGLE->value,
@@ -89,40 +81,30 @@ class CartServiceBookingTest extends TestCase
     public function validate_bookings_returns_error_for_booking_product_without_timespan()
     {
         $cart = $this->user->currentCart();
-
-        // Add booking product without timespan
-        $cart->items()->create([
-            'purchasable_id' => $this->bookingProduct->id,
-            'purchasable_type' => Product::class,
-            'quantity' => 1,
-            'price' => 100.00,
-        ]);
+        $cart->addToCart($this->bookingProduct, 1);
 
         $errors = Cart::validateBookings();
 
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('requires a timespan', $errors[0]);
         $this->assertStringContainsString('Hotel Room', $errors[0]);
+
+        $this->assertEquals(10000, $cart->getTotal());
     }
 
     #[Test]
     public function validate_bookings_returns_error_for_pool_product_without_timespan_when_single_items_are_bookings()
     {
         $cart = $this->user->currentCart();
-
-        // Add pool product without timespan
-        $cart->items()->create([
-            'purchasable_id' => $this->poolProduct->id,
-            'purchasable_type' => Product::class,
-            'quantity' => 1,
-            'price' => 20.00,
-        ]);
+        $cart->addToCart($this->poolProduct, 1);
 
         $errors = Cart::validateBookings();
 
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('requires either a timespan', $errors[0]);
         $this->assertStringContainsString('Parking Spaces', $errors[0]);
+
+        $this->assertEquals(2000, $cart->getTotal());
     }
 
     #[Test]
@@ -135,20 +117,15 @@ class CartServiceBookingTest extends TestCase
         // Book all stock first
         $this->bookingProduct->claimStock(10, null, $from, $until);
 
-        // Try to add more than available
-        $cart->items()->create([
-            'purchasable_id' => $this->bookingProduct->id,
-            'purchasable_type' => Product::class,
-            'quantity' => 5,
-            'price' => 100.00,
-            'from' => $from,
-            'until' => $until,
-        ]);
+        $this->expectException(NotEnoughStockException::class);
+        $cart->addToCart($this->bookingProduct, 5, [], $from, $until);
 
         $errors = Cart::validateBookings();
 
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('not available for the selected period', $errors[0]);
+
+        $this->assertEquals(0, $cart->getTotal());
     }
 
     #[Test]

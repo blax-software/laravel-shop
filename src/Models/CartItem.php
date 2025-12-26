@@ -169,29 +169,28 @@ class CartItem extends Model
      */
     public function getIsReadyToCheckoutAttribute(): bool
     {
-        // Only check if purchasable is a Product
-        if ($this->purchasable_type !== config('shop.models.product', Product::class)) {
-            return true; // Non-product items are always ready
-        }
-
-        $product = $this->purchasable;
+        $product = $this->purchasable instanceof ProductPrice
+            ? $this->purchasable->purchasable
+            : $this->purchasable;
 
         if (!$product) {
             return false;
         }
 
-        // Check if item has a valid price (null or <= 0 means unavailable)
-        if ($this->price === null || $this->price <= 0) {
+        // Check if item has a valid price
+        if ($this->price === null) {
             return false;
         }
 
         // Note: Pool items don't require pre-allocation to be ready for checkout.
         // The checkout process can allocate singles on-the-fly via claimPoolStock().
         // The price check above is sufficient - if price is null, item is unavailable.
+        $is_booking = $product->isBooking();
+        $is_pool = $product->isPool();
 
         // Check if dates are required (for booking products or pools with booking items)
-        $requiresDates = $product->isBooking() ||
-            ($product->isPool() && $product->hasBookingSingleItems());
+        $requiresDates = $is_booking ||
+            ($is_pool && $product->hasBookingSingleItems());
 
         if ($requiresDates) {
             // Get effective dates (item-specific or cart fallback)
@@ -209,23 +208,25 @@ class CartItem extends Model
             }
 
             // Check stock availability for the booking period
-            if ($product->isBooking()) {
-                if (!$product->isAvailableForBooking($effectiveFrom, $effectiveUntil, $this->quantity)) {
-                    return false;
-                }
+            if (
+                $is_booking
+                && !$product->isAvailableForBooking($effectiveFrom, $effectiveUntil, $this->quantity)
+            ) {
+                return false;
             }
 
             // Check pool availability with dates
-            if ($product->isPool()) {
+            if ($is_pool) {
                 $available = $product->getPoolMaxQuantity($effectiveFrom, $effectiveUntil);
 
-                // Get current quantity in cart for this product (excluding this item)
+                // Get quantity in cart for this product from items BEFORE this one (by id order)
+                // This ensures the first N items up to available capacity are marked as ready
                 $cartQuantity = 0;
                 if ($this->cart) {
                     $cartQuantity = $this->cart->items()
                         ->where('purchasable_id', $product->getKey())
                         ->where('purchasable_type', get_class($product))
-                        ->where('id', '!=', $this->id)
+                        ->where('id', '<', $this->id)
                         ->sum('quantity');
                 }
 
@@ -235,7 +236,7 @@ class CartItem extends Model
             }
         } else {
             // For non-booking products, just check stock availability
-            if ($product->isPool()) {
+            if ($is_pool) {
                 $available = $product->getPoolMaxQuantity();
 
                 // Get current quantity in cart for this product (excluding this item)

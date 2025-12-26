@@ -45,38 +45,26 @@ class CartItemAvailabilityValidationTest extends TestCase
      */
     protected function createPoolWithLimitedSingles(int $numSingles = 3): Product
     {
-        $pool = Product::factory()->create([
-            'name' => 'Limited Pool',
-            'type' => ProductType::POOL,
-            'manage_stock' => false,
-        ]);
-
-        ProductPrice::factory()->create([
-            'purchasable_id' => $pool->id,
-            'purchasable_type' => Product::class,
-            'unit_amount' => 5000,
-            'currency' => 'USD',
-            'is_default' => true,
-        ]);
+        $pool = Product::factory()
+            ->withPrices(1, 5000)
+            ->create([
+                'name' => 'Limited Pool',
+                'type' => ProductType::POOL,
+                'manage_stock' => false,
+            ]);
 
         $pool->setPoolPricingStrategy('lowest');
 
         // Create singles with 1 stock each
         for ($i = 1; $i <= $numSingles; $i++) {
-            $single = Product::factory()->create([
-                'name' => "Single {$i}",
-                'type' => ProductType::BOOKING,
-                'manage_stock' => true,
-            ]);
-            $single->increaseStock(1);
-
-            ProductPrice::factory()->create([
-                'purchasable_id' => $single->id,
-                'purchasable_type' => Product::class,
-                'unit_amount' => 5000,
-                'currency' => 'USD',
-                'is_default' => true,
-            ]);
+            $single = Product::factory()
+                ->withStocks(1)
+                ->withPrices(1, 5000)
+                ->create([
+                    'name' => "Single {$i}",
+                    'type' => ProductType::BOOKING,
+                    'manage_stock' => true,
+                ]);
 
             $pool->attachSingleItems([$single->id]);
         }
@@ -461,29 +449,79 @@ class CartItemAvailabilityValidationTest extends TestCase
     }
 
     #[Test]
-    public function price_zero_is_treated_as_unavailable()
+    public function cart_item_is_not_ready_for_checkout_if_already_booked_on_same_dates()
     {
         $pool = $this->createPoolWithLimitedSingles(3);
 
         $from = now()->addDays(1);
-        $until = now()->addDays(2);
+        $until = now()->addDays(4);
+        $this->assertEquals(3, $pool->getPoolMaxQuantity($from, $until), 'No singles should be available after booking');
 
-        $this->cart->addToCart($pool, 3, [], $from, $until);
+        $cart = $this->user->currentCart();
+        $cart->addToCart($pool, 2, [], $from, $until);
 
-        // Set price to 0 (simulating an old bug where 0 was used instead of null)
-        $item = $this->cart->items()->first();
-        $item->update(['price' => 0, 'subtotal' => 0]);
-        $item->refresh();
+        foreach ($cart->items as $item) {
+            $this->assertTrue($item->is_ready_to_checkout, 'Item should be ready before booking');
+        }
 
-        // Item should NOT be ready for checkout
-        $this->assertFalse($item->is_ready_to_checkout, 'Item with price 0 should not be ready');
+        $this->assertTrue($cart->is_ready_to_checkout, 'Cart should be ready before booking');
+        $cart->checkout();
 
-        // requiredAdjustments should show price as unavailable
-        $adjustments = $item->requiredAdjustments();
-        $this->assertArrayHasKey('price', $adjustments);
-        $this->assertEquals('unavailable', $adjustments['price']);
+        $this->assertEquals(1, $pool->getPoolMaxQuantity($from, $until), 'No singles should be available after booking');
 
-        // Cart should NOT be ready
-        $this->assertFalse($this->cart->fresh()->is_ready_to_checkout);
+        $cart = $this->user->currentCart();
+        $cart->addToCart($pool, 3);
+
+        foreach ($cart->items as $item) {
+            $this->assertFalse($item->is_ready_to_checkout, 'Item should not be ready after singles are booked');
+        }
+
+        $this->assertFalse($cart->is_ready_to_checkout, 'Cart should not be ready after singles are booked');
+
+        $cart->setDates($from, $until);
+
+        // After setting dates where only 1 single is available but we have 3 items,
+        // only 1 item should be ready (the first one up to the available capacity)
+        $readies = 0;
+        foreach ($cart->items as $item) {
+            if ($item->is_ready_to_checkout) {
+                $readies++;
+            }
+        }
+
+        $this->assertEquals(1, $readies, '1 item should be ready (1 single available)');
+
+        $offset = 4;
+        $cart->setDates(
+            $from->copy()->addDays($offset),
+            $until->copy()->addDays($offset)
+        );
+
+        $readies = 0;
+        foreach ($cart->items as $item) {
+            if ($item->is_ready_to_checkout) {
+                $readies++;
+            }
+        }
+
+        $this->assertEquals(3, $readies, '3 items should be ready');
+
+        $offset = 3;
+        $cart->setDates(
+            $from->copy()->addDays($offset),
+            $until->copy()->addDays($offset)
+        );
+
+        $readies = 0;
+        foreach ($cart->items as $item) {
+            if ($item->is_ready_to_checkout) {
+                $readies++;
+            }
+        }
+
+        // With offset 3, the new period starts exactly when the booked period ends.
+        // In hotel-style bookings, checkout day = checkin day does NOT overlap,
+        // so all 3 singles should be available.
+        $this->assertEquals(3, $readies, '3 items should be ready (no overlap with offset 3)');
     }
 }

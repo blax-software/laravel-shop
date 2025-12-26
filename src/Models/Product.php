@@ -342,21 +342,23 @@ class Product extends Model implements Purchasable, Cartable
             ->where('status', StockStatus::PENDING->value)
             ->where(function ($query) use ($from, $until) {
                 $query->where(function ($q) use ($from, $until) {
-                    // Claim starts during the requested period
-                    $q->whereBetween('claimed_from', [$from, $until]);
+                    // Claim starts during the requested period (exclusive end for hotel-style bookings)
+                    $q->where('claimed_from', '>=', $from)
+                        ->where('claimed_from', '<', $until);
                 })->orWhere(function ($q) use ($from, $until) {
-                    // Claim ends during the requested period
-                    $q->whereBetween('expires_at', [$from, $until]);
+                    // Claim ends during the requested period (exclusive start - checkout day = checkin day is OK)
+                    $q->where('expires_at', '>', $from)
+                        ->where('expires_at', '<=', $until);
                 })->orWhere(function ($q) use ($from, $until) {
                     // Claim encompasses the entire requested period
                     $q->where('claimed_from', '<=', $from)
-                        ->where('expires_at', '>=', $until);
+                        ->where('expires_at', '>', $until);
                 })->orWhere(function ($q) use ($from, $until) {
                     // Claim without claimed_from (immediately claimed)
                     $q->whereNull('claimed_from')
                         ->where(function ($subQ) use ($from, $until) {
                             $subQ->whereNull('expires_at')
-                                ->orWhere('expires_at', '>=', $from);
+                                ->orWhere('expires_at', '>', $from);
                         });
                 });
             })

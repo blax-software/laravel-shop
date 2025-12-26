@@ -296,21 +296,27 @@ trait MayBePoolProduct
                 } else {
                     // Calculate overlapping claims for this specific period
                     $overlappingClaims = $item->stocks()
-                        ->where('type', \Blax\Shop\Enums\StockType::CLAIMED->value)
-                        ->where('status', \Blax\Shop\Enums\StockStatus::PENDING->value)
+                        ->where('type', StockType::CLAIMED->value)
+                        ->where('status', StockStatus::PENDING->value)
                         ->where(function ($query) use ($from, $until) {
                             $query->where(function ($q) use ($from, $until) {
-                                $q->whereBetween('claimed_from', [$from, $until]);
+                                // Claim starts during the requested period (exclusive end)
+                                $q->where('claimed_from', '>=', $from)
+                                    ->where('claimed_from', '<', $until);
                             })->orWhere(function ($q) use ($from, $until) {
-                                $q->whereBetween('expires_at', [$from, $until]);
+                                // Claim ends during the requested period (exclusive start - checkout day = checkin day is OK)
+                                $q->where('expires_at', '>', $from)
+                                    ->where('expires_at', '<=', $until);
                             })->orWhere(function ($q) use ($from, $until) {
+                                // Claim encompasses the entire requested period
                                 $q->where('claimed_from', '<=', $from)
-                                    ->where('expires_at', '>=', $until);
+                                    ->where('expires_at', '>', $until);
                             })->orWhere(function ($q) use ($from, $until) {
+                                // Claim without claimed_from (immediately claimed)
                                 $q->whereNull('claimed_from')
                                     ->where(function ($subQ) use ($from, $until) {
                                         $subQ->whereNull('expires_at')
-                                            ->orWhere('expires_at', '>=', $from);
+                                            ->orWhere('expires_at', '>', $from);
                                     });
                             });
                         })
