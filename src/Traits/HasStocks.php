@@ -851,41 +851,146 @@ trait HasStocks
     }
 
     /**
-     * Accounts the current cart, from/until and also for pool products
-     * @return int
+     * Get remaining available stock, accounting for cart items and date range
+     * 
+     * This method calculates how many more units can be added to a cart:
+     * - For pool products: aggregates availability from all single items minus cart items
+     * - For booking products: considers the date range for availability
+     * - Subtracts items already in the provided cart
+     * 
+     * @param \Blax\Shop\Models\Cart|null $cart Optional cart to subtract items from
+     * @param \DateTimeInterface|null $from Optional start date for booking availability
+     * @param \DateTimeInterface|null $until Optional end date for booking availability
+     * @return int Available quantity (PHP_INT_MAX if unlimited)
      */
-    public function getHasMoreAttribute(): int
-    {
+    public function getHasMore(
+        $cart = null,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
+    ): int {
+        // Try to get current cart from facade if not provided
+        if ($cart === null) {
+            try {
+                $cart = \Blax\Shop\Facades\Cart::current();
+            } catch (\Exception $e) {
+                // No cart available, that's fine
+                $cart = null;
+            }
+        }
+
+        // Get from/until from cart if not provided
+        if ($cart && $from === null && $until === null) {
+            $from = $cart->from;
+            $until = $cart->until;
+        }
+
         if (method_exists($this, 'isPool') && $this->isPool()) {
-            // For pool products, check availability across all single items
-            if (!$this->relationLoaded('singleProducts')) {
-                $this->load('singleProducts');
-            }
-
-            $totalAvailable = 0;
-            foreach ($this->singleProducts as $single) {
-                $singleAvailable = $single->getHasMoreAttribute();
-
-                // If any single has unlimited availability, the pool effectively has unlimited
-                if ($singleAvailable === PHP_INT_MAX) {
-                    return PHP_INT_MAX;
-                }
-
-                $totalAvailable += $singleAvailable;
-
-                // Prevent overflow - cap at PHP_INT_MAX
-                if ($totalAvailable >= PHP_INT_MAX || $totalAvailable < 0) {
-                    return PHP_INT_MAX;
-                }
-            }
-
-            return $totalAvailable;
+            return $this->getPoolHasMore($cart, $from, $until);
         }
 
         if ($this->manage_stock === false) {
             return PHP_INT_MAX;
         }
 
-        return $this->getAvailableStock();
+        // Get base available stock (considering date range for bookings)
+        $baseAvailable = ($from && $until && method_exists($this, 'isBooking') && $this->isBooking())
+            ? $this->getMinAvailableInRange($from, $until)
+            : $this->getAvailableStock();
+
+        // Subtract items already in cart for this product
+        if ($cart) {
+            $inCart = $cart->items()
+                ->where('purchasable_id', $this->getKey())
+                ->where('purchasable_type', get_class($this))
+                ->sum('quantity');
+
+            $baseAvailable = max(0, $baseAvailable - $inCart);
+        }
+
+        return $baseAvailable;
+    }
+
+    /**
+     * Get remaining availability for pool products, accounting for cart and dates
+     * 
+     * @param \Blax\Shop\Models\Cart|null $cart
+     * @param \DateTimeInterface|null $from
+     * @param \DateTimeInterface|null $until
+     * @return int
+     */
+    protected function getPoolHasMore(
+        $cart = null,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
+    ): int {
+        if (!$this->relationLoaded('singleProducts')) {
+            $this->load('singleProducts');
+        }
+
+        $totalAvailable = 0;
+
+        foreach ($this->singleProducts as $single) {
+            $singleAvailable = $single->getHasMore(null, $from, $until);
+
+            if ($singleAvailable === PHP_INT_MAX) {
+                return PHP_INT_MAX;
+            }
+
+            $totalAvailable += $singleAvailable;
+
+            if ($totalAvailable >= PHP_INT_MAX || $totalAvailable < 0) {
+                return PHP_INT_MAX;
+            }
+        }
+
+        // Subtract pool items already in cart
+        if ($cart) {
+            $inCart = $cart->items()
+                ->where('purchasable_id', $this->getKey())
+                ->where('purchasable_type', get_class($this))
+                ->sum('quantity');
+
+            $totalAvailable = max(0, $totalAvailable - $inCart);
+        }
+
+        return $totalAvailable;
+    }
+
+    /**
+     * Get minimum available stock across a date range
+     * 
+     * @param \DateTimeInterface $from
+     * @param \DateTimeInterface $until
+     * @return int
+     */
+    protected function getMinAvailableInRange(\DateTimeInterface $from, \DateTimeInterface $until): int
+    {
+        $availability = $this->calendarAvailability($from, $until);
+
+        if (empty($availability['dates'])) {
+            return $availability['min_available'] ?? 0;
+        }
+
+        $minAvailable = PHP_INT_MAX;
+        foreach ($availability['dates'] as $dayData) {
+            $minAvailable = min($minAvailable, $dayData['min'] ?? 0);
+        }
+
+        return $minAvailable === PHP_INT_MAX ? 0 : $minAvailable;
+    }
+
+    /**
+     * Attribute accessor for has_more
+     * 
+     * Returns available stock accounting for:
+     * - Current cart (from Cart facade)
+     * - Cart's from/until dates for bookings
+     * - Pool product aggregation
+     * 
+     * @return int Available quantity (PHP_INT_MAX if unlimited)
+     */
+    public function getHasMoreAttribute(): int
+    {
+        return $this->getHasMore();
     }
 }

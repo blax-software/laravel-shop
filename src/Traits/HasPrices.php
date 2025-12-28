@@ -70,4 +70,11 @@ trait HasPrices
     {
         return $this->prices()->exists();
     }
+
+    public static function fromPrice($price_id)
+    {
+        return static::whereHas('prices', function ($q) use ($price_id) {
+            $q->where('id', $price_id);
+        })->first();
+    }
 }

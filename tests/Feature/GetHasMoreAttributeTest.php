@@ -3,15 +3,32 @@
 namespace Blax\Shop\Tests\Feature;
 
 use Blax\Shop\Enums\ProductType;
+use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Tests\TestCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
+use Workbench\App\Models\User;
 
 class GetHasMoreAttributeTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function createUserWithCart(): array
+    {
+        $user = User::create([
+            'id' => Str::uuid(),
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+            'password' => bcrypt('password'),
+        ]);
+
+        $cart = Cart::factory()->forCustomer($user)->create();
+
+        return [$user, $cart];
+    }
 
     #[Test]
     public function it_returns_php_int_max_when_stock_management_is_disabled()
@@ -310,5 +327,222 @@ class GetHasMoreAttributeTest extends TestCase
 
         // 100 - 20 + 50 - 30 = 100
         $this->assertEquals(100, $product->has_more);
+    }
+
+    #[Test]
+    public function it_subtracts_cart_items_from_available_stock()
+    {
+        [$user, $cart] = $this->createUserWithCart();
+
+        $product = Product::factory()->withStocks(10)->withPrices(1, 1000)->create();
+
+        // Add 3 to cart
+        $cart->addToCart($product, 3);
+
+        // Use getHasMore with explicit cart - should show 7 remaining
+        $this->assertEquals(7, $product->getHasMore($cart));
+    }
+
+    #[Test]
+    public function it_subtracts_cart_items_from_pool_availability()
+    {
+        [$user, $cart] = $this->createUserWithCart();
+
+        // Create pool product
+        $pool = Product::factory()->create([
+            'name' => 'Hotel Rooms',
+            'type' => ProductType::POOL,
+            'manage_stock' => false,
+        ]);
+
+        // Create a price for the pool
+        $pool->prices()->create([
+            'unit_amount' => 10000,
+            'currency' => 'usd',
+            'is_default' => true,
+        ]);
+
+        // Create 3 single items with stock
+        $singles = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $single = Product::factory()->create([
+                'name' => "Room 10{$i}",
+                'type' => ProductType::BOOKING,
+                'manage_stock' => true,
+            ]);
+            $single->increaseStock(1);
+
+            $single->prices()->create([
+                'unit_amount' => 10000,
+                'currency' => 'usd',
+                'is_default' => true,
+            ]);
+
+            $singles[] = $single;
+        }
+
+        foreach ($singles as $single) {
+            $pool->productRelations()->attach($single->id, [
+                'type' => \Blax\Shop\Enums\ProductRelationType::SINGLE->value,
+            ]);
+        }
+
+        // Pool should have 3 available initially
+        $this->assertEquals(3, $pool->getHasMore($cart));
+
+        // Add 2 rooms to cart
+        $cart->addToCart($pool, 1, [], now()->addDays(5), now()->addDays(10));
+        $cart->addToCart($pool, 1, [], now()->addDays(5), now()->addDays(10));
+
+        // Now pool should show 1 remaining
+        $this->assertEquals(1, $pool->getHasMore($cart));
+
+        // Add the last room
+        $cart->addToCart($pool, 1, [], now()->addDays(5), now()->addDays(10));
+
+        // Now pool should show 0 remaining
+        $this->assertEquals(0, $pool->getHasMore($cart));
+    }
+
+    #[Test]
+    public function it_considers_date_range_for_booking_products()
+    {
+        [$user, $cart] = $this->createUserWithCart();
+
+        $product = Product::factory()->create([
+            'type' => ProductType::BOOKING,
+            'manage_stock' => true,
+        ]);
+        $product->increaseStock(10);
+
+        $product->prices()->create([
+            'unit_amount' => 5000,
+            'currency' => 'usd',
+            'is_default' => true,
+        ]);
+
+        // Claim 5 units for days 5-10
+        $product->claimStock(
+            quantity: 5,
+            from: now()->startOfDay()->addDays(5),
+            until: now()->endOfDay()->addDays(10)
+        );
+
+        // Without date range: should show current available (10)
+        $this->assertEquals(10, $product->getHasMore($cart));
+
+        // With date range during claim: should show 5 available
+        $this->assertEquals(5, $product->getHasMore($cart, now()->addDays(6), now()->addDays(8)));
+
+        // With date range outside claim: should show 10 available
+        $this->assertEquals(10, $product->getHasMore($cart, now()->addDays(15), now()->addDays(20)));
+    }
+
+    #[Test]
+    public function it_uses_cart_dates_when_from_until_not_provided()
+    {
+        [$user, $cart] = $this->createUserWithCart();
+
+        $product = Product::factory()->create([
+            'type' => ProductType::BOOKING,
+            'manage_stock' => true,
+        ]);
+        $product->increaseStock(10);
+
+        $product->prices()->create([
+            'unit_amount' => 5000,
+            'currency' => 'usd',
+            'is_default' => true,
+        ]);
+
+        // Claim 4 units for days 5-10
+        $product->claimStock(
+            quantity: 4,
+            from: now()->startOfDay()->addDays(5),
+            until: now()->endOfDay()->addDays(10)
+        );
+
+        // Set cart dates to be during the claim period
+        $cart->update([
+            'from' => now()->addDays(6),
+            'until' => now()->addDays(8),
+        ]);
+        $cart->refresh();
+
+        // Should use cart's from/until to determine availability (6 available during claim)
+        $this->assertEquals(6, $product->getHasMore($cart));
+    }
+
+    #[Test]
+    public function it_combines_cart_items_and_date_range_for_pool_products()
+    {
+        [$user, $cart] = $this->createUserWithCart();
+
+        // Create pool product
+        $pool = Product::factory()->create([
+            'name' => 'Rental Cars',
+            'type' => ProductType::POOL,
+            'manage_stock' => false,
+        ]);
+
+        $pool->prices()->create([
+            'unit_amount' => 15000,
+            'currency' => 'usd',
+            'is_default' => true,
+        ]);
+
+        // Create 5 single items with stock
+        $singles = [];
+        for ($i = 1; $i <= 5; $i++) {
+            $single = Product::factory()->create([
+                'name' => "Car {$i}",
+                'type' => ProductType::BOOKING,
+                'manage_stock' => true,
+            ]);
+            $single->increaseStock(1);
+
+            $single->prices()->create([
+                'unit_amount' => 15000,
+                'currency' => 'usd',
+                'is_default' => true,
+            ]);
+
+            $singles[] = $single;
+        }
+
+        foreach ($singles as $single) {
+            $pool->productRelations()->attach($single->id, [
+                'type' => \Blax\Shop\Enums\ProductRelationType::SINGLE->value,
+            ]);
+        }
+
+        // Claim 2 cars for days 5-10
+        $singles[0]->claimStock(
+            quantity: 1,
+            from: now()->startOfDay()->addDays(5),
+            until: now()->endOfDay()->addDays(10)
+        );
+        $singles[1]->claimStock(
+            quantity: 1,
+            from: now()->startOfDay()->addDays(5),
+            until: now()->endOfDay()->addDays(10)
+        );
+
+        // Set cart dates during claim period
+        $cart->update([
+            'from' => now()->addDays(6),
+            'until' => now()->addDays(8),
+        ]);
+        $cart->refresh();
+
+        // During claim: 3 cars available (5 - 2 claimed)
+        $this->assertEquals(3, $pool->getHasMore($cart));
+
+        // Add 2 cars to cart
+        $cart->addToCart($pool, 1, [], now()->addDays(6), now()->addDays(8));
+        $cart->addToCart($pool, 1, [], now()->addDays(6), now()->addDays(8));
+
+        // Now should show 1 remaining (3 - 2 in cart)
+        $this->assertEquals(1, $pool->getHasMore($cart));
     }
 }
