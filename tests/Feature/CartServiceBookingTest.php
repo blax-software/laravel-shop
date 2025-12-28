@@ -117,15 +117,15 @@ class CartServiceBookingTest extends TestCase
         // Book all stock first
         $this->bookingProduct->claimStock(10, null, $from, $until);
 
-        $this->expectException(NotEnoughStockException::class);
+        // Adding to cart should now succeed (lenient - uses total capacity)
+        // Date-based validation happens at validateBookings/checkout
         $cart->addToCart($this->bookingProduct, 5, [], $from, $until);
 
         $errors = Cart::validateBookings();
 
+        // validateBookings should detect the stock conflict
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('not available for the selected period', $errors[0]);
-
-        $this->assertEquals(0, $cart->getTotal());
     }
 
     #[Test]

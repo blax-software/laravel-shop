@@ -957,47 +957,46 @@ class Cart extends Model
                     throw new InvalidDateRangeException("The 'from' date must be before the 'until' date. Got from: {$from->format('Y-m-d H:i:s')}, until: {$until->format('Y-m-d H:i:s')}");
                 }
 
-                // Check booking product availability if dates are provided
+                // For booking products (non-pool), validate against total stock capacity
+                // Date-based validation will happen at checkout
                 if (
                     $is_booking
                     && !$is_pool
-                    && !$cartable->isAvailableForBooking($from, $until, $quantity)
+                    && $cartable->manage_stock
                 ) {
-                    throw new NotEnoughStockException(
-                        "Product '{$cartable->name}' is not available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')})."
-                    );
-                }
-
-                // Check pool product availability if dates are provided
-                if ($is_pool) {
-                    $maxQuantity = $cartable->getPoolMaxQuantity($from, $until);
-
-                    // Subtract items already in cart for the same period
-                    // Only count items that are actually valid (have a price allocated)
+                    $totalStock = $cartable->getAvailableStock();
                     $itemsInCart = $this->items()
                         ->where('purchasable_id', $cartable->getKey())
                         ->where('purchasable_type', get_class($cartable))
-                        ->get()
-                        ->filter(function ($item) use ($from, $until) {
-                            // Don't count items marked as unavailable (null price)
-                            if ($item->price === null) {
-                                return false;
-                            }
-                            // Only count items with overlapping dates
-                            if (!$item->from || !$item->until) {
-                                return false;
-                            }
-                            // Check for overlap
-                            return !($item->until < $from || $item->from > $until);
-                        })
                         ->sum('quantity');
 
-                    $availableForThisRequest = $maxQuantity === PHP_INT_MAX ? PHP_INT_MAX : max(0, $maxQuantity - $itemsInCart);
+                    $availableForThisRequest = max(0, $totalStock - $itemsInCart);
 
-                    // Only validate if pool has limited availability AND quantity exceeds it
+                    if ($quantity > $availableForThisRequest) {
+                        throw new NotEnoughStockException(
+                            "Product '{$cartable->name}' has only {$availableForThisRequest} items available. Requested: {$quantity}"
+                        );
+                    }
+                }
+
+                // Check pool product availability against total capacity (NOT date-restricted)
+                // Date-based validation will happen at checkout, allowing users to add items
+                // and then adjust dates to find available periods
+                if ($is_pool) {
+                    $totalCapacity = $cartable->getPoolTotalCapacity(); // Total capacity ignoring claims
+
+                    // Subtract items already in cart for this pool
+                    $itemsInCart = $this->items()
+                        ->where('purchasable_id', $cartable->getKey())
+                        ->where('purchasable_type', get_class($cartable))
+                        ->sum('quantity');
+
+                    $availableForThisRequest = $totalCapacity === PHP_INT_MAX ? PHP_INT_MAX : max(0, $totalCapacity - $itemsInCart);
+
+                    // Only prevent adding if it exceeds total pool capacity
                     if ($availableForThisRequest !== PHP_INT_MAX && $quantity > $availableForThisRequest) {
                         throw new NotEnoughStockException(
-                            "Pool product '{$cartable->name}' has only {$availableForThisRequest} items available for the requested period ({$from->format('Y-m-d')} to {$until->format('Y-m-d')}). Requested: {$quantity}"
+                            "Pool product '{$cartable->name}' has only {$availableForThisRequest} items available. Requested: {$quantity}"
                         );
                     }
                 }

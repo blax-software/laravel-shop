@@ -530,7 +530,7 @@ class CartAddToCartPoolPricingTest extends TestCase
     }
 
     #[Test]
-    public function it_throws_exception_when_pool_not_available_for_booking_period()
+    public function it_allows_adding_pool_to_cart_when_claimed_but_validates_at_checkout()
     {
         ProductPrice::factory()->create([
             'purchasable_id' => $this->poolProduct->id,
@@ -547,14 +547,15 @@ class CartAddToCartPoolPricingTest extends TestCase
         $this->singleItem1->claimStock(1, null, $from, $until);
         $this->singleItem2->claimStock(1, null, $from, $until);
 
-        // Try to add pool for same period
-        $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
-        $this->expectExceptionMessage('has only 0 items available');
+        // Adding to cart should succeed (lenient - uses total capacity)
         $this->cart->addToCart($this->poolProduct, 1, [], $from, $until);
+
+        // But checkout validation should fail
+        $this->assertFalse($this->cart->validateForCheckout(false));
     }
 
     #[Test]
-    public function it_throws_exception_when_booking_product_not_available_for_period()
+    public function it_allows_adding_booking_to_cart_when_claimed_but_validates_at_checkout()
     {
         $bookingProduct = Product::factory()->create([
             'name' => 'Meeting Room',
@@ -577,10 +578,11 @@ class CartAddToCartPoolPricingTest extends TestCase
         // Claim the booking product for the period
         $bookingProduct->claimStock(1, null, $from, $until);
 
-        // Try to add for overlapping period
-        $this->expectException(\Blax\Shop\Exceptions\NotEnoughStockException::class);
-        $this->expectExceptionMessage('not available for the requested period');
+        // Adding to cart should succeed (lenient - uses total capacity)
         $this->cart->addToCart($bookingProduct, 1, [], $from, $until);
+
+        // But checkout validation should fail
+        $this->assertFalse($this->cart->validateForCheckout(false));
     }
 
     #[Test]

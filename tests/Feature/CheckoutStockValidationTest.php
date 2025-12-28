@@ -239,9 +239,12 @@ class CheckoutStockValidationTest extends TestCase
         $from2 = Carbon::tomorrow()->addDay()->startOfDay();
         $until2 = Carbon::tomorrow()->addDays(2)->startOfDay();
 
-        // This should fail because dates overlap and all stock is claimed
-        $this->expectException(NotEnoughStockException::class);
+        // Adding to cart should succeed (lenient - uses total capacity)
+        // Date-based validation happens at checkout
         $cart2->addToCart($this->pool, 1, [], $from2, $until2);
+
+        // But checkout validation should fail because dates overlap and all stock is claimed
+        $this->assertFalse($cart2->validateForCheckout(false));
     }
 
     #[Test]

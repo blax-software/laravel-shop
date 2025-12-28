@@ -167,8 +167,8 @@ trait HasStocks
      * 
      * @param StockType $type The type of adjustment (INCREASE/RETURN add stock, DECREASE/CLAIMED remove stock)
      * @param int $quantity Amount to adjust (always positive, type determines direction)
-     * @param \DateTimeInterface|null $until Optional expiration date (when stock expires or claim ends)
-     * @param \DateTimeInterface|null $from Optional start date (used for CLAIMED type, defaults to now())
+     * @param DateTimeInterface|null $until Optional expiration date (when stock expires or claim ends)
+     * @param DateTimeInterface|null $from Optional start date (used for CLAIMED type, defaults to now())
      * @param StockStatus|null $status Optional status (defaults to COMPLETED, or PENDING for CLAIMED type)
      * @param string|null $note Optional note for documentation purposes
      * @param Model|null $referencable Optional polymorphic reference to related model
@@ -244,8 +244,8 @@ trait HasStocks
      * 
      * @param int $quantity Amount to claim
      * @param mixed $reference Optional reference model (Order, Booking, Cart, etc.)
-     * @param \DateTimeInterface|null $from When claim starts (null = immediately)
-     * @param \DateTimeInterface|null $until When claim expires (null = permanent)
+     * @param DateTimeInterface|null $from When claim starts (null = immediately)
+     * @param DateTimeInterface|null $until When claim expires (null = permanent)
      * @param string|null $note Optional note about the claim
      * @return \Blax\Shop\Models\ProductStock|null The claim entry, or null if insufficient stock
      */
@@ -366,7 +366,7 @@ trait HasStocks
     /**
      * Get future claimed stock starting from a specific date or all where claimed_at is future
      * 
-     * @param \DateTimeInterface|null $from Optional start date to filter claims
+     * @param DateTimeInterface|null $from Optional start date to filter claims
      * @return int Total future claimed quantity (always positive)
      */
     public function getFutureClaimedStock(?DateTimeInterface $from = null): int
@@ -500,7 +500,7 @@ trait HasStocks
      * - Available on day 12: 70 (only claim 2 active)
      * - Available on day 20: 100 (no claims active)
      * 
-     * @param \DateTimeInterface $date The date to check availability for
+     * @param DateTimeInterface $date The date to check availability for
      * @return int Available stock on that date (PHP_INT_MAX if stock management disabled)
      */
     public function availableOnDate(DateTimeInterface $date): int
@@ -519,8 +519,8 @@ trait HasStocks
      *  - 'min_available' => Shows the lowest available stock in the date range
      *  - 'dates' => An array of dates with their respective available stock
      * 
-     * @param \DateTimeInterface $from Start date of the range (optional, defaults to today)
-     * @param \DateTimeInterface $until End date of the range (optional, defaults to 30 days)
+     * @param DateTimeInterface $from Start date of the range (optional, defaults to today)
+     * @param DateTimeInterface $until End date of the range (optional, defaults to 30 days)
      * @return array Associative array with 'max_available', 'min_available', and 'dates'
      */
     public function calendarAvailability(
@@ -696,8 +696,8 @@ trait HasStocks
     /**
      * Get calendar availability for pool products by aggregating all single items
      * 
-     * @param \DateTimeInterface|null $from
-     * @param \DateTimeInterface|null $until
+     * @param DateTimeInterface|null $from
+     * @param DateTimeInterface|null $until
      * @return array
      */
     protected function getPoolCalendarAvailability(
@@ -788,7 +788,7 @@ trait HasStocks
     /**
      * Get day availability for pool products by aggregating all single items
      * 
-     * @param \DateTimeInterface|null $date
+     * @param DateTimeInterface|null $date
      * @return array
      */
     protected function getPoolDayAvailability(?DateTimeInterface $date = null): array
@@ -851,23 +851,19 @@ trait HasStocks
     }
 
     /**
-     * Get remaining available stock, accounting for cart items and date range
+     * Get remaining available stock that can be added to cart
      * 
      * This method calculates how many more units can be added to a cart:
-     * - For pool products: aggregates availability from all single items minus cart items
-     * - For booking products: considers the date range for availability
-     * - Subtracts items already in the provided cart
+     * - For pool products: total capacity minus cart items (NOT date-restricted)
+     * - For booking products: total stock minus cart items (NOT date-restricted)
+     * - The idea is that users can add items freely and adjust dates later
+     * - Date-based validation happens at checkout, not when adding to cart
      * 
      * @param \Blax\Shop\Models\Cart|null $cart Optional cart to subtract items from
-     * @param \DateTimeInterface|null $from Optional start date for booking availability
-     * @param \DateTimeInterface|null $until Optional end date for booking availability
      * @return int Available quantity (PHP_INT_MAX if unlimited)
      */
-    public function getHasMore(
-        $cart = null,
-        ?\DateTimeInterface $from = null,
-        ?\DateTimeInterface $until = null
-    ): int {
+    public function getHasMore($cart = null): int
+    {
         // Try to get current cart from facade if not provided
         if ($cart === null) {
             try {
@@ -878,24 +874,17 @@ trait HasStocks
             }
         }
 
-        // Get from/until from cart if not provided
-        if ($cart && $from === null && $until === null) {
-            $from = $cart->from;
-            $until = $cart->until;
-        }
-
         if (method_exists($this, 'isPool') && $this->isPool()) {
-            return $this->getPoolHasMore($cart, $from, $until);
+            return $this->getPoolHasMore($cart);
         }
 
         if ($this->manage_stock === false) {
             return PHP_INT_MAX;
         }
 
-        // Get base available stock (considering date range for bookings)
-        $baseAvailable = ($from && $until && method_exists($this, 'isBooking') && $this->isBooking())
-            ? $this->getMinAvailableInRange($from, $until)
-            : $this->getAvailableStock();
+        // Get total stock capacity (not date-restricted)
+        // This allows users to add items and adjust dates later
+        $baseAvailable = $this->getAvailableStock();
 
         // Subtract items already in cart for this product
         if ($cart) {
@@ -911,36 +900,36 @@ trait HasStocks
     }
 
     /**
-     * Get remaining availability for pool products, accounting for cart and dates
+     * Get remaining availability for pool products
+     * 
+     * Returns total pool capacity minus items already in cart.
+     * Does NOT consider date-based availability - that's validated at checkout.
      * 
      * @param \Blax\Shop\Models\Cart|null $cart
-     * @param \DateTimeInterface|null $from
-     * @param \DateTimeInterface|null $until
      * @return int
      */
-    protected function getPoolHasMore(
-        $cart = null,
-        ?\DateTimeInterface $from = null,
-        ?\DateTimeInterface $until = null
-    ): int {
-        if (!$this->relationLoaded('singleProducts')) {
-            $this->load('singleProducts');
+    protected function getPoolHasMore($cart = null): int
+    {
+        // Get total pool capacity (NOT date-restricted)
+        if (method_exists($this, 'getPoolTotalCapacity')) {
+            $totalCapacity = $this->getPoolTotalCapacity();
+        } else {
+            // Fallback if method doesn't exist
+            if (!$this->relationLoaded('singleProducts')) {
+                $this->load('singleProducts');
+            }
+
+            $totalCapacity = 0;
+            foreach ($this->singleProducts as $single) {
+                if (!$single->manage_stock) {
+                    return PHP_INT_MAX;
+                }
+                $totalCapacity += $single->getAvailableStock();
+            }
         }
 
-        $totalAvailable = 0;
-
-        foreach ($this->singleProducts as $single) {
-            $singleAvailable = $single->getHasMore(null, $from, $until);
-
-            if ($singleAvailable === PHP_INT_MAX) {
-                return PHP_INT_MAX;
-            }
-
-            $totalAvailable += $singleAvailable;
-
-            if ($totalAvailable >= PHP_INT_MAX || $totalAvailable < 0) {
-                return PHP_INT_MAX;
-            }
+        if ($totalCapacity === PHP_INT_MAX) {
+            return PHP_INT_MAX;
         }
 
         // Subtract pool items already in cart
@@ -950,20 +939,64 @@ trait HasStocks
                 ->where('purchasable_type', get_class($this))
                 ->sum('quantity');
 
-            $totalAvailable = max(0, $totalAvailable - $inCart);
+            $totalCapacity = max(0, $totalCapacity - $inCart);
         }
 
-        return $totalAvailable;
+        return $totalCapacity;
+    }
+
+    /**
+     * Get available stock for a specific date range
+     * 
+     * Use this method when you need to check date-based availability
+     * (e.g., for showing a calendar, or at checkout validation)
+     * 
+     * @param DateTimeInterface $from
+     * @param DateTimeInterface $until
+     * @param \Blax\Shop\Models\Cart|null $cart Optional cart to subtract items from
+     * @return int
+     */
+    public function getAvailableForDateRange(
+        DateTimeInterface $from,
+        DateTimeInterface $until,
+        $cart = null
+    ): int {
+        if ($this->manage_stock === false) {
+            return PHP_INT_MAX;
+        }
+
+        if (method_exists($this, 'isPool') && $this->isPool()) {
+            // For pools, get min availability across all singles for the date range
+            if (method_exists($this, 'getPoolMaxQuantity')) {
+                $available = $this->getPoolMaxQuantity($from, $until);
+            } else {
+                $available = $this->getMinAvailableInRange($from, $until);
+            }
+        } else {
+            $available = $this->getMinAvailableInRange($from, $until);
+        }
+
+        // Subtract items already in cart for this product
+        if ($cart) {
+            $inCart = $cart->items()
+                ->where('purchasable_id', $this->getKey())
+                ->where('purchasable_type', get_class($this))
+                ->sum('quantity');
+
+            $available = max(0, $available - $inCart);
+        }
+
+        return $available;
     }
 
     /**
      * Get minimum available stock across a date range
      * 
-     * @param \DateTimeInterface $from
-     * @param \DateTimeInterface $until
+     * @param DateTimeInterface $from
+     * @param DateTimeInterface $until
      * @return int
      */
-    protected function getMinAvailableInRange(\DateTimeInterface $from, \DateTimeInterface $until): int
+    protected function getMinAvailableInRange(DateTimeInterface $from, DateTimeInterface $until): int
     {
         $availability = $this->calendarAvailability($from, $until);
 
@@ -982,10 +1015,10 @@ trait HasStocks
     /**
      * Attribute accessor for has_more
      * 
-     * Returns available stock accounting for:
-     * - Current cart (from Cart facade)
-     * - Cart's from/until dates for bookings
-     * - Pool product aggregation
+     * Returns available stock that can still be added to cart:
+     * - Total capacity minus items already in cart
+     * - Does NOT consider date-based restrictions
+     * - Date validation happens at checkout
      * 
      * @return int Available quantity (PHP_INT_MAX if unlimited)
      */

@@ -137,7 +137,7 @@ class GetHasMoreAttributeTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_aggregated_availability_for_pool_with_claims()
+    public function it_returns_total_capacity_for_pool_regardless_of_claims()
     {
         // Create pool product
         $pool = Product::factory()->create([
@@ -171,8 +171,10 @@ class GetHasMoreAttributeTest extends TestCase
             until: now()->addDays(7)
         );
 
-        // Pool should show 2 available (singles 2 and 3)
-        $this->assertEquals(2, $pool->has_more);
+        // Pool should show 3 available (TOTAL capacity, claims don't affect has_more)
+        // This allows users to add items to cart and adjust dates later
+        // Date-based validation happens at checkout
+        $this->assertEquals(3, $pool->has_more);
     }
 
     #[Test]
@@ -287,7 +289,7 @@ class GetHasMoreAttributeTest extends TestCase
             'manage_stock' => false,
         ]);
 
-        // Single 1: managed stock
+        // Single 1: managed stock (5 units)
         $single1 = Product::factory()->create([
             'name' => 'Limited Item',
             'type' => ProductType::SIMPLE,
@@ -295,7 +297,7 @@ class GetHasMoreAttributeTest extends TestCase
         ]);
         $single1->increaseStock(5);
 
-        // Single 2: unmanaged stock (unlimited)
+        // Single 2: unmanaged stock (unlimited - but only 1 item)
         $single2 = Product::factory()->create([
             'name' => 'Unlimited Item',
             'type' => ProductType::SIMPLE,
@@ -308,9 +310,12 @@ class GetHasMoreAttributeTest extends TestCase
             ]);
         }
 
-        // Pool should sum: 5 (limited) + PHP_INT_MAX (unlimited)
-        // Result will be very large, indicating effectively unlimited availability
-        $this->assertGreaterThanOrEqual(PHP_INT_MAX, $pool->has_more);
+        // Pool with mixed managed/unmanaged singles:
+        // - Single1 has 5 stock (capacity = 5)
+        // - Single2 is unmanaged (no stock entries, capacity contribution = 0)
+        // Total pool capacity = 5
+        // The unmanaged single doesn't add to pool capacity because it's just 1 item
+        $this->assertEquals(5, $pool->has_more);
     }
 
     #[Test]
@@ -405,7 +410,7 @@ class GetHasMoreAttributeTest extends TestCase
     }
 
     #[Test]
-    public function it_considers_date_range_for_booking_products()
+    public function it_returns_total_stock_for_booking_products()
     {
         [$user, $cart] = $this->createUserWithCart();
 
@@ -428,18 +433,17 @@ class GetHasMoreAttributeTest extends TestCase
             until: now()->endOfDay()->addDays(10)
         );
 
-        // Without date range: should show current available (10)
+        // has_more should show total stock (NOT date-restricted)
+        // This allows adding items to cart and adjusting dates later
         $this->assertEquals(10, $product->getHasMore($cart));
 
-        // With date range during claim: should show 5 available
-        $this->assertEquals(5, $product->getHasMore($cart, now()->addDays(6), now()->addDays(8)));
-
-        // With date range outside claim: should show 10 available
-        $this->assertEquals(10, $product->getHasMore($cart, now()->addDays(15), now()->addDays(20)));
+        // Use getAvailableForDateRange for date-specific availability
+        $this->assertEquals(5, $product->getAvailableForDateRange(now()->addDays(6), now()->addDays(8), $cart));
+        $this->assertEquals(10, $product->getAvailableForDateRange(now()->addDays(15), now()->addDays(20), $cart));
     }
 
     #[Test]
-    public function it_uses_cart_dates_when_from_until_not_provided()
+    public function it_returns_total_stock_regardless_of_cart_dates()
     {
         [$user, $cart] = $this->createUserWithCart();
 
@@ -469,12 +473,13 @@ class GetHasMoreAttributeTest extends TestCase
         ]);
         $cart->refresh();
 
-        // Should use cart's from/until to determine availability (6 available during claim)
-        $this->assertEquals(6, $product->getHasMore($cart));
+        // has_more should return total stock (NOT restricted by cart dates)
+        // Date validation happens at checkout
+        $this->assertEquals(10, $product->getHasMore($cart));
     }
 
     #[Test]
-    public function it_combines_cart_items_and_date_range_for_pool_products()
+    public function it_returns_total_capacity_for_pool_regardless_of_cart_dates()
     {
         [$user, $cart] = $this->createUserWithCart();
 
@@ -535,14 +540,15 @@ class GetHasMoreAttributeTest extends TestCase
         ]);
         $cart->refresh();
 
-        // During claim: 3 cars available (5 - 2 claimed)
-        $this->assertEquals(3, $pool->getHasMore($cart));
+        // has_more should show TOTAL capacity (5), NOT date-restricted (3)
+        // This allows adding items freely; date validation happens at checkout
+        $this->assertEquals(5, $pool->getHasMore($cart));
 
         // Add 2 cars to cart
         $cart->addToCart($pool, 1, [], now()->addDays(6), now()->addDays(8));
         $cart->addToCart($pool, 1, [], now()->addDays(6), now()->addDays(8));
 
-        // Now should show 1 remaining (3 - 2 in cart)
-        $this->assertEquals(1, $pool->getHasMore($cart));
+        // Now should show 3 remaining (5 total - 2 in cart)
+        $this->assertEquals(3, $pool->getHasMore($cart));
     }
 }
