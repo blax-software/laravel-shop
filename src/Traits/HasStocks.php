@@ -73,6 +73,30 @@ trait HasStocks
     }
 
     /**
+     * Get max stock (the ceiling - total capacity as if no claims existed)
+     * 
+     * This shows the maximum possible stock by summing:
+     * - INCREASE entries (stock added)
+     * - RETURN entries (stock returned)
+     * And ignoring DECREASE and CLAIMED entries entirely.
+     * 
+     * @return int Maximum capacity (PHP_INT_MAX if stock management disabled)
+     */
+    public function getMaxStocksAttribute(): int
+    {
+        if ($this->manage_stock === false) {
+            return PHP_INT_MAX;
+        }
+
+        // Sum only INCREASE and RETURN entries to get the "ceiling"
+        return (int) $this->stocks()
+            ->withoutGlobalScope('willExpire')
+            ->where('status', StockStatus::COMPLETED->value)
+            ->whereIn('type', [StockType::INCREASE->value, StockType::RETURN->value])
+            ->sum('quantity');
+    }
+
+    /**
      * Check if product is in stock
      * 
      * @return bool True if stock management is disabled OR available stock > 0
