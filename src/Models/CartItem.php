@@ -110,6 +110,34 @@ class CartItem extends Model
         return $this->quantity * $this->price;
     }
 
+    /**
+     * Get display subtotal - returns null for booking items not ready for checkout
+     * Use this for display purposes when you want null for incomplete bookings
+     * 
+     * @return int|null
+     */
+    public function getDisplaySubtotalAttribute(): ?int
+    {
+        if (!$this->is_ready_to_checkout && $this->is_booking) {
+            return null;
+        }
+        return $this->attributes['subtotal'] ?? null;
+    }
+
+    /**
+     * Get display price - returns null for booking items not ready for checkout
+     * Use this for display purposes when you want null for incomplete bookings
+     * 
+     * @return int|null
+     */
+    public function getDisplayPriceAttribute(): ?int
+    {
+        if (!$this->is_ready_to_checkout && $this->is_booking) {
+            return null;
+        }
+        return $this->attributes['price'] ?? null;
+    }
+
     public function scopeForCart($query, $cartId)
     {
         return $query->where('cart_id', $cartId);

@@ -1126,6 +1126,33 @@ class Cart extends Model
                 $pricePerDay = $priceModel?->getCurrentPrice($cartable->isOnSale());
                 $regularPricePerDay = $priceModel?->getCurrentPrice(false) ?? $pricePerDay;
                 $poolPriceId = $priceModel?->id;
+
+                // Still try to find a single item for allocation even with pool's direct price
+                // This ensures allocated_single_item_name is always set for pool items
+                if (!$poolSingleItem) {
+                    $singleItems = $cartable->singleProducts;
+                    foreach ($singleItems as $single) {
+                        // Find first single with available capacity
+                        $available = $single->manage_stock ? $single->getAvailableStock() : PHP_INT_MAX;
+                        if ($available > 0) {
+                            // Check how many are already in cart for this single
+                            $inCart = $this->items()
+                                ->where('purchasable_id', $cartable->getKey())
+                                ->where('purchasable_type', get_class($cartable))
+                                ->get()
+                                ->filter(function ($item) use ($single) {
+                                    $meta = $item->getMeta();
+                                    return isset($meta->allocated_single_item_id) && $meta->allocated_single_item_id == $single->id;
+                                })
+                                ->sum('quantity');
+
+                            if ($available === PHP_INT_MAX || $inCart < $available) {
+                                $poolSingleItem = $single;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         } else {
             $pricePerDay = $cartable->getCurrentPrice();
