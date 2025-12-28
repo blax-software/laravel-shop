@@ -178,8 +178,8 @@ trait HasStocks
     public function adjustStock(
         StockType $type,
         int $quantity,
-        \DateTimeInterface|null $until = null,
-        \DateTimeInterface|null $from = null,
+        DateTimeInterface|null $until = null,
+        DateTimeInterface|null $from = null,
         ?StockStatus $status = null,
         string|null $note = null,
         Model|null $referencable = null
@@ -252,8 +252,8 @@ trait HasStocks
     public function claimStock(
         int $quantity,
         $reference = null,
-        ?\DateTimeInterface $from = null,
-        ?\DateTimeInterface $until = null,
+        ?DateTimeInterface $from = null,
+        ?DateTimeInterface $until = null,
         ?string $note = null
     ): ?\Blax\Shop\Models\ProductStock {
 
@@ -285,7 +285,7 @@ trait HasStocks
      * 
      * @return int Available quantity (PHP_INT_MAX if stock management disabled)
      */
-    public function getAvailableStock(?\DateTimeInterface $date = null): int
+    public function getAvailableStock(?DateTimeInterface $date = null): int
     {
         if (!$this->manage_stock) {
             return PHP_INT_MAX;
@@ -369,7 +369,7 @@ trait HasStocks
      * @param \DateTimeInterface|null $from Optional start date to filter claims
      * @return int Total future claimed quantity (always positive)
      */
-    public function getFutureClaimedStock(?\DateTimeInterface $from = null): int
+    public function getFutureClaimedStock(?DateTimeInterface $from = null): int
     {
         $query = $this->stocks()
             ->where('type', StockType::CLAIMED->value)
@@ -503,7 +503,7 @@ trait HasStocks
      * @param \DateTimeInterface $date The date to check availability for
      * @return int Available stock on that date (PHP_INT_MAX if stock management disabled)
      */
-    public function availableOnDate(\DateTimeInterface $date): int
+    public function availableOnDate(DateTimeInterface $date): int
     {
         if (!$this->manage_stock) {
             return PHP_INT_MAX;
@@ -848,5 +848,44 @@ trait HasStocks
         }
 
         return $aggregated;
+    }
+
+    /**
+     * Accounts the current cart, from/until and also for pool products
+     * @return int
+     */
+    public function getHasMoreAttribute(): int
+    {
+        if (method_exists($this, 'isPool') && $this->isPool()) {
+            // For pool products, check availability across all single items
+            if (!$this->relationLoaded('singleProducts')) {
+                $this->load('singleProducts');
+            }
+
+            $totalAvailable = 0;
+            foreach ($this->singleProducts as $single) {
+                $singleAvailable = $single->getHasMoreAttribute();
+
+                // If any single has unlimited availability, the pool effectively has unlimited
+                if ($singleAvailable === PHP_INT_MAX) {
+                    return PHP_INT_MAX;
+                }
+
+                $totalAvailable += $singleAvailable;
+
+                // Prevent overflow - cap at PHP_INT_MAX
+                if ($totalAvailable >= PHP_INT_MAX || $totalAvailable < 0) {
+                    return PHP_INT_MAX;
+                }
+            }
+
+            return $totalAvailable;
+        }
+
+        if ($this->manage_stock === false) {
+            return PHP_INT_MAX;
+        }
+
+        return $this->getAvailableStock();
     }
 }

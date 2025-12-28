@@ -1285,6 +1285,201 @@ class Cart extends Model
     }
 
     /**
+     * Get calendar availability for all items in the cart.
+     * 
+     * This method aggregates availability across all cart items and returns
+     * the minimum availability for each date. This is useful for booking systems
+     * where you need to know when ALL items in a cart can be booked together.
+     * 
+     * For each date, it calculates the minimum number of complete cart "sets"
+     * that could be fulfilled. A set is fulfilled when all items have at least
+     * one unit available.
+     * 
+     * Returns associative array with keys:
+     *  - 'max_available' => Shows the peak available "sets" in the date range
+     *  - 'min_available' => Shows the lowest available "sets" in the date range
+     *  - 'dates' => An array of dates with their respective min/max availability
+     *  - 'items' => Individual item availability data (for debugging)
+     * 
+     * @param \DateTimeInterface|null $from Start date of the range (optional, defaults to today)
+     * @param \DateTimeInterface|null $until End date of the range (optional, defaults to 30 days)
+     * @return array Associative array with 'max_available', 'min_available', 'dates', and 'items'
+     */
+    public function calendarAvailability(
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
+    ): array {
+        $fromDate = Carbon::parse($from ?? now())->startOfDay();
+        $untilDate = Carbon::parse($until ?? $fromDate->copy()->addDays(30))->endOfDay();
+
+        // Load items with their purchasable products
+        if (!$this->relationLoaded('items')) {
+            $this->load('items.purchasable');
+        }
+
+        $items = $this->items;
+
+        if ($items->isEmpty()) {
+            return [
+                'max_available' => PHP_INT_MAX,
+                'min_available' => PHP_INT_MAX,
+                'dates' => [],
+                'items' => [],
+            ];
+        }
+
+        // Collect availability data for each unique product in the cart
+        $productAvailabilities = [];
+        $itemDetails = [];
+
+        // Group items by product to handle multiple quantities of the same product
+        $productQuantities = [];
+        foreach ($items as $item) {
+            $product = $item->purchasable;
+            if (!$product) {
+                continue;
+            }
+
+            $productKey = get_class($product) . '|' . $product->id;
+            if (!isset($productQuantities[$productKey])) {
+                $productQuantities[$productKey] = [
+                    'product' => $product,
+                    'quantity' => 0,
+                ];
+            }
+            $productQuantities[$productKey]['quantity'] += $item->quantity;
+        }
+
+        // Get calendar availability for each unique product
+        foreach ($productQuantities as $productKey => $data) {
+            $product = $data['product'];
+            $requiredQuantity = $data['quantity'];
+
+            // Check if product has the calendarAvailability method (uses HasStocks trait)
+            if (method_exists($product, 'calendarAvailability')) {
+                $availability = $product->calendarAvailability($from, $until);
+                $productAvailabilities[$productKey] = [
+                    'availability' => $availability,
+                    'required_quantity' => $requiredQuantity,
+                ];
+                $itemDetails[$productKey] = [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name ?? 'Unknown',
+                    'required_quantity' => $requiredQuantity,
+                    'availability' => $availability,
+                ];
+            } else {
+                // Product doesn't have stock management - treat as unlimited
+                $productAvailabilities[$productKey] = [
+                    'availability' => [
+                        'max_available' => PHP_INT_MAX,
+                        'min_available' => PHP_INT_MAX,
+                        'dates' => [],
+                    ],
+                    'required_quantity' => $requiredQuantity,
+                ];
+                $itemDetails[$productKey] = [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name ?? 'Unknown',
+                    'required_quantity' => $requiredQuantity,
+                    'availability' => [
+                        'max_available' => PHP_INT_MAX,
+                        'min_available' => PHP_INT_MAX,
+                        'dates' => [],
+                    ],
+                ];
+            }
+        }
+
+        // If no products have availability data, return unlimited
+        if (empty($productAvailabilities)) {
+            return [
+                'max_available' => PHP_INT_MAX,
+                'min_available' => PHP_INT_MAX,
+                'dates' => [],
+                'items' => $itemDetails,
+            ];
+        }
+
+        // Build the combined calendar
+        $dates = [];
+        $globalMin = PHP_INT_MAX;
+        $globalMax = PHP_INT_MIN;
+
+        $currentDate = $fromDate->copy();
+        while ($currentDate->lte($untilDate)) {
+            $dateKey = $currentDate->toDateString();
+            $dayMin = PHP_INT_MAX;
+            $dayMax = PHP_INT_MAX;
+
+            foreach ($productAvailabilities as $productKey => $data) {
+                $availability = $data['availability'];
+                $requiredQuantity = $data['required_quantity'];
+
+                // Get the availability for this date
+                if (isset($availability['dates'][$dateKey])) {
+                    $productDayData = $availability['dates'][$dateKey];
+                    $productDayMin = $productDayData['min'] ?? 0;
+                    $productDayMax = $productDayData['max'] ?? 0;
+                } else {
+                    // No specific date data - use overall availability
+                    $productDayMin = $availability['min_available'] ?? 0;
+                    $productDayMax = $availability['max_available'] ?? 0;
+                }
+
+                // Calculate how many "sets" of the required quantity are available
+                if ($productDayMin === PHP_INT_MAX) {
+                    $setsMin = PHP_INT_MAX;
+                } else {
+                    $setsMin = $requiredQuantity > 0 ? intdiv($productDayMin, $requiredQuantity) : PHP_INT_MAX;
+                }
+
+                if ($productDayMax === PHP_INT_MAX) {
+                    $setsMax = PHP_INT_MAX;
+                } else {
+                    $setsMax = $requiredQuantity > 0 ? intdiv($productDayMax, $requiredQuantity) : PHP_INT_MAX;
+                }
+
+                // The cart availability is limited by the product with the least availability
+                $dayMin = min($dayMin, $setsMin);
+                $dayMax = min($dayMax, $setsMax);
+            }
+
+            // Handle PHP_INT_MAX edge case
+            if ($dayMin === PHP_INT_MAX) {
+                $dayMin = PHP_INT_MAX;
+            }
+            if ($dayMax === PHP_INT_MAX) {
+                $dayMax = PHP_INT_MAX;
+            }
+
+            $dates[$dateKey] = [
+                'min' => $dayMin,
+                'max' => $dayMax,
+            ];
+
+            if ($dayMin !== PHP_INT_MAX) {
+                $globalMin = min($globalMin, $dayMin);
+            }
+            if ($dayMax !== PHP_INT_MAX && $dayMax !== PHP_INT_MIN) {
+                $globalMax = max($globalMax, $dayMax);
+            } elseif ($dayMax === PHP_INT_MAX && $globalMax === PHP_INT_MIN) {
+                // All products have unlimited availability
+                $globalMax = PHP_INT_MAX;
+            }
+
+            $currentDate->addDay();
+        }
+
+        return [
+            'max_available' => $globalMax === PHP_INT_MIN ? 0 : $globalMax,
+            'min_available' => $globalMin === PHP_INT_MAX ? PHP_INT_MAX : $globalMin,
+            'dates' => $dates,
+            'items' => $itemDetails,
+        ];
+    }
+
+    /**
      * Validate cart for checkout without converting it
      * 
      * Checks:
