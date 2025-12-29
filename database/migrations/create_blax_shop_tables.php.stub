@@ -371,6 +371,95 @@ return new class extends Migration
                 $table->foreign('product_purchase_id')->references('id')->on(config('shop.tables.product_purchases', 'product_purchases'))->onDelete('set null');
             });
         }
+
+        // Orders table - represents converted/purchased carts
+        if (!Schema::hasTable(config('shop.tables.orders', 'orders'))) {
+            Schema::create(config('shop.tables.orders', 'orders'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->string('order_number')->unique();
+                $table->uuid('cart_id')->nullable();
+                $table->nullableUuidMorphs('customer');
+                $table->string('status')->default('pending');
+                $table->string('currency', 3)->default('USD');
+
+                // Financial fields (all stored in smallest currency unit - cents)
+                $table->unsignedBigInteger('amount_subtotal')->default(0);
+                $table->unsignedBigInteger('amount_discount')->default(0);
+                $table->unsignedBigInteger('amount_shipping')->default(0);
+                $table->unsignedBigInteger('amount_tax')->default(0);
+                $table->unsignedBigInteger('amount_total')->default(0);
+                $table->unsignedBigInteger('amount_paid')->default(0);
+                $table->unsignedBigInteger('amount_refunded')->default(0);
+
+                // Payment information
+                $table->string('payment_method')->nullable();
+                $table->string('payment_provider')->nullable();
+                $table->string('payment_reference')->nullable();
+
+                // Addresses (stored as JSON)
+                $table->json('billing_address')->nullable();
+                $table->json('shipping_address')->nullable();
+
+                // Notes
+                $table->text('customer_note')->nullable();
+                $table->text('internal_note')->nullable();
+
+                // Tracking metadata
+                $table->string('ip_address')->nullable();
+                $table->text('user_agent')->nullable();
+
+                // Important timestamps
+                $table->timestamp('completed_at')->nullable();
+                $table->timestamp('paid_at')->nullable();
+                $table->timestamp('shipped_at')->nullable();
+                $table->timestamp('delivered_at')->nullable();
+                $table->timestamp('cancelled_at')->nullable();
+                $table->timestamp('refunded_at')->nullable();
+
+                // Extensible metadata
+                $table->json('meta')->nullable();
+
+                $table->timestamps();
+                $table->softDeletes();
+
+                // Indexes
+                $table->index(['customer_type', 'customer_id', 'status'], 'orders_customer_status_idx');
+                $table->index(['status', 'created_at']);
+                $table->index(['order_number']);
+                $table->index('cart_id');
+
+                // Foreign key to carts
+                $table->foreign('cart_id')
+                    ->references('id')
+                    ->on(config('shop.tables.carts', 'carts'))
+                    ->nullOnDelete();
+            });
+        }
+
+        // Order notes table - activity log for orders (like WooCommerce order notes)
+        if (!Schema::hasTable(config('shop.tables.order_notes', 'order_notes'))) {
+            Schema::create(config('shop.tables.order_notes', 'order_notes'), function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('order_id');
+                $table->nullableUuidMorphs('author'); // Who created the note
+                $table->text('content');
+                $table->string('type')->default('note'); // note, status_change, payment, refund, shipping, customer, system
+                $table->boolean('is_customer_note')->default(false); // Whether visible to customer
+                $table->json('meta')->nullable();
+                $table->timestamps();
+
+                // Indexes
+                $table->index(['order_id', 'type']);
+                $table->index(['order_id', 'is_customer_note']);
+                $table->index(['order_id', 'created_at']);
+
+                // Foreign key to orders
+                $table->foreign('order_id')
+                    ->references('id')
+                    ->on(config('shop.tables.orders', 'orders'))
+                    ->onDelete('cascade');
+            });
+        }
     }
 
     /**
@@ -378,6 +467,8 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists(config('shop.tables.order_notes', 'order_notes'));
+        Schema::dropIfExists(config('shop.tables.orders', 'orders'));
         Schema::dropIfExists(config('shop.tables.payment_methods', 'payment_methods'));
         Schema::dropIfExists(config('shop.tables.payment_provider_identities', 'payment_provider_identities'));
         Schema::dropIfExists(config('shop.tables.cart_discounts', 'cart_discounts'));

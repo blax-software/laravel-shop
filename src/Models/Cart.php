@@ -95,6 +95,14 @@ class Cart extends Model
         return $this->hasMany(config('shop.models.product_purchase', \Blax\Shop\Models\ProductPurchase::class), 'cart_id');
     }
 
+    /**
+     * Get the order created from this cart (if converted).
+     */
+    public function order()
+    {
+        return $this->hasOne(config('shop.models.order', \Blax\Shop\Models\Order::class), 'cart_id');
+    }
+
     public function getTotal(): float
     {
         return $this->items()->sum('subtotal');
@@ -1805,7 +1813,11 @@ class Cart extends Model
 
             $this->update([
                 'converted_at' => now(),
+                'status' => CartStatus::CONVERTED,
             ]);
+
+            // Create an Order from this converted cart
+            $order = Order::createFromCart($this);
 
             return $this;
         });

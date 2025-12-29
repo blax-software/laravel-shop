@@ -9,15 +9,17 @@ use Blax\Shop\Exceptions\MultiplePurchaseOptions;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Exceptions\NotPurchasable;
 use Blax\Shop\Models\Cart;
-use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPrice;
+use Blax\Shop\Models\ProductPurchase;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;
 
 trait HasShoppingCapabilities
 {
-    use HasChargingOptions, HasCart;
+    use HasCart;
+    use HasChargingOptions;
+    use HasOrders;
 
     /**
      * Get all purchases made by this entity

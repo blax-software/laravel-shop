@@ -5,6 +5,8 @@ return [
     'tables' => [
         'cart_items' => 'cart_items',
         'carts' => 'carts',
+        'orders' => 'orders',
+        'order_notes' => 'order_notes',
         'payment_methods' => 'payment_methods',
         'payment_provider_identities' => 'payment_provider_identities',
         'product_action_runs' => 'product_action_runs',
@@ -29,6 +31,8 @@ return [
         'product_purchase' => \Blax\Shop\Models\ProductPurchase::class,
         'cart' => \Blax\Shop\Models\Cart::class,
         'cart_item' => \Blax\Shop\Models\CartItem::class,
+        'order' => \Blax\Shop\Models\Order::class,
+        'order_note' => \Blax\Shop\Models\OrderNote::class,
         'payment_provider_identity' => \Blax\Shop\Models\PaymentProviderIdentity::class,
         'payment_method' => \Blax\Shop\Models\PaymentMethod::class,
     ],
@@ -62,6 +66,36 @@ return [
         'enabled' => env('SHOP_STRIPE_ENABLED', false),
         'sync_prices' => true,
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+
+        // Webhook events that the shop package listens for
+        // You can customize this list to add/remove events as needed
+        'webhook_events' => [
+            // Checkout Session Events
+            'checkout.session.completed',
+            'checkout.session.async_payment_succeeded',
+            'checkout.session.async_payment_failed',
+            'checkout.session.expired',
+
+            // Charge Events
+            'charge.succeeded',
+            'charge.failed',
+            'charge.refunded',
+            'charge.dispute.created',
+            'charge.dispute.closed',
+
+            // Payment Intent Events
+            'payment_intent.succeeded',
+            'payment_intent.payment_failed',
+            'payment_intent.canceled',
+
+            // Refund Events
+            'refund.created',
+            'refund.updated',
+
+            // Invoice Events (for subscriptions)
+            'invoice.payment_succeeded',
+            'invoice.payment_failed',
+        ],
     ],
 
     // Currency configuration
@@ -79,6 +113,13 @@ return [
         'expire_after_days' => 30,
         'auto_cleanup' => true,
         'merge_on_login' => true,
+    ],
+
+    // Order configuration
+    'orders' => [
+        'number_prefix' => env('SHOP_ORDER_PREFIX', 'ORD-'),
+        'auto_complete_virtual' => true, // Auto-complete orders with only virtual products
+        'auto_complete_paid' => false, // Auto-complete orders when fully paid
     ],
 
     // API Response format

@@ -60,6 +60,7 @@ class ShopServiceProvider extends ServiceProvider
                 \Blax\Shop\Console\Commands\ShopListPurchasesCommand::class,
                 \Blax\Shop\Console\Commands\ShopStatsCommand::class,
                 \Blax\Shop\Console\Commands\ShopAddExampleProducts::class,
+                \Blax\Shop\Console\Commands\ShopSetupStripeWebhooksCommand::class,
             ]);
         }
     }
