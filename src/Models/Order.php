@@ -596,6 +596,212 @@ class Order extends Model
         return $query->whereBetween('created_at', [$from, $until]);
     }
 
+    /**
+     * Scope to filter by payment provider.
+     */
+    public function scopeByPaymentProvider($query, string $provider)
+    {
+        return $query->where('payment_provider', $provider);
+    }
+
+    /**
+     * Scope to filter by payment method.
+     */
+    public function scopeByPaymentMethod($query, string $method)
+    {
+        return $query->where('payment_method', $method);
+    }
+
+    /**
+     * Scope to get orders with refunds.
+     */
+    public function scopeWithRefunds($query)
+    {
+        return $query->where('amount_refunded', '>', 0);
+    }
+
+    /**
+     * Scope to get fully refunded orders.
+     */
+    public function scopeFullyRefunded($query)
+    {
+        return $query->whereColumn('amount_refunded', '>=', 'amount_paid');
+    }
+
+    /**
+     * Scope to get orders created today.
+     */
+    public function scopeToday($query)
+    {
+        return $query->whereDate('created_at', now()->toDateString());
+    }
+
+    /**
+     * Scope to get orders created this week.
+     */
+    public function scopeThisWeek($query)
+    {
+        return $query->whereBetween('created_at', [
+            now()->startOfWeek(),
+            now()->endOfWeek(),
+        ]);
+    }
+
+    /**
+     * Scope to get orders created this month.
+     */
+    public function scopeThisMonth($query)
+    {
+        return $query->whereBetween('created_at', [
+            now()->startOfMonth(),
+            now()->endOfMonth(),
+        ]);
+    }
+
+    /**
+     * Scope to get orders created this year.
+     */
+    public function scopeThisYear($query)
+    {
+        return $query->whereBetween('created_at', [
+            now()->startOfYear(),
+            now()->endOfYear(),
+        ]);
+    }
+
+    // =========================================================================
+    // STATIC SUMMARY METHODS
+    // =========================================================================
+
+    /**
+     * Get total revenue (sum of amount_paid) across all orders.
+     * Returns value in cents.
+     */
+    public static function getTotalRevenue(): int
+    {
+        return (int) static::sum('amount_paid');
+    }
+
+    /**
+     * Get total revenue for a date range.
+     * Returns value in cents.
+     */
+    public static function getRevenueBetween(\DateTimeInterface $from, \DateTimeInterface $until): int
+    {
+        return (int) static::createdBetween($from, $until)->sum('amount_paid');
+    }
+
+    /**
+     * Get total refunded amount across all orders.
+     * Returns value in cents.
+     */
+    public static function getTotalRefunded(): int
+    {
+        return (int) static::sum('amount_refunded');
+    }
+
+    /**
+     * Get net revenue (revenue minus refunds).
+     * Returns value in cents.
+     */
+    public static function getNetRevenue(): int
+    {
+        return static::getTotalRevenue() - static::getTotalRefunded();
+    }
+
+    /**
+     * Get average order value.
+     * Returns value in cents.
+     */
+    public static function getAverageOrderValue(): float
+    {
+        return (float) (static::avg('amount_total') ?? 0);
+    }
+
+    /**
+     * Get order counts by status.
+     */
+    public static function getCountsByStatus(): array
+    {
+        $counts = static::selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        // Initialize all statuses with 0
+        $result = [];
+        foreach (OrderStatus::cases() as $status) {
+            $result[$status->value] = $counts[$status->value] ?? 0;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get revenue summary for a specific period.
+     */
+    public static function getRevenueSummary(\DateTimeInterface $from, \DateTimeInterface $until): array
+    {
+        $query = static::createdBetween($from, $until);
+
+        return [
+            'period' => [
+                'from' => $from->format('Y-m-d H:i:s'),
+                'until' => $until->format('Y-m-d H:i:s'),
+            ],
+            'orders' => [
+                'total' => $query->count(),
+                'completed' => (clone $query)->completed()->count(),
+                'paid' => (clone $query)->paid()->count(),
+                'unpaid' => (clone $query)->unpaid()->count(),
+            ],
+            'revenue' => [
+                'gross' => (int) (clone $query)->sum('amount_total'),
+                'paid' => (int) (clone $query)->sum('amount_paid'),
+                'refunded' => (int) (clone $query)->sum('amount_refunded'),
+                'net' => (int) ((clone $query)->sum('amount_paid') - (clone $query)->sum('amount_refunded')),
+            ],
+            'averages' => [
+                'order_value' => (float) (clone $query)->avg('amount_total') ?? 0,
+                'paid_amount' => (float) (clone $query)->avg('amount_paid') ?? 0,
+            ],
+        ];
+    }
+
+    /**
+     * Get daily revenue breakdown for a date range.
+     */
+    public static function getDailyRevenue(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
+    {
+        return static::createdBetween($from, $until)
+            ->selectRaw('DATE(created_at) as date')
+            ->selectRaw('COUNT(*) as order_count')
+            ->selectRaw('SUM(amount_total) as total_amount')
+            ->selectRaw('SUM(amount_paid) as paid_amount')
+            ->selectRaw('SUM(amount_refunded) as refunded_amount')
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get();
+    }
+
+    /**
+     * Get monthly revenue breakdown for a date range.
+     */
+    public static function getMonthlyRevenue(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
+    {
+        return static::createdBetween($from, $until)
+            ->selectRaw('YEAR(created_at) as year')
+            ->selectRaw('MONTH(created_at) as month')
+            ->selectRaw('COUNT(*) as order_count')
+            ->selectRaw('SUM(amount_total) as total_amount')
+            ->selectRaw('SUM(amount_paid) as paid_amount')
+            ->selectRaw('SUM(amount_refunded) as refunded_amount')
+            ->groupBy('year', 'month')
+            ->orderBy('year')
+            ->orderBy('month')
+            ->get();
+    }
+
     // =========================================================================
     // FACTORY METHODS
     // =========================================================================

@@ -113,6 +113,12 @@ return [
         'expire_after_days' => 30,
         'auto_cleanup' => true,
         'merge_on_login' => true,
+
+        // Cart expiration: mark carts as expired after this many minutes of inactivity
+        'expiration_minutes' => env('SHOP_CART_EXPIRATION_MINUTES', 60),
+
+        // Cart deletion: delete unused carts after this many hours of inactivity
+        'deletion_hours' => env('SHOP_CART_DELETION_HOURS', 24),
     ],
 
     // Order configuration

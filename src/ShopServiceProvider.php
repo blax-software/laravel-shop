@@ -2,7 +2,9 @@
 
 namespace Blax\Shop;
 
+use Blax\Shop\Console\Commands\ShopCleanupCartsCommand;
 use Blax\Shop\Console\Commands\ShopReinstallCommand;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
 class ShopServiceProvider extends ServiceProvider
@@ -53,6 +55,7 @@ class ShopServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 ShopReinstallCommand::class,
+                ShopCleanupCartsCommand::class,
                 \Blax\Shop\Console\Commands\ReleaseExpiredStocks::class,
                 \Blax\Shop\Console\Commands\ShopListProductsCommand::class,
                 \Blax\Shop\Console\Commands\ShopToggleActionCommand::class,
@@ -63,6 +66,24 @@ class ShopServiceProvider extends ServiceProvider
                 \Blax\Shop\Console\Commands\ShopSetupStripeWebhooksCommand::class,
             ]);
         }
+
+        // Register scheduled tasks
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            // Cleanup carts every hour if auto_cleanup is enabled
+            if (config('shop.cart.auto_cleanup', true)) {
+                $schedule->command('shop:cleanup-carts', ['--force'])
+                    ->hourly()
+                    ->withoutOverlapping()
+                    ->runInBackground();
+            }
+
+            // Release expired stocks every 5 minutes
+            if (config('shop.stock.auto_release_expired', true)) {
+                $schedule->command('shop:release-expired-stocks')
+                    ->everyFiveMinutes()
+                    ->withoutOverlapping();
+            }
+        });
     }
 
     /**

@@ -69,9 +69,141 @@ class Cart extends Model
 
     protected static function booted()
     {
+        // Auto-update last_activity_at on creation
+        static::creating(function ($cart) {
+            if (empty($cart->last_activity_at)) {
+                $cart->last_activity_at = now();
+            }
+        });
+
         static::deleting(function ($cart) {
             $cart->items()->delete();
         });
+    }
+
+    /**
+     * Touch the cart's last activity timestamp.
+     * Call this whenever there's activity on the cart.
+     */
+    public function touchActivity(): self
+    {
+        $this->last_activity_at = now();
+        $this->saveQuietly(); // Don't trigger events
+        return $this;
+    }
+
+    /**
+     * Check if the cart has expired.
+     * Checks both explicit expires_at and activity-based expiration.
+     */
+    public function isExpired(): bool
+    {
+        // Check if status is explicitly expired
+        if ($this->status === CartStatus::EXPIRED) {
+            return true;
+        }
+
+        // Check if explicitly expired via expires_at column
+        if ($this->expires_at && $this->expires_at->lt(now())) {
+            return true;
+        }
+
+        // Check activity-based expiration
+        $expirationMinutes = config('shop.cart.expiration_minutes', 60);
+        $lastActivity = $this->last_activity_at ?? $this->updated_at;
+
+        return $lastActivity && $lastActivity->lt(now()->subMinutes($expirationMinutes));
+    }
+
+    /**
+     * Scope to get active (non-expired, non-converted) carts.
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereNull('converted_at')
+            ->where(function ($q) {
+                $q->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            });
+    }
+
+    /**
+     * Check if the cart should be deleted (unused for more than the configured time).
+     */
+    public function shouldBeDeleted(): bool
+    {
+        // Never delete converted carts
+        if ($this->converted_at || $this->status === CartStatus::CONVERTED) {
+            return false;
+        }
+
+        $deletionHours = config('shop.cart.deletion_hours', 24);
+        $lastActivity = $this->last_activity_at ?? $this->updated_at;
+
+        return $lastActivity && $lastActivity->lt(now()->subHours($deletionHours));
+    }
+
+    /**
+     * Mark the cart as expired.
+     */
+    public function markAsExpired(): self
+    {
+        $this->status = CartStatus::EXPIRED;
+        $this->save();
+        return $this;
+    }
+
+    /**
+     * Mark the cart as abandoned.
+     */
+    public function markAsAbandoned(): self
+    {
+        $this->status = CartStatus::ABANDONED;
+        $this->save();
+        return $this;
+    }
+
+    /**
+     * Scope to get carts that should expire (inactive for more than configured time).
+     */
+    public function scopeShouldExpire($query)
+    {
+        $expirationMinutes = config('shop.cart.expiration_minutes', 60);
+
+        return $query->where('status', CartStatus::ACTIVE->value)
+            ->where(function ($q) use ($expirationMinutes) {
+                $q->where('last_activity_at', '<', now()->subMinutes($expirationMinutes))
+                    ->orWhere(function ($q2) use ($expirationMinutes) {
+                        $q2->whereNull('last_activity_at')
+                            ->where('updated_at', '<', now()->subMinutes($expirationMinutes));
+                    });
+            });
+    }
+
+    /**
+     * Scope to get carts that should be deleted (unused for more than configured time).
+     */
+    public function scopeShouldDelete($query)
+    {
+        $deletionHours = config('shop.cart.deletion_hours', 24);
+
+        return $query->where('status', '!=', CartStatus::CONVERTED->value)
+            ->whereNull('converted_at')
+            ->where(function ($q) use ($deletionHours) {
+                $q->where('last_activity_at', '<', now()->subHours($deletionHours))
+                    ->orWhere(function ($q2) use ($deletionHours) {
+                        $q2->whereNull('last_activity_at')
+                            ->where('updated_at', '<', now()->subHours($deletionHours));
+                    });
+            });
+    }
+
+    /**
+     * Scope to get carts with expired status.
+     */
+    public function scopeWithExpiredStatus($query)
+    {
+        return $query->where('status', CartStatus::EXPIRED->value);
     }
 
     public function customer(): MorphTo
@@ -792,23 +924,9 @@ class Cart extends Model
             ->sum('total_amount');
     }
 
-    public function isExpired(): bool
-    {
-        return $this->expires_at && $this->expires_at->isPast();
-    }
-
     public function isConverted(): bool
     {
         return !is_null($this->converted_at);
-    }
-
-    public function scopeActive($query)
-    {
-        return $query->whereNull('converted_at')
-            ->where(function ($q) {
-                $q->whereNull('expires_at')
-                    ->orWhere('expires_at', '>', now());
-            });
     }
 
     public function scopeForUser($query, $userOrId)
@@ -1252,6 +1370,9 @@ class Cart extends Model
             $cartItem->updateMetaKey('allocated_single_item_name', $poolSingleItem->name);
         }
 
+        // Touch activity timestamp
+        $this->touchActivity();
+
         return $cartItem;
     }
 
@@ -1314,6 +1435,9 @@ class Cart extends Model
                 $item->delete();
             }
         }
+
+        // Touch activity timestamp
+        $this->touchActivity();
 
         return $item ?? true;
     }

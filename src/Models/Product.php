@@ -198,6 +198,144 @@ class Product extends Model implements Purchasable, Cartable
         return true;
     }
 
+    /**
+     * Duplicate/clone this product with all related data.
+     * 
+     * Creates a copy of the product including:
+     * - All basic attributes (with modified slug/sku)
+     * - All prices
+     * - All categories
+     * - All product attributes
+     * - All product relations (related, upsell, cross-sell)
+     * - All children (variants) if includeChildren is true
+     * 
+     * @param array $overrides Attributes to override in the duplicated product
+     * @param bool $includeChildren Whether to duplicate child products (variants)
+     * @param bool $includePrices Whether to duplicate prices
+     * @param bool $includeCategories Whether to duplicate category associations
+     * @param bool $includeAttributes Whether to duplicate product attributes
+     * @param bool $includeRelations Whether to duplicate product relations
+     * @return static The duplicated product
+     */
+    public function duplicate(
+        array $overrides = [],
+        bool $includeChildren = true,
+        bool $includePrices = true,
+        bool $includeCategories = true,
+        bool $includeAttributes = true,
+        bool $includeRelations = true
+    ): static {
+        // Get attributes to duplicate
+        $attributes = $this->attributesToArray();
+
+        // Remove fields that shouldn't be copied
+        unset(
+            $attributes['id'],
+            $attributes['created_at'],
+            $attributes['updated_at'],
+            $attributes['deleted_at'],
+            $attributes['stripe_product_id'], // Stripe ID should be unique
+        );
+
+        // Generate unique slug and SKU
+        $baseSlug = preg_replace('/-copy(-\d+)?$/', '', $this->slug);
+        $suffix = '-copy';
+        $counter = 1;
+
+        while (static::where('slug', $baseSlug . $suffix)->exists()) {
+            $suffix = '-copy-' . ++$counter;
+        }
+        $attributes['slug'] = $baseSlug . $suffix;
+
+        // Handle SKU uniqueness
+        if ($this->sku) {
+            $baseSku = preg_replace('/-COPY(-\d+)?$/i', '', $this->sku);
+            $skuSuffix = '-COPY';
+            $skuCounter = 1;
+
+            while (static::where('sku', $baseSku . $skuSuffix)->exists()) {
+                $skuSuffix = '-COPY-' . ++$skuCounter;
+            }
+            $attributes['sku'] = $baseSku . $skuSuffix;
+        }
+
+        // Set as draft by default
+        $attributes['status'] = ProductStatus::DRAFT->value;
+        $attributes['published_at'] = null;
+
+        // Apply overrides
+        $attributes = array_merge($attributes, $overrides);
+
+        // Create the duplicate product
+        $duplicate = static::create($attributes);
+
+        // Duplicate prices
+        if ($includePrices && method_exists($this, 'prices')) {
+            foreach ($this->prices as $price) {
+                $priceData = $price->attributesToArray();
+                unset(
+                    $priceData['id'],
+                    $priceData['purchasable_id'],
+                    $priceData['purchasable_type'],
+                    $priceData['stripe_price_id'],
+                    $priceData['created_at'],
+                    $priceData['updated_at']
+                );
+
+                $duplicate->prices()->create($priceData);
+            }
+        }
+
+        // Duplicate categories
+        if ($includeCategories && method_exists($this, 'categories')) {
+            $categoryIds = $this->categories->pluck('id')->toArray();
+            if (!empty($categoryIds)) {
+                $duplicate->categories()->sync($categoryIds);
+            }
+        }
+
+        // Duplicate attributes (product attributes, not model attributes)
+        if ($includeAttributes) {
+            foreach ($this->attributes()->get() as $attribute) {
+                $attrData = $attribute->attributesToArray();
+                unset(
+                    $attrData['id'],
+                    $attrData['product_id'],
+                    $attrData['created_at'],
+                    $attrData['updated_at']
+                );
+
+                $duplicate->attributes()->create($attrData);
+            }
+        }
+
+        // Duplicate product relations
+        if ($includeRelations && method_exists($this, 'relatedProducts')) {
+            foreach ($this->relatedProducts as $related) {
+                $duplicate->relatedProducts()->attach($related->id, [
+                    'type' => $related->pivot->type ?? 'related',
+                    'sort_order' => $related->pivot->sort_order ?? 0,
+                ]);
+            }
+        }
+
+        // Duplicate children (variants)
+        if ($includeChildren) {
+            foreach ($this->children as $child) {
+                $child->duplicate(
+                    ['parent_id' => $duplicate->id],
+                    false, // Don't recurse into children's children
+                    $includePrices,
+                    $includeCategories,
+                    $includeAttributes,
+                    $includeRelations
+                );
+            }
+        }
+
+        return $duplicate->fresh();
+    }
+
     public static function getAvailableActions(): array
     {
         return ProductAction::getAvailableActions();
