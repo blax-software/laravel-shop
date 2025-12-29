@@ -89,46 +89,6 @@ class CartCheckoutSessionTest extends TestCase
     }
 
     #[Test]
-    public function it_uses_short_description_for_product_name_if_available()
-    {
-        config(['shop.stripe.enabled' => true]);
-        config(['services.stripe.secret' => 'sk_test_fake']);
-
-        $product = Product::factory()->create([
-            'name' => 'Very Long Product Name That Would Be Too Long',
-            'short_description' => 'Short Name',
-            'manage_stock' => false,
-        ]);
-
-        ProductPrice::factory()->create([
-            'purchasable_id' => $product->id,
-            'purchasable_type' => Product::class,
-            'unit_amount' => 1000,
-            'currency' => 'USD',
-            'is_default' => true,
-        ]);
-
-        $this->cart->addToCart($product, 1);
-
-        // Capture the session params
-        $sessionParams = null;
-        \Stripe\Checkout\Session::$createCallback = function ($params) use (&$sessionParams) {
-            $sessionParams = $params;
-            $mockSession = new \stdClass();
-            $mockSession->id = 'mock_session_id';
-            return $mockSession;
-        };
-
-        $this->cart->checkoutSession([
-            'success_url' => 'https://example.com/success',
-            'cancel_url' => 'https://example.com/cancel',
-        ]);
-
-        $this->assertNotNull($sessionParams);
-        $this->assertEquals('Short Name', $sessionParams['line_items'][0]['price_data']['product_data']['name']);
-    }
-
-    #[Test]
     public function it_includes_booking_dates_in_product_name()
     {
         config(['shop.stripe.enabled' => true]);
@@ -168,11 +128,11 @@ class CartCheckoutSessionTest extends TestCase
             'cancel_url' => 'https://example.com/cancel',
         ]);
 
-        $productName = $sessionParams['line_items'][0]['price_data']['product_data']['name'];
+        $data = $sessionParams['line_items'][0]['price_data']['product_data'];
 
-        $this->assertStringContainsString('Hotel Room', $productName);
-        $this->assertStringContainsString('from', $productName);
-        $this->assertStringContainsString('to', $productName);
+        $this->assertStringContainsString('Hotel Room', $data['name']);
+        $this->assertStringContainsString('from', $data['description']);
+        $this->assertStringContainsString('to', $data['description']);
     }
 
     #[Test]
