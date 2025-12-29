@@ -1879,13 +1879,14 @@ class Cart extends Model
             $product = $item->purchasable;
 
             // Get product name (use short_description if available, otherwise name)
-            $productName = $product->short_description ?? $product->name ?? 'Product';
+            $productName = $product->name ?? 'Product [' . $product->id . ']';
+            $description = $product->short_description ?? null;
 
             // Build description with booking dates if available
             if ($item->from && $item->until) {
                 $fromFormatted = $item->from->format('M j, Y H:i');
                 $untilFormatted = $item->until->format('M j, Y H:i');
-                $productName .= " from {$fromFormatted} to {$untilFormatted}";
+                $description .= " from {$fromFormatted} to {$untilFormatted}";
             }
 
             // Price is already stored in cents, Stripe expects smallest currency unit
@@ -1897,6 +1898,7 @@ class Cart extends Model
                     'currency' => config('shop.currency', 'usd'),
                     'product_data' => [
                         'name' => $productName,
+                        ...($description ? ['description' => $description] : []),
                     ],
                     'unit_amount' => $unitAmountCents,
                 ],
