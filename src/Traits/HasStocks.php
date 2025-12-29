@@ -139,7 +139,8 @@ trait HasStocks
             'expires_at' => $until,
         ]);
 
-        $this->logStockChange(-$quantity, 'decrease');
+        // Pass pre-calculated quantity to avoid extra query
+        $this->logStockChange(-$quantity, 'decrease', $available - $quantity);
 
         $this->save();
 
@@ -167,6 +168,8 @@ trait HasStocks
             'status' => StockStatus::COMPLETED,
         ]);
 
+        // Log stock change - getAvailableStock will be called by logStockChange
+        // This is acceptable since we need the accurate quantity after
         $this->logStockChange($quantity, 'increase');
 
         $this->save();
@@ -418,13 +421,14 @@ trait HasStocks
      * 
      * @param int $quantityChange The change in quantity (positive or negative)
      * @param string $type The type of change (increase, decrease, adjust)
+     * @param int|null $quantityAfter Optional pre-calculated quantity after change (avoids extra query)
      */
-    protected function logStockChange(int $quantityChange, string $type): void
+    protected function logStockChange(int $quantityChange, string $type, ?int $quantityAfter = null): void
     {
         DB::table('product_stock_logs')->insert([
             'product_id' => $this->id,
             'quantity_change' => $quantityChange,
-            'quantity_after' => $this->getAvailableStock(),
+            'quantity_after' => $quantityAfter ?? $this->getAvailableStock(),
             'type' => $type,
             'created_at' => now(),
             'updated_at' => now(),

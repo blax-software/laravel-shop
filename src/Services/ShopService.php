@@ -4,6 +4,7 @@ namespace Blax\Shop\Services;
 
 use Blax\Shop\Enums\OrderStatus;
 use Blax\Shop\Models\Cart;
+use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\Order;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
@@ -364,41 +365,105 @@ class ShopService
 
     /**
      * Get shop statistics summary.
+     * Optimized to use aggregated queries instead of individual counts.
      */
     public function stats(): array
     {
+        // Aggregate product counts in single query
+        $productStats = Product::selectRaw("
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published,
+            SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft,
+            SUM(CASE WHEN featured = 1 THEN 1 ELSE 0 END) as featured
+        ")->first();
+
+        // Aggregate order counts and revenue in single query
+        $today = Carbon::today();
+        $startOfWeek = Carbon::now()->startOfWeek();
+        $endOfWeek = Carbon::now()->endOfWeek();
+        $startOfMonth = Carbon::now()->startOfMonth();
+        $endOfMonth = Carbon::now()->endOfMonth();
+        $startOfYear = Carbon::now()->startOfYear();
+        $endOfYear = Carbon::now()->endOfYear();
+
+        $orderStats = Order::selectRaw("
+            COUNT(*) as total,
+            SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as processing,
+            SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as cancelled,
+            SUM(CASE WHEN DATE(created_at) = ? THEN 1 ELSE 0 END) as today,
+            SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) as this_week,
+            SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) as this_month,
+            COALESCE(SUM(amount_paid), 0) as total_revenue,
+            COALESCE(SUM(CASE WHEN DATE(created_at) = ? THEN amount_paid ELSE 0 END), 0) as revenue_today,
+            COALESCE(SUM(CASE WHEN created_at BETWEEN ? AND ? THEN amount_paid ELSE 0 END), 0) as revenue_this_week,
+            COALESCE(SUM(CASE WHEN created_at BETWEEN ? AND ? THEN amount_paid ELSE 0 END), 0) as revenue_this_month,
+            COALESCE(SUM(CASE WHEN created_at BETWEEN ? AND ? THEN amount_paid ELSE 0 END), 0) as revenue_this_year,
+            COALESCE(SUM(amount_refunded), 0) as total_refunded,
+            COALESCE(AVG(amount_total), 0) as average_order
+        ", [
+            OrderStatus::PENDING->value,
+            OrderStatus::PROCESSING->value,
+            OrderStatus::COMPLETED->value,
+            OrderStatus::CANCELLED->value,
+            $today,
+            $startOfWeek,
+            $endOfWeek,
+            $startOfMonth,
+            $endOfMonth,
+            $today,
+            $startOfWeek,
+            $endOfWeek,
+            $startOfMonth,
+            $endOfMonth,
+            $startOfYear,
+            $endOfYear,
+        ])->first();
+
+        // Aggregate cart counts in single query
+        $cartStats = Cart::selectRaw("
+            SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
+            SUM(CASE WHEN status = 'abandoned' THEN 1 ELSE 0 END) as abandoned,
+            SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) as expired,
+            SUM(CASE WHEN converted_at IS NOT NULL THEN 1 ELSE 0 END) as converted
+        ")->first();
+
+        $totalRevenue = (int) $orderStats->total_revenue;
+        $totalRefunded = (int) $orderStats->total_refunded;
+
         return [
             'products' => [
-                'total' => Product::count(),
-                'published' => Product::where('status', 'published')->count(),
-                'draft' => Product::where('status', 'draft')->count(),
-                'featured' => Product::where('featured', true)->count(),
+                'total' => (int) $productStats->total,
+                'published' => (int) $productStats->published,
+                'draft' => (int) $productStats->draft,
+                'featured' => (int) $productStats->featured,
             ],
             'orders' => [
-                'total' => Order::count(),
-                'pending' => $this->pendingOrders()->count(),
-                'processing' => $this->processingOrders()->count(),
-                'completed' => $this->completedOrders()->count(),
-                'cancelled' => $this->cancelledOrders()->count(),
-                'today' => $this->ordersToday()->count(),
-                'this_week' => $this->ordersThisWeek()->count(),
-                'this_month' => $this->ordersThisMonth()->count(),
+                'total' => (int) $orderStats->total,
+                'pending' => (int) $orderStats->pending,
+                'processing' => (int) $orderStats->processing,
+                'completed' => (int) $orderStats->completed,
+                'cancelled' => (int) $orderStats->cancelled,
+                'today' => (int) $orderStats->today,
+                'this_week' => (int) $orderStats->this_week,
+                'this_month' => (int) $orderStats->this_month,
             ],
             'revenue' => [
-                'total' => $this->totalRevenue(),
-                'today' => $this->revenueToday(),
-                'this_week' => $this->revenueThisWeek(),
-                'this_month' => $this->revenueThisMonth(),
-                'this_year' => $this->revenueThisYear(),
-                'refunded' => $this->totalRefunded(),
-                'net' => $this->netRevenue(),
-                'average_order' => $this->averageOrderValue(),
+                'total' => $totalRevenue,
+                'today' => (int) $orderStats->revenue_today,
+                'this_week' => (int) $orderStats->revenue_this_week,
+                'this_month' => (int) $orderStats->revenue_this_month,
+                'this_year' => (int) $orderStats->revenue_this_year,
+                'refunded' => $totalRefunded,
+                'net' => $totalRevenue - $totalRefunded,
+                'average_order' => (float) $orderStats->average_order,
             ],
             'carts' => [
-                'active' => Cart::where('status', 'active')->count(),
-                'abandoned' => Cart::where('status', 'abandoned')->count(),
-                'expired' => Cart::where('status', 'expired')->count(),
-                'converted' => Cart::whereNotNull('converted_at')->count(),
+                'active' => (int) $cartStats->active,
+                'abandoned' => (int) $cartStats->abandoned,
+                'expired' => (int) $cartStats->expired,
+                'converted' => (int) $cartStats->converted,
             ],
             'categories' => [
                 'total' => ProductCategory::count(),
@@ -530,14 +595,18 @@ class ShopService
      */
     public function deleteOldCarts(): int
     {
-        $carts = $this->cartsToDelete()->get();
-        $count = $carts->count();
+        // Get cart IDs to delete
+        $cartIds = $this->cartsToDelete()->pluck('id')->toArray();
 
-        foreach ($carts as $cart) {
-            $cart->forceDelete();
+        if (empty($cartIds)) {
+            return 0;
         }
 
-        return $count;
+        // Delete cart items in batch first (foreign key constraint)
+        CartItem::whereIn('cart_id', $cartIds)->delete();
+
+        // Delete carts in batch
+        return Cart::whereIn('id', $cartIds)->delete();
     }
 
     // =========================================================================

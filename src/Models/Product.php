@@ -239,10 +239,17 @@ class Product extends Model implements Purchasable, Cartable
 
         // Generate unique slug and SKU
         $baseSlug = preg_replace('/-copy(-\d+)?$/', '', $this->slug);
+
+        // Get all existing slugs with this base in one query
+        $existingSlugs = static::where('slug', 'LIKE', $baseSlug . '-copy%')
+            ->orWhere('slug', $baseSlug . '-copy')
+            ->pluck('slug')
+            ->flip()
+            ->toArray();
+
         $suffix = '-copy';
         $counter = 1;
-
-        while (static::where('slug', $baseSlug . $suffix)->exists()) {
+        while (isset($existingSlugs[$baseSlug . $suffix])) {
             $suffix = '-copy-' . ++$counter;
         }
         $attributes['slug'] = $baseSlug . $suffix;
@@ -250,10 +257,18 @@ class Product extends Model implements Purchasable, Cartable
         // Handle SKU uniqueness
         if ($this->sku) {
             $baseSku = preg_replace('/-COPY(-\d+)?$/i', '', $this->sku);
+
+            // Get all existing SKUs with this base in one query
+            $existingSkus = static::where('sku', 'LIKE', $baseSku . '-COPY%')
+                ->orWhere('sku', $baseSku . '-COPY')
+                ->pluck('sku')
+                ->map(fn($s) => strtoupper($s))
+                ->flip()
+                ->toArray();
+
             $skuSuffix = '-COPY';
             $skuCounter = 1;
-
-            while (static::where('sku', $baseSku . $skuSuffix)->exists()) {
+            while (isset($existingSkus[strtoupper($baseSku . $skuSuffix)])) {
                 $skuSuffix = '-COPY-' . ++$skuCounter;
             }
             $attributes['sku'] = $baseSku . $skuSuffix;
@@ -659,13 +674,22 @@ class Product extends Model implements Purchasable, Cartable
 
         // Special handling for pool products
         if ($this->isPool()) {
-            $hasDirectPrice = $this->prices()->exists();
-            $singleItems = $this->singleProducts;
+            // Use exists() for efficiency - avoids loading all prices just to check
+            $hasDirectPrice = $this->relationLoaded('prices')
+                ? $this->prices->isNotEmpty()
+                : $this->prices()->exists();
 
             if (!$hasDirectPrice) {
                 // Check if single items have prices to inherit
+                // Use withCount for efficiency if not already loaded
+                $singleItems = $this->relationLoaded('singleProducts')
+                    ? $this->singleProducts
+                    : $this->singleProducts()->get();
+
                 $singleItemsWithPrices = $singleItems->filter(function ($item) {
-                    return $item->prices()->exists();
+                    return $item->relationLoaded('prices')
+                        ? $item->prices->isNotEmpty()
+                        : $item->prices()->exists();
                 });
 
                 if ($singleItemsWithPrices->isEmpty()) {

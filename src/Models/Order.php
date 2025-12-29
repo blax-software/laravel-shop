@@ -706,7 +706,8 @@ class Order extends Model
      */
     public static function getNetRevenue(): int
     {
-        return static::getTotalRevenue() - static::getTotalRefunded();
+        $result = static::selectRaw('COALESCE(SUM(amount_paid), 0) - COALESCE(SUM(amount_refunded), 0) as net')->first();
+        return (int) $result->net;
     }
 
     /**
@@ -739,10 +740,23 @@ class Order extends Model
 
     /**
      * Get revenue summary for a specific period.
+     * Optimized to use single aggregated query.
      */
     public static function getRevenueSummary(\DateTimeInterface $from, \DateTimeInterface $until): array
     {
-        $query = static::createdBetween($from, $until);
+        $stats = static::createdBetween($from, $until)
+            ->selectRaw("
+                COUNT(*) as total_orders,
+                SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN amount_paid > 0 THEN 1 ELSE 0 END) as paid,
+                SUM(CASE WHEN amount_paid = 0 OR amount_paid IS NULL THEN 1 ELSE 0 END) as unpaid,
+                COALESCE(SUM(amount_total), 0) as gross,
+                COALESCE(SUM(amount_paid), 0) as paid_amount,
+                COALESCE(SUM(amount_refunded), 0) as refunded,
+                COALESCE(AVG(amount_total), 0) as avg_order_value,
+                COALESCE(AVG(amount_paid), 0) as avg_paid_amount
+            ", [OrderStatus::COMPLETED->value])
+            ->first();
 
         return [
             'period' => [
@@ -750,20 +764,20 @@ class Order extends Model
                 'until' => $until->format('Y-m-d H:i:s'),
             ],
             'orders' => [
-                'total' => $query->count(),
-                'completed' => (clone $query)->completed()->count(),
-                'paid' => (clone $query)->paid()->count(),
-                'unpaid' => (clone $query)->unpaid()->count(),
+                'total' => (int) $stats->total_orders,
+                'completed' => (int) $stats->completed,
+                'paid' => (int) $stats->paid,
+                'unpaid' => (int) $stats->unpaid,
             ],
             'revenue' => [
-                'gross' => (int) (clone $query)->sum('amount_total'),
-                'paid' => (int) (clone $query)->sum('amount_paid'),
-                'refunded' => (int) (clone $query)->sum('amount_refunded'),
-                'net' => (int) ((clone $query)->sum('amount_paid') - (clone $query)->sum('amount_refunded')),
+                'gross' => (int) $stats->gross,
+                'paid' => (int) $stats->paid_amount,
+                'refunded' => (int) $stats->refunded,
+                'net' => (int) ($stats->paid_amount - $stats->refunded),
             ],
             'averages' => [
-                'order_value' => (float) (clone $query)->avg('amount_total') ?? 0,
-                'paid_amount' => (float) (clone $query)->avg('amount_paid') ?? 0,
+                'order_value' => (float) $stats->avg_order_value,
+                'paid_amount' => (float) $stats->avg_paid_amount,
             ],
         ];
     }

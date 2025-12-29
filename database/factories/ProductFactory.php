@@ -87,7 +87,7 @@ class ProductFactory extends Factory
     ): static {
         return $this->afterCreating(function (Product $product) use ($count, $unit_amount, $sale_unit_amount) {
             // Use realistic price range if not specified
-            $defaultPrice = $unit_amount ?? $this->faker->randomElement([
+            $priceAmount = $unit_amount ?? $this->faker->randomElement([
                 1999,  // $19.99
                 2999,  // $29.99
                 4999,  // $49.99
@@ -99,21 +99,27 @@ class ProductFactory extends Factory
                 49999, // $499.99
             ]);
 
-            $prices = \Blax\Shop\Models\ProductPrice::factory()
-                ->count($count)
-                ->create([
-                    'purchasable_type' => get_class($product),
-                    'purchasable_id' => $product->id,
-                    'unit_amount' => $defaultPrice,
-                    'sale_unit_amount' => $sale_unit_amount,
-                    'currency' => 'EUR',
-                ]);
+            // Create first price with is_default = true to avoid second query
+            \Blax\Shop\Models\ProductPrice::factory()->create([
+                'purchasable_type' => get_class($product),
+                'purchasable_id' => $product->id,
+                'unit_amount' => $priceAmount,
+                'sale_unit_amount' => $sale_unit_amount,
+                'currency' => 'EUR',
+                'is_default' => true,
+            ]);
 
-            // Set the first price as default
-            if ($prices->isNotEmpty()) {
-                $defaultPrice = $prices->first();
-                $defaultPrice->is_default = true;
-                $defaultPrice->save();
+            // Create additional prices if count > 1
+            if ($count > 1) {
+                \Blax\Shop\Models\ProductPrice::factory()
+                    ->count($count - 1)
+                    ->create([
+                        'purchasable_type' => get_class($product),
+                        'purchasable_id' => $product->id,
+                        'unit_amount' => $priceAmount,
+                        'sale_unit_amount' => $sale_unit_amount,
+                        'currency' => 'EUR',
+                    ]);
             }
         });
     }

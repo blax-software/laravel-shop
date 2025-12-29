@@ -285,14 +285,21 @@ class Cart extends Model
      */
     public function stripePriceIds(): array
     {
-        return $this->items->map(function ($item) {
-            if (!$item->price_id) {
-                return null;
-            }
+        // Eager load priceModel to avoid N+1 queries
+        // Note: price() relationship conflicts with price column, so we use explicit loading
+        $items = $this->items()->get();
 
-            // Use the relationship method, not property access
-            $price = $item->price()->first();
-            return $price ? $price->stripe_price_id : null;
+        // Batch load all price IDs
+        $priceIds = $items->pluck('price_id')->filter()->unique()->values()->toArray();
+
+        if (empty($priceIds)) {
+            return array_fill(0, $items->count(), null);
+        }
+
+        $prices = ProductPrice::whereIn('id', $priceIds)->pluck('stripe_price_id', 'id');
+
+        return $items->map(function ($item) use ($prices) {
+            return $item->price_id ? ($prices[$item->price_id] ?? null) : null;
         })->toArray();
     }
 
