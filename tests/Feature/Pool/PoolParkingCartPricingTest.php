@@ -213,9 +213,9 @@ class PoolParkingCartPricingTest extends TestCase
         // - 1 cart item with Spot 2 (qty 2): price 500, price_id from pool
         // - 1 cart item with Spot 3 (qty 2): price 1000, price_id from Spot 3
         // Total: 3 cart items
-        
+
         $this->assertCount(3, $items);
-        
+
         // First cart item (price 300) should have Spot 1's price_id
         $item300 = $items->first(fn($i) => $i->price === 300);
         $this->assertNotNull($item300);
@@ -227,7 +227,7 @@ class PoolParkingCartPricingTest extends TestCase
         $this->assertNotNull($item500);
         $this->assertEquals(2, $item500->quantity);
         $this->assertEquals($poolPriceId, $item500->price_id);
-        
+
         // Cart item with price 1000 should have Spot 3's price_id
         $spot3PriceId = $spots[2]->defaultPrice()->first()->id;
         $item1000 = $items->first(fn($i) => $i->price === 1000);
@@ -538,9 +538,9 @@ class PoolParkingCartPricingTest extends TestCase
         // - 1 cart item with Spot 2 (qty 2): price 500, price_id from pool
         // - 1 cart item with Spot 3 (qty 2): price 500, price_id from pool
         // Total: 3 cart items
-        
+
         $this->assertCount(3, $items);
-        
+
         // First cart item (price 300) should have Spot 1's price_id
         $item300 = $items->first(fn($i) => $i->price === 300);
         $this->assertNotNull($item300);

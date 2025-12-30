@@ -258,7 +258,7 @@ class StockAttributesTest extends TestCase
 
         // available_stocks accounts for DECREASE
         $this->assertEquals(80, $product->available_stocks);
-        
+
         // max_stocks ignores DECREASE (shows ceiling/capacity)
         $this->assertEquals(100, $product->max_stocks);
     }
