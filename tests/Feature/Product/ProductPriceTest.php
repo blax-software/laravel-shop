@@ -1,6 +1,6 @@
 <?php
 
-namespace Blax\Shop\Tests\Feature;
+namespace Blax\Shop\Tests\Feature\Product;
 
 use Blax\Shop\Enums\BillingScheme;
 use Blax\Shop\Enums\PriceType;

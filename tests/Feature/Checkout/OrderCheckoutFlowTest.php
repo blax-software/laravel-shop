@@ -1,6 +1,6 @@
 <?php
 
-namespace Blax\Shop\Tests\Feature;
+namespace Blax\Shop\Tests\Feature\Checkout;
 
 use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Enums\OrderStatus;

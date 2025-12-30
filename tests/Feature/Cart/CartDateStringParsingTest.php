@@ -1,6 +1,6 @@
 <?php
 
-namespace Blax\Shop\Tests\Feature;
+namespace Blax\Shop\Tests\Feature\Cart;
 
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Product;

@@ -1,6 +1,6 @@
 <?php
 
-namespace Blax\Shop\Tests\Feature;
+namespace Blax\Shop\Tests\Feature\Checkout;
 
 use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Exceptions\NotEnoughStockException;

@@ -1,6 +1,6 @@
 <?php
 
-namespace Blax\Shop\Tests\Feature;
+namespace Blax\Shop\Tests\Feature\Product;
 
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductAction;

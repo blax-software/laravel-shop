@@ -1,6 +1,6 @@
 <?php
 
-namespace Blax\Shop\Tests\Feature;
+namespace Blax\Shop\Tests\Feature\Pool;
 
 use Blax\Shop\Enums\ProductRelationType;
 use Blax\Shop\Enums\ProductType;

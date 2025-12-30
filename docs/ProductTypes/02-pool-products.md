@@ -138,30 +138,57 @@ ProductPrice::create([
 $price = $parkingPool->getCurrentPrice();  // 2500
 ```
 
-### 2. Inherited Pricing (Default)
+### 2. Inherited Pricing with Strategy Comparison
 
-If no direct price is set, pool inherits from **available** single items:
+**Important:** When both pool and single items have prices, the pricing strategy is applied to compare them:
 
 ```php
 use Blax\Shop\Enums\PricingStrategy;
 
-// Single items have different prices:
-// - Spot 1: $20/day
-// - Spot 2: $30/day  
-// - Spot 3: $25/day
+// Pool has a default price: $50/day
+ProductPrice::create([
+    'purchasable_id' => $parkingPool->id,
+    'purchasable_type' => Product::class,
+    'unit_amount' => 5000,  // $50/day
+    'currency' => 'USD',
+    'is_default' => true,
+]);
 
-// LOWEST strategy (default)
+// Single items also have prices:
+// - Spot 1: $100/day
+// - Spot 2: $200/day  
+// - Spot 3: $150/day
+
+// LOWEST strategy (default) - compares pool price vs single prices
 $parkingPool->setPricingStrategy(PricingStrategy::LOWEST);
-$price = $parkingPool->getCurrentPrice();  // 2000 ($20 - lowest)
+// For each single: min(poolPrice, singlePrice)
+// Spot 1: min($50, $100) = $50 (uses pool price)
+// Spot 2: min($50, $200) = $50 (uses pool price)
+// Spot 3: min($50, $150) = $50 (uses pool price)
+// All items use $50/day
 
-// HIGHEST strategy
+// HIGHEST strategy - compares pool price vs single prices
 $parkingPool->setPricingStrategy(PricingStrategy::HIGHEST);
-$price = $parkingPool->getCurrentPrice();  // 3000 ($30 - highest)
+// For each single: max(poolPrice, singlePrice)
+// Spot 1: max($50, $100) = $100 (uses single's price)
+// Spot 2: max($50, $200) = $200 (uses single's price)
+// Spot 3: max($50, $150) = $150 (uses single's price)
 
-// AVERAGE strategy
+// AVERAGE strategy - compares pool price vs single prices
 $parkingPool->setPricingStrategy(PricingStrategy::AVERAGE);
-$price = $parkingPool->getCurrentPrice();  // 2500 ($25 - average)
+// For each single: (poolPrice + singlePrice) / 2
+// Spot 1: ($50 + $100) / 2 = $75
+// Spot 2: ($50 + $200) / 2 = $125
+// Spot 3: ($50 + $150) / 2 = $100
 ```
+
+**Key Behavior:**
+- If a single item has NO price: uses pool's price as fallback
+- If a single item HAS a price: applies pricing strategy to compare pool vs single
+- Pricing strategy applies during:
+  - Initial allocation when adding to cart
+  - Reallocation when dates change
+  - Price calculation when updating dates
 
 ### 3. Available-Based Pricing (Dynamic)
 

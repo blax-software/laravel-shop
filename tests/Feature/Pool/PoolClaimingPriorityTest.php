@@ -1,6 +1,6 @@
 <?php
 
-namespace Blax\Shop\Tests\Feature;
+namespace Blax\Shop\Tests\Feature\Pool;
 
 use Blax\Shop\Enums\PriceType;
 use Blax\Shop\Enums\PricingStrategy;

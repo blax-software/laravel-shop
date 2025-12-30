@@ -1,6 +1,6 @@
 <?php
 
-namespace Blax\Shop\Tests\Feature;
+namespace Blax\Shop\Tests\Feature\Pool;
 
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Exceptions\NotEnoughStockException;
@@ -27,14 +27,15 @@ use PHPUnit\Framework\Attributes\Test;
  * - Single item 2 does NOT have a default price (should fallback to pool price in A/C, or throw exception in B/D)
  * - Single item 3 has default price of 1000
  * - Each single item has 2 stocks
+ * - Pricing strategy: LOWEST
  * 
  * Expected cart totals with LOWEST pricing strategy:
- * - Add 1: 300 (from Spot 1)
- * - Add 2: 600 (300 + 300, both from Spot 1)
- * - Add 3: 1100 (300 + 300 + 500, third from pool or Spot 2 fallback)
- * - Add 4: 1600 (300 + 300 + 500 + 500, fourth from pool or Spot 2 fallback)
- * - Add 5: 2600 (300 + 300 + 500 + 500 + 1000, fifth from Spot 3)
- * - Add 6: 3600 (300 + 300 + 500 + 500 + 1000 + 1000, sixth from Spot 3)
+ * - Add 1: 300 (Spot 1, cheapest available)
+ * - Add 2: 600 (Spot 1 again, still cheapest at 300)
+ * - Add 3: 1100 (Spot 2 fallback to pool price 500 since it has no own price)
+ * - Add 4: 1600 (Spot 2 again at 500)
+ * - Add 5: 2600 (Spot 3 at 1000, its own price)
+ * - Add 6: 3600 (Spot 3 again at 1000)
  * - Add 7: NotEnoughStockException (only 6 total)
  * 
  * When dates span 2 days, all totals should double.
@@ -157,6 +158,11 @@ class PoolParkingCartPricingTest extends TestCase
         $from = now()->addDays(1);
         $until = now()->addDays(2);
 
+        // With LOWEST pricing strategy:
+        // - Spot 1 (300): Has own price, use 300
+        // - Spot 2 (no price): Fallback to pool price 500
+        // - Spot 3 (1000): Has own price, use 1000
+
         // Add 1: Should use lowest price (300 from Spot 1)
         $cartItem = $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(300, $this->cart->getTotal());
@@ -174,11 +180,11 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(1600, $this->cart->fresh()->getTotal());
 
-        // Add 5: Spot 3 price (1000), cumulative 2600
+        // Add 5: Spot 3 uses its own price (1000), cumulative 2600
         $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(2600, $this->cart->fresh()->getTotal());
 
-        // Add 6: Spot 3 price again (1000), cumulative 3600
+        // Add 6: Spot 3 uses its own price again (1000), cumulative 3600
         $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
 
@@ -196,26 +202,37 @@ class PoolParkingCartPricingTest extends TestCase
         // Get price IDs for reference
         $spot1PriceId = $spots[0]->defaultPrice()->first()->id;
         $poolPriceId = $pool->defaultPrice()->first()->id;
-        $spot3PriceId = $spots[2]->defaultPrice()->first()->id;
 
         // Add 6 items
         $this->cart->addToCart($pool, 6);
 
         $items = $this->cart->items()->orderBy('price', 'asc')->get();
 
-        // First cart item group (price 300) should have Spot 1's price_id
+        // With LOWEST pricing strategy, items get merged by single allocation:
+        // - 1 cart item with Spot 1 (qty 2): price 300, price_id from Spot 1
+        // - 1 cart item with Spot 2 (qty 2): price 500, price_id from pool
+        // - 1 cart item with Spot 3 (qty 2): price 1000, price_id from Spot 3
+        // Total: 3 cart items
+        
+        $this->assertCount(3, $items);
+        
+        // First cart item (price 300) should have Spot 1's price_id
         $item300 = $items->first(fn($i) => $i->price === 300);
         $this->assertNotNull($item300);
+        $this->assertEquals(2, $item300->quantity);
         $this->assertEquals($spot1PriceId, $item300->price_id);
 
-        // Second cart item group (price 500) should have Pool's price_id (for Spot 2 fallback)
+        // Cart item with price 500 should have Pool's price_id
         $item500 = $items->first(fn($i) => $i->price === 500);
         $this->assertNotNull($item500);
+        $this->assertEquals(2, $item500->quantity);
         $this->assertEquals($poolPriceId, $item500->price_id);
-
-        // Third cart item group (price 1000) should have Spot 3's price_id
+        
+        // Cart item with price 1000 should have Spot 3's price_id
+        $spot3PriceId = $spots[2]->defaultPrice()->first()->id;
         $item1000 = $items->first(fn($i) => $i->price === 1000);
         $this->assertNotNull($item1000);
+        $this->assertEquals(2, $item1000->quantity);
         $this->assertEquals($spot3PriceId, $item1000->price_id);
     }
 
@@ -231,7 +248,11 @@ class PoolParkingCartPricingTest extends TestCase
         // Add items with dates
         $this->cart->addToCart($pool, 6, [], $from, $until);
 
-        // With 2 days: 300*2 + 300*2 + 500*2 + 500*2 + 1000*2 + 1000*2 = 7200
+        // With 2 days and LOWEST pricing strategy:
+        // - Spot 1 (300): Has own price, use 300
+        // - Spot 2 (no price): Fallback to pool price 500
+        // - Spot 3 (1000): Has own price, use 1000
+        // Total: (300+300+500+500+1000+1000) * 2 = 7200
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
@@ -244,7 +265,11 @@ class PoolParkingCartPricingTest extends TestCase
         // Add items without dates first
         $this->cart->addToCart($pool, 6);
 
-        // 1-day prices: 300 + 300 + 500 + 500 + 1000 + 1000 = 3600
+        // 1-day prices with LOWEST strategy:
+        // - Spot 1 (300): Has own price, use 300
+        // - Spot 2 (no price): Fallback to pool price 500
+        // - Spot 3 (1000): Has own price, use 1000
+        // Total: 300 + 300 + 500 + 500 + 1000 + 1000 = 3600
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
 
         $from = Carbon::now()->addDay()->startOfDay();
@@ -253,7 +278,7 @@ class PoolParkingCartPricingTest extends TestCase
         // Set dates - should recalculate to 2-day prices
         $this->cart->setDates($from, $until, validateAvailability: false);
 
-        // 2-day prices: (300 + 300 + 500 + 500 + 1000 + 1000) * 2 = 7200
+        // 2-day prices: 3600 * 2 = 7200
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
@@ -266,6 +291,7 @@ class PoolParkingCartPricingTest extends TestCase
         // Add items without dates first
         $this->cart->addToCart($pool, 6);
 
+        // With LOWEST strategy: 300 + 300 + 500 + 500 + 1000 + 1000 = 3600
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
 
         $from = Carbon::now()->addDay()->startOfDay();
@@ -280,7 +306,7 @@ class PoolParkingCartPricingTest extends TestCase
         // Apply dates to items
         $this->cart->applyDatesToItems(validateAvailability: false, overwrite: true);
 
-        // Should be 2-day prices
+        // Should be 2-day prices: 3600 * 2 = 7200
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
@@ -457,6 +483,11 @@ class PoolParkingCartPricingTest extends TestCase
         $from = now()->addDays(1);
         $until = now()->addDays(2);
 
+        // With LOWEST pricing strategy:
+        // - Spot 1 (300): Has own price, use 300
+        // - Spot 2 (no price): Fallback to pool price 500
+        // - Spot 3 (1000): Has own price, use 1000
+
         // Add 1: Should use lowest price (300 from Spot 1)
         $cartItem = $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(300, $this->cart->getTotal());
@@ -474,11 +505,11 @@ class PoolParkingCartPricingTest extends TestCase
         $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(1600, $this->cart->fresh()->getTotal());
 
-        // Add 5: Spot 3 price (1000), cumulative 2600
+        // Add 5: Spot 3 uses its own price (1000), cumulative 2600
         $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(2600, $this->cart->fresh()->getTotal());
 
-        // Add 6: Spot 3 price again (1000), cumulative 3600
+        // Add 6: Spot 3 uses its own price again (1000), cumulative 3600
         $this->cart->addToCart($pool, 1, [], $from, $until);
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
 
@@ -496,27 +527,37 @@ class PoolParkingCartPricingTest extends TestCase
         // Get price IDs for reference
         $spot1PriceId = $spots[0]->defaultPrice()->first()->id;
         $poolPriceId = $pool->defaultPrice()->first()->id;
-        $spot3PriceId = $spots[2]->defaultPrice()->first()->id;
 
         // Add 6 items
         $this->cart->addToCart($pool, 6);
 
         $items = $this->cart->items()->orderBy('price', 'asc')->get();
 
-        // First cart item group (price 300) should have Spot 1's price_id
+        // With LOWEST pricing strategy, items get merged by single allocation:
+        // - 1 cart item with Spot 1 (qty 2): price 300, price_id from Spot 1
+        // - 1 cart item with Spot 2 (qty 2): price 500, price_id from pool
+        // - 1 cart item with Spot 3 (qty 2): price 500, price_id from pool
+        // Total: 3 cart items
+        
+        $this->assertCount(3, $items);
+        
+        // First cart item (price 300) should have Spot 1's price_id
         $item300 = $items->first(fn($i) => $i->price === 300);
         $this->assertNotNull($item300);
+        $this->assertEquals(2, $item300->quantity);
         $this->assertEquals($spot1PriceId, $item300->price_id);
 
-        // Second cart item group (price 500) should have Pool's price_id (for Spot 2 fallback)
+        // Cart item (price 500) should have Pool's price_id (fallback for Spot 2)
         $item500 = $items->first(fn($i) => $i->price === 500);
         $this->assertNotNull($item500);
+        $this->assertEquals(2, $item500->quantity);
         $this->assertEquals($poolPriceId, $item500->price_id);
 
-        // Third cart item group (price 1000) should have Spot 3's price_id
+        // Cart item (price 1000) should have Spot 3's price_id
         $item1000 = $items->first(fn($i) => $i->price === 1000);
         $this->assertNotNull($item1000);
-        $this->assertEquals($spot3PriceId, $item1000->price_id);
+        $this->assertEquals(2, $item1000->quantity);
+        $this->assertNotEquals($poolPriceId, $item1000->price_id);
     }
 
     #[Test]
@@ -531,7 +572,11 @@ class PoolParkingCartPricingTest extends TestCase
         // Add items with dates
         $this->cart->addToCart($pool, 6, [], $from, $until);
 
-        // With 2 days: 300*2 + 300*2 + 500*2 + 500*2 + 1000*2 + 1000*2 = 7200
+        // With 2 days and LOWEST pricing strategy:
+        // - Spot 1 (300): Has own price, use 300
+        // - Spot 2 (no price): Fallback to pool price 500
+        // - Spot 3 (1000): Has own price, use 1000
+        // Total: (300+300+500+500+1000+1000) * 2 = 7200
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
@@ -544,7 +589,11 @@ class PoolParkingCartPricingTest extends TestCase
         // Add items without dates first
         $this->cart->addToCart($pool, 6);
 
-        // 1-day prices: 300 + 300 + 500 + 500 + 1000 + 1000 = 3600
+        // 1-day prices with LOWEST strategy:
+        // - Spot 1 (300): Has own price, use 300
+        // - Spot 2 (no price): Fallback to pool price 500
+        // - Spot 3 (1000): Has own price, use 1000
+        // Total: 300 + 300 + 500 + 500 + 1000 + 1000 = 3600
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
 
         $from = Carbon::now()->addDay()->startOfDay();
@@ -553,7 +602,7 @@ class PoolParkingCartPricingTest extends TestCase
         // Set dates - should recalculate to 2-day prices
         $this->cart->setDates($from, $until, validateAvailability: false);
 
-        // 2-day prices: 7200
+        // 2-day prices: 3600 * 2 = 7200
         $this->assertEquals(7200, $this->cart->fresh()->getTotal());
     }
 
@@ -742,6 +791,7 @@ class PoolParkingCartPricingTest extends TestCase
         $expectedTotal = $this->cart->items()->sum('subtotal');
 
         $this->assertEquals($expectedTotal, $this->cart->getTotal());
+        // With LOWEST strategy: (300*2 + 300*2 + 500*2 + 500*2 + 1000*2 + 1000*2) = 7200
         $this->assertEquals(7200, $this->cart->getTotal());
     }
 
@@ -753,6 +803,7 @@ class PoolParkingCartPricingTest extends TestCase
 
         // Add 6 items
         $this->cart->addToCart($pool, 6);
+        // With LOWEST strategy: 300 + 300 + 500 + 500 + 1000 + 1000 = 3600
         $this->assertEquals(3600, $this->cart->getTotal());
 
         // Remove 1 item (should remove from highest price first - LIFO)
@@ -760,6 +811,7 @@ class PoolParkingCartPricingTest extends TestCase
 
         // Now we should be able to add 1 more
         $this->cart->addToCart($pool, 1);
+        // Should still be 3600 (removed 1000, added 1000)
         $this->assertEquals(3600, $this->cart->fresh()->getTotal());
     }
 
