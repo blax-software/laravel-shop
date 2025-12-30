@@ -359,32 +359,76 @@ if (!$parkingPool->validatePoolConfiguration()['valid']) {
 
 ## Cart Integration
 
-### Adding Pool to Cart
+### Cart Item Tracking
+
+When a pool product is added to cart, the system tracks which specific single item is allocated:
 
 ```php
 $from = Carbon::parse('2025-01-15');
-$until = Carbon::parse('2025-01-17');  // 2 days
+$until = Carbon::parse('2025-01-17');
 
 $cartItem = $cart->addToCart($parkingPool, $quantity = 1, [], $from, $until);
 
 // Cart item properties:
-// - purchasable: Pool Product
+// - purchasable_id: Pool Product ID
+// - purchasable_type: Product::class  
+// - product_id: Allocated Single Item ID (NEW!)
 // - quantity: 1
 // - from: 2025-01-15
 // - until: 2025-01-17
 // - price: (unit_amount × 2 days)
-// - meta->claimed_single_items: [spot_id]
 ```
 
-### Viewing Claimed Items
+### Product ID Column
+
+The `product_id` column in cart_items table stores the specific single item allocated from the pool:
 
 ```php
-$meta = $cartItem->getMeta();
-$claimedItemIds = $meta->claimed_single_items ?? [];
+$cartItem->product_id; // ID of the allocated single item
+$cartItem->purchasable_id; // ID of the pool product
+$cartItem->purchasable; // The pool product itself
+$cartItem->product; // The allocated single item
 
-// Load the actual products
-$claimedItems = Product::whereIn('id', $claimedItemIds)->get();
+// Get the effective product (allocated single or purchasable)
+$effectiveProduct = $cartItem->getEffectiveProduct();
 ```
+
+### Viewing Allocated Items
+
+```php
+// Get the allocated single item
+$allocatedSingle = Product::find($cartItem->product_id);
+
+// Or use the relationship
+$allocatedSingle = $cartItem->product;
+
+// Pool product is still accessible
+$poolProduct = $cartItem->purchasable;
+```
+
+### Date Changes and Reallocation
+
+When cart dates change, the system automatically reallocates pool items to optimize pricing:
+
+```php
+// Update cart dates
+$cart->setDates($newFrom, $newUntil);
+
+// Behind the scenes:
+// 1. System calls reallocatePoolItems($newFrom, $newUntil)
+// 2. For each pool item, finds available singles for new dates
+// 3. Applies pricing strategy (LOWEST, HIGHEST, AVERAGE)
+// 4. Reallocates to better-priced singles if available
+// 5. Updates cart_item.product_id to new allocation
+// 6. Recalculates prices based on new dates
+```
+
+The `reallocatePoolItems()` method:
+- Checks availability of all single items for the new dates
+- Applies the pool's pricing strategy
+- Reassigns cart items to optimal single items
+- Updates `product_id` column with new allocation
+- Marks items as unavailable if no singles are available for the period
 
 ### Removing from Cart
 
@@ -393,8 +437,8 @@ $cartItem->delete();
 ```
 
 **What happens:**
-1. System finds claimed single items from metadata
-2. Releases claims on each single item
+1. System finds allocated single item from `product_id` column
+2. Releases claims on the single item
 3. Stock becomes available again
 
 ## Advanced Usage
@@ -642,6 +686,22 @@ $pool->attachSingleItems($itemIds);
 // - Items → Pool (POOL)
 ```
 
+### Wrong Single Item Allocated
+
+**Cause:** Pricing strategy or date-based availability issue
+
+**Solution:**
+```php
+// Force reallocation by updating cart dates
+$cart->setDates($from, $until, $overwrite = true);
+
+// Or manually check which single was allocated
+$allocatedSingle = $cartItem->product;
+
+// Verify pricing strategy is correct
+$strategy = $pool->getPricingStrategy();
+```
+
 ## Performance Considerations
 
 ### 1. Lazy Loading
@@ -685,5 +745,3 @@ $pools->each(function($pool) {
 
 - [Booking Products](./01-booking-products.md) - Understanding single items in pools
 - [Product Relations](../05-product-relations.md) - Relation system details
-- [Pricing Strategies](../07-pricing-strategies.md) - In-depth pricing documentation
-- [Stock Management](../06-stock-management.md) - How stock system works

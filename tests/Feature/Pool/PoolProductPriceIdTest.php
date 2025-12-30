@@ -139,7 +139,7 @@ class PoolProductPriceIdTest extends TestCase
         // Check product_id column contains allocated single item id
         $this->assertNotNull($cartItem->product_id);
         $this->assertEquals($this->singleItem1->id, $cartItem->product_id);
-
+        
         // Meta should still have the name for display purposes
         $meta = $cartItem->getMeta();
         $this->assertEquals($this->singleItem1->name, $meta->allocated_single_item_name);

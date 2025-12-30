@@ -316,4 +316,3 @@ $available = $product->getAvailableStock($date);
 
 - [Pool Products](./02-pool-products.md) - Managing groups of booking products
 - [Product Relations](../05-product-relations.md) - How products relate to each other
-- [Stock Management](../06-stock-management.md) - Detailed stock system documentation

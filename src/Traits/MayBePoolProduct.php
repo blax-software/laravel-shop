@@ -786,7 +786,7 @@ trait MayBePoolProduct
         }
 
         // Build usage map: track which single items have been allocated
-        // Use allocated_single_item_id from meta to track actual single item usage
+        // Use product_id column to track actual single item allocation
         // ONLY count items that overlap with the current booking period
         // Exclude the specified cart item (if updating dates on existing item)
         $singleItemUsage = []; // item_id => quantity used
@@ -819,8 +819,8 @@ trait MayBePoolProduct
             }
             // else: no dates provided, count all items for progressive pricing
 
-            $meta = $item->getMeta();
-            $allocatedItemId = $meta->allocated_single_item_id ?? null;
+            // Get the allocated single item ID from the product_id column
+            $allocatedItemId = $item->product_id;
 
             if ($allocatedItemId) {
                 $singleItemUsage[$allocatedItemId] = ($singleItemUsage[$allocatedItemId] ?? 0) + $item->quantity;

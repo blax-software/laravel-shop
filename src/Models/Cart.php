@@ -573,8 +573,7 @@ class Cart extends Model
 
                     // For pool products, check if allocated by reallocatePoolItems
                     if ($product instanceof Product && $product->isPool()) {
-                        $meta = $item->getMeta();
-                        $allocatedSingleItemId = $meta->allocated_single_item_id ?? null;
+                        $allocatedSingleItemId = $item->product_id;
 
                         // If this item was NOT allocated (no single assigned), skip updateDates
                         // to preserve the null price set by reallocatePoolItems
@@ -702,13 +701,13 @@ class Cart extends Model
                     }
 
                     // Clear allocation and set price to null to indicate unavailable
-                    $cartItem->updateMetaKey('allocated_single_item_id', null);
-                    $cartItem->updateMetaKey('allocated_single_item_name', null);
                     $cartItem->update([
+                        'product_id' => null,
                         'price' => null,
                         'subtotal' => null,
                         'unit_amount' => null,
                     ]);
+                    $cartItem->updateMetaKey('allocated_single_item_name', null);
                 }
                 continue;
             }
@@ -747,12 +746,16 @@ class Cart extends Model
 
                     if ($remainingFromSingle >= $neededQty) {
                         // This single can accommodate the cart item's full quantity
-                        $cartItem->updateMetaKey('allocated_single_item_id', $single->id);
+                        // Update product_id to track the allocated single item
+                        $updates = ['product_id' => $single->id];
+                        if ($singleInfo['price_id'] && $singleInfo['price_id'] !== $cartItem->price_id) {
+                            $updates['price_id'] = $singleInfo['price_id'];
+                        }
+                        $cartItem->update($updates);
                         $cartItem->updateMetaKey('allocated_single_item_name', $single->name);
 
-                        // Update price_id if changed
-                        if ($singleInfo['price_id'] && $singleInfo['price_id'] !== $cartItem->price_id) {
-                            $cartItem->update(['price_id' => $singleInfo['price_id']]);
+                        // Legacy: update price_id if changed (now handled in the update above)
+                        if (false) {
                         }
 
                         // Track usage
@@ -784,17 +787,17 @@ class Cart extends Model
                             // Update the original cart item with reduced quantity
                             // Also update subtotal to match the new quantity
                             $newSubtotal = $cartItem->price * $qtyToAllocate;
-                            $cartItem->update([
+                            $updates = [
                                 'quantity' => $qtyToAllocate,
                                 'subtotal' => $newSubtotal,
-                            ]);
-                            $cartItem->refresh(); // Ensure model reflects database state
-                            $cartItem->updateMetaKey('allocated_single_item_id', $single->id);
-                            $cartItem->updateMetaKey('allocated_single_item_name', $single->name);
-
+                                'product_id' => $single->id,
+                            ];
                             if ($singleInfo['price_id'] && $singleInfo['price_id'] !== $cartItem->price_id) {
-                                $cartItem->update(['price_id' => $singleInfo['price_id']]);
+                                $updates['price_id'] = $singleInfo['price_id'];
                             }
+                            $cartItem->update($updates);
+                            $cartItem->refresh(); // Ensure model reflects database state
+                            $cartItem->updateMetaKey('allocated_single_item_name', $single->name);
 
                             $firstAllocation = false;
                         } else {
@@ -814,6 +817,7 @@ class Cart extends Model
                             $newCartItem = $this->items()->create([
                                 'purchasable_id' => $cartItem->purchasable_id,
                                 'purchasable_type' => $cartItem->purchasable_type,
+                                'product_id' => $single->id,
                                 'price_id' => $priceModel?->id,
                                 'quantity' => $qtyToAllocate,
                                 'price' => $pricePerUnit,
@@ -825,7 +829,6 @@ class Cart extends Model
                                 'until' => $until,
                             ]);
 
-                            $newCartItem->updateMetaKey('allocated_single_item_id', $single->id);
                             $newCartItem->updateMetaKey('allocated_single_item_name', $single->name);
                         }
 
@@ -838,13 +841,13 @@ class Cart extends Model
                     if ($remainingQty > 0) {
                         if ($firstAllocation) {
                             // Couldn't allocate anything - mark as unavailable
-                            $cartItem->updateMetaKey('allocated_single_item_id', null);
-                            $cartItem->updateMetaKey('allocated_single_item_name', null);
                             $cartItem->update([
+                                'product_id' => null,
                                 'price' => null,
                                 'subtotal' => null,
                                 'unit_amount' => null,
                             ]);
+                            $cartItem->updateMetaKey('allocated_single_item_name', null);
                         } else {
                             // Partial allocation - the cart item was already updated with what we could allocate
                             // The remaining quantity is lost (over-capacity)
@@ -1219,9 +1222,8 @@ class Cart extends Model
                     $expectedPrice = $poolItemData['price'] ?? null;
                     $expectedSingleItemId = $poolItemData['item']?->id ?? null;
 
-                    // Get the allocated single item ID from the existing cart item's meta
-                    $existingMeta = $item->getMeta();
-                    $existingAllocatedItemId = $existingMeta->allocated_single_item_id ?? null;
+                    // Get the allocated single item ID from the cart item's product_id column
+                    $existingAllocatedItemId = $item->product_id;
 
                     // Only merge if:
                     // 1. price_id matches (same price source)
@@ -1272,11 +1274,7 @@ class Cart extends Model
                             $inCart = $this->items()
                                 ->where('purchasable_id', $cartable->getKey())
                                 ->where('purchasable_type', get_class($cartable))
-                                ->get()
-                                ->filter(function ($item) use ($single) {
-                                    $meta = $item->getMeta();
-                                    return isset($meta->allocated_single_item_id) && $meta->allocated_single_item_id == $single->id;
-                                })
+                                ->where('product_id', $single->id)
                                 ->sum('quantity');
 
                             if ($available === PHP_INT_MAX || $inCart < $available) {
@@ -1360,6 +1358,7 @@ class Cart extends Model
         $cartItem = $this->items()->create([
             'purchasable_id' => $cartable->getKey(),
             'purchasable_type' => get_class($cartable),
+            'product_id' => ($cartable instanceof Product && $cartable->isPool() && $poolSingleItem) ? $poolSingleItem->id : null,
             'price_id' => $priceId,
             'quantity' => $quantity,
             'price' => $pricePerUnit,  // Price per unit for the period
@@ -1371,9 +1370,8 @@ class Cart extends Model
             'until' => ($is_booking) ? $until : null,
         ]);
 
-        // For pool products, store which single item is being used in meta
+        // For pool products, store the single item name in meta for display purposes
         if ($cartable instanceof Product && $cartable->isPool() && $poolSingleItem) {
-            $cartItem->updateMetaKey('allocated_single_item_id', $poolSingleItem->id);
             $cartItem->updateMetaKey('allocated_single_item_name', $poolSingleItem->name);
         }
 
@@ -1808,7 +1806,7 @@ class Cart extends Model
      *    d) If the product is a pool:
      *       - If the pool contains booking single items, a timespan is required.
      *       - When a timespan exists and booking singles are used, claim stock:
-     *         - Use a pre-allocated single item from item meta (`allocated_single_item_id`) when present.
+     *         - Use a pre-allocated single item from the `product_id` column when present.
      *         - Otherwise call the pool stock claiming logic (`claimPoolStock`).
      *         - Persist claimed single-item IDs into cart item meta (`claimed_single_items`).
      *    e) If the product is a non-pool booking product, require a timespan.
@@ -1885,13 +1883,12 @@ class Cart extends Model
                     // If pool has timespan and has booking single items, claim stock from single items
                     if ($from && $until && $product->hasBookingSingleItems()) {
                         try {
-                            // Check if we have pre-allocated single items from reallocation
-                            $meta = $item->getMeta();
-                            $allocatedSingleId = $meta->allocated_single_item_id ?? null;
+                            // Check if we have pre-allocated single items from product_id column
+                            $allocatedSingleId = $item->product_id;
 
                             if ($allocatedSingleId) {
-                                // Use the pre-allocated single item
-                                $singleItem = Product::find($allocatedSingleId);
+                                // Use the pre-allocated single item from product_id
+                                $singleItem = $item->product;
                                 if (!$singleItem) {
                                     throw new \Exception("Allocated single item not found: {$allocatedSingleId}");
                                 }

@@ -73,13 +73,16 @@ Redirect the user to the `url` to complete payment.
 GET /api/shop/stripe/success?session_id={SESSION_ID}&cart_id={CART_ID}
 ```
 
-When payment is successful:
+When payment is successful (handled via webhook):
 - Cart status is updated to `CONVERTED`
 - Cart's `converted_at` is set
-- ProductPurchases are updated with:
+- Order is created from the cart (if not already exists)
+- Payment is recorded on the order
+- ProductPurchases are created with:
   - `status` → `COMPLETED`
   - `charge_id` → Stripe Payment Intent ID
-  - `amount_paid` → Amount from Stripe (in dollars, converted from cents)
+  - `amount` and `amount_paid` → Amount from Stripe (in cents)
+- Order status changes to `PROCESSING`
 
 ### Cancel URL
 
@@ -101,13 +104,31 @@ POST /api/shop/stripe/webhook
 
 The webhook handler processes the following Stripe events:
 
-- `checkout.session.completed` - Updates cart to converted, updates purchases
+**Checkout Session Events:**
+- `checkout.session.completed` - Converts cart, creates order if needed, records payment
 - `checkout.session.async_payment_succeeded` - Same as completed
-- `checkout.session.async_payment_failed` - Logs failure
-- `charge.succeeded` - Updates purchases with charge info
-- `charge.failed` - Marks purchases as `FAILED`
-- `payment_intent.succeeded` - Updates purchases
-- `payment_intent.payment_failed` - Marks purchases as `FAILED`
+- `checkout.session.async_payment_failed` - Marks order as failed if exists
+- `checkout.session.expired` - Adds note to order
+
+**Charge Events:**
+- `charge.succeeded` - Updates purchases with charge info, records payment on order
+- `charge.failed` - Marks purchases as `FAILED`, adds note to order
+- `charge.refunded` - Records refund on order
+- `charge.dispute.created` - Puts order on hold, adds dispute note
+- `charge.dispute.closed` - Updates order based on dispute outcome
+
+**Payment Intent Events:**
+- `payment_intent.succeeded` - Records payment on order
+- `payment_intent.payment_failed` - Adds failure note to order
+- `payment_intent.canceled` - Adds cancellation note
+
+**Refund Events:**
+- `refund.created` - Records refund on order
+- `refund.updated` - Updates refund information
+
+**Invoice Events** (for subscriptions):
+- `invoice.payment_succeeded` - Handles subscription payments
+- `invoice.payment_failed` - Handles failed subscription payments
 
 ### Configuring Webhook in Stripe
 
@@ -148,14 +169,30 @@ Route::post('custom/stripe/webhook', [StripeWebhookController::class, 'handleWeb
     ->name('shop.stripe.webhook');
 ```
 
-## ProductPurchase Updates
+## ProductPurchase and Order Updates
 
-The webhook handler automatically updates ProductPurchase records with charge information if the columns exist:
+The webhook handler automatically updates ProductPurchase records and creates/updates Order records:
 
+### Purchase Updates
 - `charge_id` - Stripe Payment Intent ID
-- `amount_paid` - Amount paid in dollars
+- `amount` - Amount in cents
+- `amount_paid` - Amount paid in cents
+- `status` - Updated to COMPLETED, FAILED, or REFUNDED based on event
 
-These fields are automatically populated from the fillable array on the ProductPurchase model.
+### Order Creation and Updates
+When a checkout session is completed:
+1. Cart is marked as CONVERTED
+2. Order is created from cart (if doesn't exist) via `Order::createFromCart($cart)`
+3. Payment is recorded on order via `$order->recordPayment($amount, $reference, 'stripe', 'stripe')`
+4. Order status is updated to PROCESSING when payment is successful
+5. OrderNote records are created for payment events
+
+These fields are automatically populated:
+- `payment_reference` - Stripe Payment Intent ID
+- `payment_method` - 'stripe'
+- `payment_provider` - 'stripe'
+- `amount_paid` - Amount paid in cents
+- `paid_at` - Timestamp when payment was received
 
 ## Error Handling
 

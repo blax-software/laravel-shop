@@ -584,8 +584,11 @@ class ShopAddExampleProducts extends Command
         $prices = $productData['variation_prices'] ?? [];
 
         foreach ($variations as $index => $variation) {
+            $variationName = ($product->getLocalized('name') ?: 'Product') . ' - ' . $variation;
+
             $variationProduct = Product::create([
                 'slug' => $product->slug . '-' . \Illuminate\Support\Str::slug($variation),
+                'name' => $variationName,
                 'sku' => $product->sku . '-' . strtoupper(substr($variation, 0, 3)),
                 'type' => 'simple',
                 'parent_id' => $product->id,
@@ -596,7 +599,7 @@ class ShopAddExampleProducts extends Command
                 'meta' => ['variation' => $variation, 'example' => true],
             ]);
 
-            $variationProduct->setLocalized('name', ($product->getLocalized('name') ?: 'Product') . ' - ' . $variation, null, true);
+            $variationProduct->setLocalized('name', $variationName, null, true);
 
             $variationAmount = $prices[$index] ?? ($basePrice + ($index * 500));
             $variationProduct->prices()->create([
@@ -627,8 +630,11 @@ class ShopAddExampleProducts extends Command
         }
 
         foreach ($productData['grouped_items'] as $i => $item) {
+            $itemName = $item['name'];
+
             $childProduct = Product::create([
                 'slug' => $product->slug . '-item-' . ($i + 1),
+                'name' => $itemName,
                 'sku' => $item['sku'],
                 'type' => 'simple',
                 'parent_id' => $product->id,
@@ -639,7 +645,7 @@ class ShopAddExampleProducts extends Command
                 'meta' => ['grouped_item' => true, 'example' => true],
             ]);
 
-            $childProduct->setLocalized('name', $item['name'], null, true);
+            $childProduct->setLocalized('name', $itemName, null, true);
 
             $childProduct->prices()->create([
                 'name' => 'Default',
@@ -662,9 +668,11 @@ class ShopAddExampleProducts extends Command
 
         $parkingIds = [];
         foreach ($productData['pool_items'] as $i => $item) {
+            $itemName = $item['name'];
+
             $parking = Product::create([
-                'slug' => $pool->slug . '-' . \Illuminate\Support\Str::slug($item['name']),
-                'name' => $item['name'],
+                'slug' => $pool->slug . '-' . \Illuminate\Support\Str::slug($itemName),
+                'name' => $itemName,
                 'sku' => $pool->sku . '-' . str_pad($i + 1, 2, '0', STR_PAD_LEFT),
                 'type' => ProductType::BOOKING,
                 'status' => ProductStatus::PUBLISHED,
@@ -675,20 +683,26 @@ class ShopAddExampleProducts extends Command
                 'meta' => ['example' => true, 'pool_item' => true, 'parent_pool' => $pool->name],
             ]);
 
+            // Set localized name for consistency with other products
+            $parking->setLocalized('name', $itemName, null, true);
+
             // Set stock for the parking spot
             $parking->increaseStock($item['stock']);
 
             // Create price for individual parking spot
-            $parking->prices()->create([
-                'name' => 'Default',
-                'type' => 'one_time',
-                'currency' => 'EUR',
-                'unit_amount' => $item['price'],
-                'is_default' => true,
-                'active' => true,
-                'billing_scheme' => 'per_unit',
-                'meta' => ['example' => true],
-            ]);
+            // Note: If price is not provided, the pool's fallback price will be used during checkout
+            if (!empty($item['price'])) {
+                $parking->prices()->create([
+                    'name' => 'Default',
+                    'type' => 'one_time',
+                    'currency' => 'EUR',
+                    'unit_amount' => $item['price'],
+                    'is_default' => true,
+                    'active' => true,
+                    'billing_scheme' => 'per_unit',
+                    'meta' => ['example' => true],
+                ]);
+            }
 
             $parkingIds[] = $parking->id;
         }
@@ -703,10 +717,10 @@ class ShopAddExampleProducts extends Command
 
         // Get rooms
         $rooms = $this->createdProducts[ProductType::BOOKING->value] ?? [];
-        
+
         // Get simple products (beverages)
         $beverages = $this->createdProducts[ProductType::SIMPLE->value] ?? [];
-        
+
         // Get parking pools
         $parkingPools = $this->createdProducts[ProductType::POOL->value] ?? [];
 
@@ -734,13 +748,13 @@ class ShopAddExampleProducts extends Command
             $rooms[0]->productRelations()->syncWithoutDetaching([
                 $rooms[1]->id => ['type' => ProductRelationType::UPSELL->value]
             ]);
-            
+
             if (count($rooms) >= 3) {
                 // Standard can also upsell to Presidential
                 $rooms[0]->productRelations()->syncWithoutDetaching([
                     $rooms[2]->id => ['type' => ProductRelationType::UPSELL->value]
                 ]);
-                
+
                 // Deluxe can upsell to Presidential
                 $rooms[1]->productRelations()->syncWithoutDetaching([
                     $rooms[2]->id => ['type' => ProductRelationType::UPSELL->value]

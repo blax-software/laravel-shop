@@ -214,24 +214,28 @@ if ($product->isLowStock()) {
 }
 ```
 
-### Stock Reservations
+### Stock Claims (Reservations)
 
 ```php
 use Blax\Shop\Models\ProductStock;
 
-// Reserve stock temporarily
-$reservation = $product->reserveStock(
+// Claim stock temporarily (for bookings)
+$claim = $product->claimStock(
     quantity: 2,
     reference: $cart,
-    until: now()->addMinutes(15),
+    from: now(),
+    until: now()->addDays(3),
     note: 'Cart reservation'
 );
 
-// Release reservation
-$reservation->update(['status' => 'completed']);
+// Release claim
+$product->releaseStock($cart);
 
-// Get active reservations
-$reservations = $product->reservations()->get();
+// Get active claims
+$claims = $product->stocks()
+    ->where('type', 'claimed')
+    ->where('status', 'pending')
+    ->get();
 ```
 
 ### Stock History
@@ -399,25 +403,27 @@ use Blax\Shop\Models\ProductAction;
 // Send email on purchase
 ProductAction::create([
     'product_id' => $product->id,
-    'action_type' => 'SendWelcomeEmail',
-    'event' => 'purchased',
+    'class' => \App\Jobs\SendWelcomeEmail::class,
+    'events' => ['purchased'],
     'parameters' => [
         'template' => 'welcome',
         'delay' => 0,
     ],
     'active' => true,
+    'defer' => true,
     'sort_order' => 1,
 ]);
 
 // Grant access on purchase
 ProductAction::create([
     'product_id' => $product->id,
-    'action_type' => 'GrantCourseAccess',
-    'event' => 'purchased',
+    'class' => \App\Jobs\GrantCourseAccess::class,
+    'events' => ['purchased'],
     'parameters' => [
         'course_id' => 123,
     ],
     'active' => true,
+    'defer' => true,
     'sort_order' => 2,
 ]);
 ```

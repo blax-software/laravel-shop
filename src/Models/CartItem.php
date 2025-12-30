@@ -18,6 +18,7 @@ class CartItem extends Model
         'cart_id',
         'purchasable_id',
         'purchasable_type',
+        'product_id',
         'price_id',
         'quantity',
         'price',
@@ -96,10 +97,28 @@ class CartItem extends Model
         );
     }
 
-    public function product(): BelongsTo|null
+    /**
+     * Get the actual product being purchased.
+     * For pool products, this is the single item allocated.
+     * For regular products, this returns the purchasable product itself.
+     */
+    public function product(): BelongsTo
     {
-        if ($this->purchasable_type === config('shop.models.product', Product::class)) {
-            return $this->belongsTo(config('shop.models.product'), 'purchasable_id');
+        return $this->belongsTo(config('shop.models.product', Product::class), 'product_id');
+    }
+
+    /**
+     * Get the effective product - either the allocated product_id or the purchasable.
+     * This is useful for getting the actual product when product_id may be null.
+     */
+    public function getEffectiveProduct(): ?Product
+    {
+        if ($this->product_id) {
+            return $this->product;
+        }
+
+        if ($this->purchasable instanceof Product) {
+            return $this->purchasable;
         }
 
         return null;
@@ -482,12 +501,12 @@ class CartItem extends Model
 
         // For pool products with an allocated single, use the allocated single's price
         // This ensures consistency when reallocatePoolItems has already assigned a specific single
-        $meta = $this->getMeta();
-        $allocatedSingleItemId = $meta->allocated_single_item_id ?? null;
+        // The product_id column stores the actual single product being purchased
+        $allocatedSingleItemId = $this->product_id;
 
         if ($product->isPool() && $allocatedSingleItemId) {
-            // Get the allocated single item
-            $allocatedSingle = Product::find($allocatedSingleItemId);
+            // Get the allocated single item from the product_id column
+            $allocatedSingle = $this->product;
 
             if ($allocatedSingle) {
                 // Get price from the allocated single, with fallback to pool price

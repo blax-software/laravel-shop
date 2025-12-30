@@ -141,33 +141,44 @@ class StripeWebhookController
             ]);
         }
 
-        // Record payment on the associated order
+        // Get or create order from the cart
         $order = $cart->order;
-        if ($order) {
-            $amountPaid = (int) (($session->amount_total ?? 0) / 100);
-            $currency = strtoupper($session->currency ?? $order->currency ?? 'USD');
+        if (!$order) {
+            // Create order from the converted cart
+            $order = Order::createFromCart($cart);
 
-            // recordPayment(int $amount, ?string $reference, ?string $method, ?string $provider)
-            $order->recordPayment($amountPaid, $session->payment_intent, 'stripe', 'stripe');
-
-            // Add a detailed note
-            $order->addNote(
-                "Payment of " . Order::formatMoney($amountPaid, $currency) . " received via Stripe checkout (Session: {$session->id})",
-                OrderNote::TYPE_PAYMENT
-            );
-
-            // Mark order as processing if payment is successful
-            if ($session->payment_status === 'paid' && $order->status === OrderStatus::PENDING) {
-                $order->markAsProcessing('Payment received via Stripe checkout');
-            }
-
-            Log::info('Order payment recorded via Stripe checkout', [
+            Log::info('Order created from Stripe checkout session', [
                 'order_id' => $order->id,
                 'order_number' => $order->order_number,
-                'amount' => $amountPaid,
-                'currency' => $currency,
+                'cart_id' => $cart->id,
+                'session_id' => $session->id,
             ]);
         }
+
+        // Record payment on the order
+        $amountPaid = (int) (($session->amount_total ?? 0) / 100);
+        $currency = strtoupper($session->currency ?? $order->currency ?? 'USD');
+
+        // recordPayment(int $amount, ?string $reference, ?string $method, ?string $provider)
+        $order->recordPayment($amountPaid, $session->payment_intent, 'stripe', 'stripe');
+
+        // Add a detailed note
+        $order->addNote(
+            "Payment of " . Order::formatMoney($amountPaid, $currency) . " received via Stripe checkout (Session: {$session->id})",
+            OrderNote::TYPE_PAYMENT
+        );
+
+        // Mark order as processing if payment is successful
+        if ($session->payment_status === 'paid' && $order->status === OrderStatus::PENDING) {
+            $order->markAsProcessing('Payment received via Stripe checkout');
+        }
+
+        Log::info('Order payment recorded via Stripe checkout', [
+            'order_id' => $order->id,
+            'order_number' => $order->order_number,
+            'amount' => $amountPaid,
+            'currency' => $currency,
+        ]);
 
         return true;
     }

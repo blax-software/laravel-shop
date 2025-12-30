@@ -550,4 +550,207 @@ class StripeWebhookOrderTest extends TestCase
         $this->assertNotNull($failNote);
         $this->assertStringContainsString('declined', $failNote->content);
     }
+
+    // =========================================================================
+    // STRIPE CHECKOUT SESSION FLOW TESTS (No pre-existing order)
+    // =========================================================================
+
+    #[Test]
+    public function checkout_session_completed_creates_order_when_none_exists()
+    {
+        $customer = User::factory()->create();
+        $product = $this->createProduct(100.00);
+
+        // Add to cart but DON'T call checkoutCart() - simulate checkoutSession() flow
+        $customer->addToCart($product);
+        $cart = $customer->currentCart();
+
+        // Verify no order exists yet
+        $this->assertNull($cart->order);
+
+        // Simulate what checkoutSession() does: mark cart as converted
+        $cart->update([
+            'status' => CartStatus::CONVERTED,
+            'converted_at' => now(),
+        ]);
+
+        // Now simulate checkout session completed webhook
+        $session = $this->createMockSession([
+            'metadata' => (object) ['cart_id' => $cart->id],
+            'amount_total' => 10000, // 100.00
+            'payment_status' => 'paid',
+        ]);
+
+        $result = $this->invokeMethod('handleCheckoutSessionCompleted', [$session]);
+
+        $this->assertTrue($result);
+
+        // Verify order was created
+        $cart->refresh();
+        $order = $cart->order;
+        $this->assertNotNull($order, 'Order should be created by webhook');
+        $this->assertEquals($cart->id, $order->cart_id);
+        $this->assertEquals($customer->id, $order->customer_id);
+    }
+
+    #[Test]
+    public function checkout_session_completed_creates_order_and_records_payment()
+    {
+        $customer = User::factory()->create();
+        $product = $this->createProduct(150.00);
+
+        // Add to cart but DON'T call checkoutCart()
+        $customer->addToCart($product);
+        $cart = $customer->currentCart();
+
+        // Simulate checkoutSession() conversion
+        $cart->update([
+            'status' => CartStatus::CONVERTED,
+            'converted_at' => now(),
+        ]);
+
+        $session = $this->createMockSession([
+            'metadata' => (object) ['cart_id' => $cart->id],
+            'amount_total' => 15000, // 150.00
+            'payment_status' => 'paid',
+            'payment_intent' => 'pi_stripe_checkout_test',
+        ]);
+
+        $this->invokeMethod('handleCheckoutSessionCompleted', [$session]);
+
+        $cart->refresh();
+        $order = $cart->order;
+
+        $this->assertNotNull($order);
+        $this->assertEquals(150.00, $order->amount_paid);
+        $this->assertEquals(OrderStatus::PROCESSING, $order->status);
+    }
+
+    #[Test]
+    public function checkout_session_completed_creates_order_with_correct_totals()
+    {
+        $customer = User::factory()->create();
+        $product = $this->createProduct(75.50);
+
+        $customer->addToCart($product, 2); // 2 items = 151.00
+        $cart = $customer->currentCart();
+
+        $cart->update([
+            'status' => CartStatus::CONVERTED,
+            'converted_at' => now(),
+        ]);
+
+        $session = $this->createMockSession([
+            'metadata' => (object) ['cart_id' => $cart->id],
+            'amount_total' => 15100, // 151.00
+            'payment_status' => 'paid',
+        ]);
+
+        $this->invokeMethod('handleCheckoutSessionCompleted', [$session]);
+
+        $order = $cart->fresh()->order;
+
+        $this->assertNotNull($order);
+        // Order total should match cart total (in cents)
+        $this->assertEquals((int) $cart->getTotal() * 100, $order->amount_total);
+    }
+
+    #[Test]
+    public function checkout_session_completed_adds_payment_note_when_creating_order()
+    {
+        $customer = User::factory()->create();
+        $product = $this->createProduct(50.00);
+
+        $customer->addToCart($product);
+        $cart = $customer->currentCart();
+
+        $cart->update([
+            'status' => CartStatus::CONVERTED,
+            'converted_at' => now(),
+        ]);
+
+        $session = $this->createMockSession([
+            'metadata' => (object) ['cart_id' => $cart->id],
+            'amount_total' => 5000,
+            'payment_status' => 'paid',
+            'payment_intent' => 'pi_test_payment_note',
+        ]);
+
+        $this->invokeMethod('handleCheckoutSessionCompleted', [$session]);
+
+        $order = $cart->fresh()->order;
+
+        $this->assertNotNull($order);
+
+        $paymentNote = $order->notes()->where('type', OrderNote::TYPE_PAYMENT)->first();
+        $this->assertNotNull($paymentNote, 'Payment note should be created');
+        $this->assertStringContainsString('50', $paymentNote->content);
+        $this->assertStringContainsString('Stripe checkout', $paymentNote->content);
+    }
+
+    #[Test]
+    public function checkout_session_completed_does_not_duplicate_order()
+    {
+        $customer = User::factory()->create();
+        $product = $this->createProduct(100.00);
+
+        // Use checkoutCart() which creates an order
+        $customer->addToCart($product);
+        $cart = $customer->checkoutCart();
+
+        $existingOrder = $cart->fresh()->order;
+        $this->assertNotNull($existingOrder);
+        $originalOrderId = $existingOrder->id;
+
+        // Now call webhook - should NOT create a duplicate order
+        $session = $this->createMockSession([
+            'metadata' => (object) ['cart_id' => $cart->id],
+            'amount_total' => 10000,
+            'payment_status' => 'paid',
+        ]);
+
+        $this->invokeMethod('handleCheckoutSessionCompleted', [$session]);
+
+        $cart->refresh();
+
+        // Should still be the same order
+        $this->assertEquals($originalOrderId, $cart->order->id);
+
+        // Should only have one order for this cart
+        $orderCount = Order::where('cart_id', $cart->id)->count();
+        $this->assertEquals(1, $orderCount);
+    }
+
+    #[Test]
+    public function checkout_session_completed_without_prior_conversion_creates_order()
+    {
+        $customer = User::factory()->create();
+        $product = $this->createProduct(200.00);
+
+        // Add to cart - cart is NOT converted yet (simulates edge case)
+        $customer->addToCart($product);
+        $cart = $customer->currentCart();
+
+        $this->assertEquals(CartStatus::ACTIVE, $cart->status);
+        $this->assertNull($cart->order);
+
+        // Webhook fires - should convert cart AND create order
+        $session = $this->createMockSession([
+            'metadata' => (object) ['cart_id' => $cart->id],
+            'amount_total' => 20000,
+            'payment_status' => 'paid',
+        ]);
+
+        $this->invokeMethod('handleCheckoutSessionCompleted', [$session]);
+
+        $cart->refresh();
+
+        // Cart should be converted
+        $this->assertEquals(CartStatus::CONVERTED, $cart->status);
+        $this->assertNotNull($cart->converted_at);
+
+        // Order should exist
+        $this->assertNotNull($cart->order);
+        $this->assertEquals(200.00, $cart->order->amount_paid);
+    }
 }

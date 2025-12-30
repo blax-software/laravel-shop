@@ -664,4 +664,3 @@ $products = Product::with([
 
 - [Pool Products](./ProductTypes/02-pool-products.md) - POOL/SINGLE relations in detail
 - [Product Types](./ProductTypes/) - Understanding different product types
-- [Stock Management](./06-stock-management.md) - How stock works with relations
