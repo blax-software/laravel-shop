@@ -21,7 +21,7 @@ class PurchaseFlowTest extends TestCase
     public function user_can_purchase_a_product_directly()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 49.99)->create([
+        $product = Product::factory()->withPrices(unit_amount: 4999)->create([
             'manage_stock' => false,
         ]);
 
@@ -141,7 +141,7 @@ class PurchaseFlowTest extends TestCase
 
         $total = $user->getCartTotal();
 
-        $this->assertEquals(140.00, $total);
+        $this->assertEquals(140, $total);
     }
 
     #[Test]
@@ -336,6 +336,6 @@ class PurchaseFlowTest extends TestCase
 
         $cart = $user->checkoutCart();
 
-        $this->assertEquals(170.00, $cart->getTotal());
+        $this->assertEquals(170, $cart->getTotal());
     }
 }

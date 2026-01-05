@@ -156,7 +156,7 @@ class CartFacadeTest extends TestCase
 
         $total = Cart::total();
 
-        $this->assertEquals(200.00, $total);
+        $this->assertEquals(200, $total);
     }
 
     #[Test]
@@ -219,7 +219,7 @@ class CartFacadeTest extends TestCase
 
         $unpaid = Cart::unpaidAmount();
 
-        $this->assertEquals(200.00, $unpaid);
+        $this->assertEquals(200, $unpaid);
     }
 
     #[Test]
@@ -230,7 +230,7 @@ class CartFacadeTest extends TestCase
 
         $paid = Cart::paidAmount();
 
-        $this->assertEquals(0.00, $paid);
+        $this->assertEquals(0, $paid);
     }
 
     #[Test]
@@ -292,7 +292,7 @@ class CartFacadeTest extends TestCase
         Cart::add($p2, quantity: 1);  // 75
         Cart::add($p3, quantity: 4);  // 100
 
-        $this->assertEquals(275.00, Cart::total());
+        $this->assertEquals(275, Cart::total());
     }
 
     #[Test]
@@ -300,10 +300,10 @@ class CartFacadeTest extends TestCase
     {
         $product = Product::factory()->withStocks(50)->withPrices(1, 100)->create();
         Cart::add($product, quantity: 5);
-        $this->assertEquals(500.00, Cart::total());
+        $this->assertEquals(500, Cart::total());
 
         Cart::remove($product, quantity: 2);
 
-        $this->assertEquals(300.00, Cart::total());
+        $this->assertEquals(300, Cart::total());
     }
 }

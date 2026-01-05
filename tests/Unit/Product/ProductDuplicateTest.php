@@ -60,7 +60,7 @@ class ProductDuplicateTest extends TestCase
     #[Test]
     public function duplicate_includes_prices()
     {
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create();
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create();
 
         $duplicate = $product->duplicate();
 
@@ -72,7 +72,7 @@ class ProductDuplicateTest extends TestCase
     #[Test]
     public function duplicate_can_exclude_prices()
     {
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create();
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create();
 
         $duplicate = $product->duplicate(includePrices: false);
 

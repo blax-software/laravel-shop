@@ -516,7 +516,7 @@ class BookingPerMinutePricingTest extends TestCase
 
         $single_product = Product::factory()
             ->withStocks(5)
-            ->withPrices(1, 5000) // $50.00
+            ->withPrices(1, 5000) // 5000 cents = $50.00
             ->create([
                 'name' => 'Wine Bottle',
                 'slug' => 'wine-bottle',

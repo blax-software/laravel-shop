@@ -18,7 +18,7 @@ class OrderSummaryTest extends TestCase
     public function order_can_get_total_revenue()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -37,7 +37,7 @@ class OrderSummaryTest extends TestCase
     public function order_can_get_revenue_between_dates()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -57,7 +57,7 @@ class OrderSummaryTest extends TestCase
     public function order_can_get_total_refunded()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -73,7 +73,7 @@ class OrderSummaryTest extends TestCase
     public function order_can_get_net_revenue()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -89,7 +89,7 @@ class OrderSummaryTest extends TestCase
     public function order_can_get_average_order_value()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -107,7 +107,7 @@ class OrderSummaryTest extends TestCase
     public function order_can_get_counts_by_status()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -136,7 +136,7 @@ class OrderSummaryTest extends TestCase
     public function order_can_get_revenue_summary()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -162,7 +162,7 @@ class OrderSummaryTest extends TestCase
     public function order_can_get_daily_revenue()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -181,7 +181,7 @@ class OrderSummaryTest extends TestCase
     public function order_scope_today_returns_todays_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -195,7 +195,7 @@ class OrderSummaryTest extends TestCase
     public function order_scope_this_week_returns_this_weeks_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -209,7 +209,7 @@ class OrderSummaryTest extends TestCase
     public function order_scope_this_month_returns_this_months_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -223,7 +223,7 @@ class OrderSummaryTest extends TestCase
     public function order_scope_by_payment_provider_returns_filtered_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -246,7 +246,7 @@ class OrderSummaryTest extends TestCase
     public function order_scope_with_refunds_returns_orders_with_refunds()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -270,7 +270,7 @@ class OrderSummaryTest extends TestCase
     public function order_scope_fully_refunded_returns_fully_refunded_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 

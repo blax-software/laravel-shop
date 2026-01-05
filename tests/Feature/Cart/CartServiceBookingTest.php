@@ -222,9 +222,11 @@ class CartServiceBookingTest extends TestCase
 
         $cartItem = Cart::addBooking($this->bookingProduct, 2, $from, $until);
 
-        // Price should be: price_per_day (10000 cents = 100 dollars) × days (3) = 30000 cents per unit
+        // withPrices(1, 10000) stores 10000 cents
+        // Price should be: price_per_day (10000 cents) × days (3) = 30000 cents per unit
         // Total should be: 30000 × quantity (2) = 60000 cents
-        $expectedPricePerUnit = 10000 * $days;  // 30000 cents
+        $pricePerDay = 10000; // 100.00 euros = 10000 cents
+        $expectedPricePerUnit = $pricePerDay * $days;  // 30000 cents
         $expectedTotal = $expectedPricePerUnit * 2;  // 60000 cents
 
         $this->assertEquals($expectedPricePerUnit, $cartItem->price);

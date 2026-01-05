@@ -80,7 +80,7 @@ class GuestCartTest extends TestCase
 
         $total = Cart::total($guestCart);
 
-        $this->assertEquals(250.00, $total);
+        $this->assertEquals(250, $total);
     }
 
     #[Test]
@@ -167,8 +167,8 @@ class GuestCartTest extends TestCase
         Cart::add($product, quantity: 1);
 
         // Verify they're different
-        $this->assertEquals(100.00, Cart::total($guestCart));
-        $this->assertEquals(100.00, Cart::total());  // Current user's cart
+        $this->assertEquals(100, Cart::total($guestCart));
+        $this->assertEquals(100, Cart::total());  // Current user's cart
 
         $guestCartItems = Cart::items($guestCart);
         $userCartItems = Cart::items();
@@ -195,8 +195,8 @@ class GuestCartTest extends TestCase
         $userCart->addToCart($product, quantity: 2);
 
         // Original guest cart should still exist and be separate
-        $this->assertEquals(200.00, Cart::total($guestCart));
-        $this->assertEquals(200.00, Cart::total($userCart));
+        $this->assertEquals(200, Cart::total($guestCart));
+        $this->assertEquals(200, Cart::total($userCart));
     }
 
     #[Test]
@@ -226,8 +226,8 @@ class GuestCartTest extends TestCase
         $guestCart2->addToCart($product, quantity: 3);  // 300
 
         $this->assertNotEquals($guestCart1->id, $guestCart2->id);
-        $this->assertEquals(100.00, Cart::total($guestCart1));
-        $this->assertEquals(300.00, Cart::total($guestCart2));
+        $this->assertEquals(100, Cart::total($guestCart1));
+        $this->assertEquals(300, Cart::total($guestCart2));
     }
 
     #[Test]
@@ -237,12 +237,12 @@ class GuestCartTest extends TestCase
         $product = Product::factory()->withStocks(50)->withPrices(1, 50)->create();
 
         $cartItem = $guestCart->addToCart($product, quantity: 2);
-        $this->assertEquals(100.00, $cartItem->subtotal);
+        $this->assertEquals(100, $cartItem->subtotal);
 
         $updated = Cart::update($cartItem, quantity: 5);
 
         $this->assertEquals(5, $updated->quantity);
-        $this->assertEquals(250.00, $updated->subtotal);
+        $this->assertEquals(250, $updated->subtotal);
     }
 
     #[Test]

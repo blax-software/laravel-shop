@@ -79,7 +79,7 @@ class StripeWebhookOrderTest extends TestCase
     /**
      * Create a product for testing
      */
-    protected function createProduct(float $price = 100.00): Product
+    protected function createProduct(int $price = 10000): Product
     {
         return Product::factory()->withPrices(unit_amount: $price)->create([
             'manage_stock' => false,
@@ -90,7 +90,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_completed_creates_order_payment()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -108,7 +108,7 @@ class StripeWebhookOrderTest extends TestCase
         $this->invokeMethod('handleCheckoutSessionCompleted', [$session]);
 
         $order->refresh();
-        $this->assertEquals(100.00, $order->amount_paid);
+        $this->assertEquals(10000, $order->amount_paid);
         $this->assertEquals(OrderStatus::PROCESSING, $order->status);
     }
 
@@ -116,7 +116,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_completed_logs_payment_note()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(50.00);
+        $product = $this->createProduct(5000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -143,7 +143,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_failed_updates_order_status()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -164,7 +164,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_failed_adds_payment_note()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(50.00);
+        $product = $this->createProduct(5000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -189,7 +189,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_expired_adds_system_note()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(50.00);
+        $product = $this->createProduct(5000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -214,7 +214,7 @@ class StripeWebhookOrderTest extends TestCase
     public function charge_refunded_records_refund_on_order()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -244,7 +244,7 @@ class StripeWebhookOrderTest extends TestCase
     public function charge_dispute_created_puts_order_on_hold()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -273,7 +273,7 @@ class StripeWebhookOrderTest extends TestCase
     public function charge_dispute_created_adds_payment_note()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -302,7 +302,7 @@ class StripeWebhookOrderTest extends TestCase
     public function charge_dispute_closed_restores_order_if_won()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -329,7 +329,7 @@ class StripeWebhookOrderTest extends TestCase
     public function charge_dispute_closed_refunds_order_if_lost()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -356,7 +356,7 @@ class StripeWebhookOrderTest extends TestCase
     public function refund_created_records_refund_on_order()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -383,7 +383,7 @@ class StripeWebhookOrderTest extends TestCase
     public function refund_updated_adds_note_to_order()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -410,7 +410,7 @@ class StripeWebhookOrderTest extends TestCase
     public function find_order_by_payment_intent_works()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -428,7 +428,7 @@ class StripeWebhookOrderTest extends TestCase
     public function find_order_by_charge_id_works()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -476,7 +476,7 @@ class StripeWebhookOrderTest extends TestCase
     public function handler_uses_client_reference_id_as_fallback()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(50.00);
+        $product = $this->createProduct(5000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -492,14 +492,14 @@ class StripeWebhookOrderTest extends TestCase
         $this->assertTrue($result);
 
         $order = $cart->fresh()->order;
-        $this->assertEquals(50.00, $order->amount_paid);
+        $this->assertEquals(5000, $order->amount_paid);
     }
 
     #[Test]
     public function payment_intent_canceled_adds_note()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -525,7 +525,7 @@ class StripeWebhookOrderTest extends TestCase
     public function charge_failed_adds_failure_note_to_order()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         $customer->addToCart($product);
         $cart = $customer->checkoutCart();
@@ -559,7 +559,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_completed_creates_order_when_none_exists()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         // Add to cart but DON'T call checkoutCart() - simulate checkoutSession() flow
         $customer->addToCart($product);
@@ -597,7 +597,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_completed_creates_order_and_records_payment()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(150.00);
+        $product = $this->createProduct(15000);
 
         // Add to cart but DON'T call checkoutCart()
         $customer->addToCart($product);
@@ -622,7 +622,7 @@ class StripeWebhookOrderTest extends TestCase
         $order = $cart->order;
 
         $this->assertNotNull($order);
-        $this->assertEquals(150.00, $order->amount_paid);
+        $this->assertEquals(15000, $order->amount_paid);
         $this->assertEquals(OrderStatus::PROCESSING, $order->status);
     }
 
@@ -630,7 +630,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_completed_creates_order_with_correct_totals()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(75.50);
+        $product = $this->createProduct(7550);
 
         $customer->addToCart($product, 2); // 2 items = 151.00
         $cart = $customer->currentCart();
@@ -651,15 +651,15 @@ class StripeWebhookOrderTest extends TestCase
         $order = $cart->fresh()->order;
 
         $this->assertNotNull($order);
-        // Order total should match cart total (in cents)
-        $this->assertEquals((int) $cart->getTotal() * 100, $order->amount_total);
+        // Order total should match cart total (already in cents)
+        $this->assertEquals((int) $cart->getTotal(), $order->amount_total);
     }
 
     #[Test]
     public function checkout_session_completed_adds_payment_note_when_creating_order()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(50.00);
+        $product = $this->createProduct(5000);
 
         $customer->addToCart($product);
         $cart = $customer->currentCart();
@@ -692,7 +692,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_completed_does_not_duplicate_order()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(100.00);
+        $product = $this->createProduct(10000);
 
         // Use checkoutCart() which creates an order
         $customer->addToCart($product);
@@ -725,7 +725,7 @@ class StripeWebhookOrderTest extends TestCase
     public function checkout_session_completed_without_prior_conversion_creates_order()
     {
         $customer = User::factory()->create();
-        $product = $this->createProduct(200.00);
+        $product = $this->createProduct(20000);
 
         // Add to cart - cart is NOT converted yet (simulates edge case)
         $customer->addToCart($product);
@@ -751,6 +751,6 @@ class StripeWebhookOrderTest extends TestCase
 
         // Order should exist
         $this->assertNotNull($cart->order);
-        $this->assertEquals(200.00, $cart->order->amount_paid);
+        $this->assertEquals(20000, $cart->order->amount_paid);
     }
 }

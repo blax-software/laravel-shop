@@ -787,7 +787,7 @@ class PoolProductionBugTest extends TestCase
             'manage_stock' => true,
         ]);
 
-        // single_1: 3 stock @ 1000/day
+        // single_1: 3 stock @ 1000/day (10.00 euros)
         $single_1 = Product::factory()
             ->withStocks(3)
             ->withPrices(1, 1000)
@@ -797,7 +797,7 @@ class PoolProductionBugTest extends TestCase
                 'name' => 'Single1-Cheap',
             ]);
 
-        // single_2: 1 stock @ 10001/day
+        // single_2: 1 stock @ 10001/day (100.01 euros)
         $single_2 = Product::factory()
             ->withStocks(1)
             ->withPrices(1, 10001)
@@ -807,7 +807,7 @@ class PoolProductionBugTest extends TestCase
                 'name' => 'Single2-Medium',
             ]);
 
-        // single_3: 1 stock @ 10002/day
+        // single_3: 1 stock @ 10002/day (100.02 euros)
         $single_3 = Product::factory()
             ->withStocks(1)
             ->withPrices(1, 10002)
@@ -1042,7 +1042,7 @@ class PoolProductionBugTest extends TestCase
             'manage_stock' => true,
         ]);
 
-        // single_1: 2 stock @ 1000/day
+        // single_1: 2 stock @ 1000/day (10.00 euros)
         $single_1 = Product::factory()
             ->withStocks(2)
             ->withPrices(1, 1000)
@@ -1052,7 +1052,7 @@ class PoolProductionBugTest extends TestCase
                 'name' => 'Single1',
             ]);
 
-        // single_2: 1 stock @ 2000/day
+        // single_2: 1 stock @ 2000/day (20.00 euros)
         $single_2 = Product::factory()
             ->withStocks(1)
             ->withPrices(1, 2000)

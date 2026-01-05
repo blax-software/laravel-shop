@@ -156,7 +156,8 @@ class StripeWebhookController
         }
 
         // Record payment on the order
-        $amountPaid = (int) (($session->amount_total ?? 0) / 100);
+        // Stripe provides amounts in cents, which matches our storage format
+        $amountPaid = (int) ($session->amount_total ?? 0);
         $currency = strtoupper($session->currency ?? $order->currency ?? 'USD');
 
         // recordPayment(int $amount, ?string $reference, ?string $method, ?string $provider)

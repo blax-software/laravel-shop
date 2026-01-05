@@ -38,7 +38,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_have_multiple_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -55,7 +55,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_pending_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -70,7 +70,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_processing_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -86,7 +86,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_completed_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -102,7 +102,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_active_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -122,7 +122,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_paid_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -142,7 +142,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_fully_paid_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -163,7 +163,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_latest_order()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -183,7 +183,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_total_spent()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -202,7 +202,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_order_count()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -219,7 +219,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_completed_order_count()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -240,7 +240,7 @@ class HasOrdersTraitTest extends TestCase
 
         $this->assertFalse($user->hasOrders());
 
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
         $user->addToCart($product);
@@ -253,7 +253,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_check_has_active_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -272,7 +272,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_find_order_by_number()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -291,7 +291,7 @@ class HasOrdersTraitTest extends TestCase
     {
         $user1 = User::factory()->create();
         $user2 = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -309,7 +309,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_orders_between_dates()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -328,7 +328,7 @@ class HasOrdersTraitTest extends TestCase
     public function user_can_get_orders_with_specific_status()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 

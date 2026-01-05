@@ -39,7 +39,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_get_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -53,7 +53,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_get_order_by_number()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -71,7 +71,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_get_orders_today()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -85,7 +85,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_get_orders_this_week()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -99,7 +99,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_get_orders_this_month()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -113,7 +113,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_get_pending_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -127,7 +127,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_calculate_total_revenue()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -142,7 +142,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_calculate_revenue_today()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -157,7 +157,7 @@ class ShopServiceTest extends TestCase
     public function shop_facade_can_get_stats()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
             'status' => 'published',
         ]);

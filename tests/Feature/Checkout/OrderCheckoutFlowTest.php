@@ -27,7 +27,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function checkout_creates_order_from_cart()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -44,7 +44,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_has_correct_cart_id()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -60,7 +60,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_has_correct_customer_info()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -81,7 +81,7 @@ class OrderCheckoutFlowTest extends TestCase
         $cart = Cart::factory()->forCustomer($user)->create([
             'currency' => 'EUR',
         ]);
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -97,20 +97,20 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_has_correct_total_amount()
     {
         $user = User::factory()->create();
-        $product1 = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product1 = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
-        $product2 = Product::factory()->withPrices(unit_amount: 30.00)->create([
+        $product2 = Product::factory()->withPrices(unit_amount: 3000)->create([
             'manage_stock' => false,
         ]);
 
-        $user->addToCart($product1, quantity: 2); // 100.00
-        $user->addToCart($product2, quantity: 3); // 90.00
+        $user->addToCart($product1, quantity: 2); // 10000 cents
+        $user->addToCart($product2, quantity: 3); // 9000 cents
 
         $cart = $user->checkoutCart();
         $order = $cart->order;
 
-        // Total should be 190.00 (19000 cents)
+        // Total should be 19000 cents
         $this->assertEquals(19000, $order->amount_total);
         $this->assertEquals(19000, $order->amount_subtotal);
     }
@@ -119,7 +119,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_starts_with_pending_status()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -135,7 +135,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_starts_with_zero_paid_amount()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -153,7 +153,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_has_unique_order_number()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -173,7 +173,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_creation_adds_system_note()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -198,10 +198,10 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_has_purchases_through_cart()
     {
         $user = User::factory()->create();
-        $product1 = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product1 = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
-        $product2 = Product::factory()->withPrices(unit_amount: 30.00)->create([
+        $product2 = Product::factory()->withPrices(unit_amount: 3000)->create([
             'manage_stock' => false,
         ]);
 
@@ -218,7 +218,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_purchases_have_correct_status()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 
@@ -238,7 +238,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_payment_updates_status()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -260,7 +260,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_payment_updates_purchase_status()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -280,7 +280,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_partial_payment_does_not_complete_order()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -306,7 +306,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_can_be_processed_after_payment()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -324,7 +324,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_can_be_shipped_with_tracking()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -346,7 +346,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_can_be_completed()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
             'virtual' => true, // Virtual product
         ]);
@@ -372,7 +372,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_can_be_cancelled()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -403,7 +403,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_can_be_refunded()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -425,7 +425,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_partial_refund_does_not_change_status()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -450,7 +450,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_logs_status_changes()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -473,7 +473,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function order_logs_payment_notes()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -499,7 +499,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function cart_status_is_converted_after_checkout()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create([
             'manage_stock' => false,
         ]);
 
@@ -519,7 +519,7 @@ class OrderCheckoutFlowTest extends TestCase
         $user = User::factory()->create();
 
         $products = Product::factory()
-            ->withPrices(unit_amount: 25.00)
+            ->withPrices(unit_amount: 2500)
             ->count(5)
             ->create(['manage_stock' => false]);
 
@@ -543,7 +543,7 @@ class OrderCheckoutFlowTest extends TestCase
     {
         $user1 = User::factory()->create();
         $user2 = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 25.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 2500)->create([
             'manage_stock' => false,
         ]);
 
@@ -567,7 +567,7 @@ class OrderCheckoutFlowTest extends TestCase
     public function can_find_paid_orders()
     {
         $user = User::factory()->create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create([
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create([
             'manage_stock' => false,
         ]);
 

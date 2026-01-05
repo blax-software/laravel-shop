@@ -20,7 +20,7 @@ class CartItemTest extends TestCase
     public function cart_item_stores_prices_as_integers_in_cents()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 1550)->create(); // $15.50 in cents
+        $product = Product::factory()->withPrices(unit_amount: 1550)->create(); // 1550 cents
         $price = $product->defaultPrice()->first();
 
         $cartItem = $cart->addToCart($price, quantity: 2);
@@ -42,7 +42,7 @@ class CartItemTest extends TestCase
     public function cart_item_unit_amount_represents_base_price_per_day()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 5000)->create(); // $50.00 per day
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create(); // 5000 cents per day
         $price = $product->defaultPrice()->first();
 
         $cartItem = $cart->addToCart($price, quantity: 1);
@@ -56,7 +56,7 @@ class CartItemTest extends TestCase
     public function cart_item_calculates_price_correctly_for_booking_timespan()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 2000)->create(['type' => ProductType::BOOKING]); // $20.00 per day
+        $product = Product::factory()->withPrices(unit_amount: 2000)->create(['type' => ProductType::BOOKING]); // 2000 cents per day
         $price = $product->defaultPrice()->first();
 
         $from = Carbon::parse('2025-01-01 00:00:00');
@@ -78,7 +78,7 @@ class CartItemTest extends TestCase
     public function cart_item_calculates_price_with_partial_days()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 4800)->create(['type' => ProductType::BOOKING]); // $48.00 per day
+        $product = Product::factory()->withPrices(unit_amount: 4800)->create(['type' => ProductType::BOOKING]); // 4800 cents per day
         $price = $product->defaultPrice()->first();
 
         // 12 hours = 0.5 days
@@ -112,7 +112,7 @@ class CartItemTest extends TestCase
     public function cart_item_updates_prices_when_dates_change()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 3000)->withStocks(10)->create(['type' => ProductType::BOOKING]); // $30.00 per day
+        $product = Product::factory()->withPrices(unit_amount: 3000)->withStocks(10)->create(['type' => ProductType::BOOKING]); // 3000 cents per day
 
         $from = Carbon::parse('2025-01-01 00:00:00');
         $until = Carbon::parse('2025-01-02 00:00:00'); // 1 day
@@ -145,7 +145,7 @@ class CartItemTest extends TestCase
     public function cart_item_handles_fractional_days_with_multiple_quantities()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 2400)->create(['type' => ProductType::BOOKING]); // $24.00 per day
+        $product = Product::factory()->withPrices(unit_amount: 2400)->create(['type' => ProductType::BOOKING]); // 2400 cents per day
         $price = $product->defaultPrice()->first();
 
         // 1.5 days
@@ -236,7 +236,7 @@ class CartItemTest extends TestCase
         $cart = Cart::create();
 
         // Create a product with a price that will result in fractional cents when multiplied
-        $product = Product::factory()->withPrices(unit_amount: 3333)->create(['type' => ProductType::BOOKING]); // $33.33
+        $product = Product::factory()->withPrices(unit_amount: 3333)->create(['type' => ProductType::BOOKING]); // 3333 cents
         $price = $product->defaultPrice()->first();
 
         // 1.5 days should give 3333 * 1.5 = 4999.5 cents
@@ -329,7 +329,7 @@ class CartItemTest extends TestCase
         $cart = Cart::create();
         $product = Product::factory()
             ->withPrices(unit_amount: 500)
-            ->create(['type' => ProductType::BOOKING]); // $5.00 per day
+            ->create(['type' => ProductType::BOOKING]); // 500 cents per day
 
         $price = $product->defaultPrice()->first();
 

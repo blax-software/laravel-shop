@@ -19,26 +19,26 @@ class CartTest extends TestCase
     public function cart_can_add_product_price_directly()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 100.00)->create();
+        $product = Product::factory()->withPrices(unit_amount: 10000)->create();
         $price = $product->defaultPrice()->first();
 
         $cartItem = $cart->addToCart($price, quantity: 2);
 
         $this->assertNotNull($cartItem);
         $this->assertEquals(2, $cartItem->quantity);
-        $this->assertEquals(100.00, $cartItem->price);
+        $this->assertEquals(10000, $cartItem->price);
     }
 
     #[Test]
     public function cart_calculates_subtotal_automatically()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create();
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create();
         $price = $product->defaultPrice()->first();
 
         $cartItem = $cart->addToCart($price, quantity: 3);
 
-        $this->assertEquals(150.00, $cartItem->subtotal);
+        $this->assertEquals(15000, $cartItem->subtotal);
     }
 
     #[Test]
@@ -78,7 +78,7 @@ class CartTest extends TestCase
     public function cart_can_add_items_with_custom_parameters()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create();
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create();
         $price = $product->defaultPrice()->first();
 
         $parameters = [
@@ -99,10 +99,10 @@ class CartTest extends TestCase
     {
         $cart = Cart::create();
 
-        $product1 = Product::factory()->withPrices(unit_amount: 25.00)->create();
+        $product1 = Product::factory()->withPrices(unit_amount: 2500)->create();
         $price1 = $product1->defaultPrice()->first();
 
-        $product2 = Product::factory()->withPrices(unit_amount: 50.00)->create();
+        $product2 = Product::factory()->withPrices(unit_amount: 5000)->create();
         $price2 = $product2->defaultPrice()->first();
 
         $cart->addToCart($price1, quantity: 2); // 50
@@ -110,7 +110,7 @@ class CartTest extends TestCase
 
         $total = $cart->fresh()->getTotal();
 
-        $this->assertEquals(200.00, $total);
+        $this->assertEquals(20000, $total);
     }
 
     #[Test]
@@ -172,7 +172,7 @@ class CartTest extends TestCase
     public function cart_deletes_items_on_deletion()
     {
         $cart = Cart::create();
-        $product = Product::factory()->withPrices(unit_amount: 50.00)->create();
+        $product = Product::factory()->withPrices(unit_amount: 5000)->create();
         $price = $product->defaultPrice()->first();
 
         $cartItem = $cart->addToCart($price);

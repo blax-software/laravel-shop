@@ -210,7 +210,7 @@ class HasShoppingCapabilitiesTest extends TestCase
 
         $total = $user->getCartTotal();
 
-        $this->assertEquals(250.00, $total);
+        $this->assertEquals(250, $total);
     }
 
     #[Test]

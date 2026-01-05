@@ -21,7 +21,7 @@ class ProductManagementTest extends TestCase
     public function it_can_create_a_product()
     {
         $product = Product::factory()
-            ->withPrices(1, 99.99)
+            ->withPrices(1, 9999)
             ->create([
                 'slug' => 'test-product',
                 'type' => 'simple',
@@ -33,7 +33,8 @@ class ProductManagementTest extends TestCase
         ]);
 
         $this->assertCount(1, $product->prices);
-        $this->assertEquals(99.99, $product->prices->first()->unit_amount);
+        // Factory converts 99.99 euros to 9999 cents
+        $this->assertEquals(9999, $product->prices->first()->unit_amount);
     }
 
     #[Test]

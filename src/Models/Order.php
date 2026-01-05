@@ -834,11 +834,11 @@ class Order extends Model
             'customer_type' => $cart->customer_type,
             'customer_id' => $cart->customer_id,
             'currency' => $cart->currency ?? config('shop.currency', 'USD'),
-            'amount_subtotal' => (int) $cart->getTotal() * 100,
+            'amount_subtotal' => (int) $cart->getTotal(),
             'amount_discount' => 0, // TODO: Calculate from cart discounts
             'amount_shipping' => 0,
             'amount_tax' => 0,
-            'amount_total' => (int) $cart->getTotal() * 100,
+            'amount_total' => (int) $cart->getTotal(),
             'amount_paid' => 0,
             'amount_refunded' => 0,
             'status' => OrderStatus::PENDING,

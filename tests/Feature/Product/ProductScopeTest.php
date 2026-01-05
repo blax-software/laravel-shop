@@ -61,11 +61,12 @@ class ProductScopeTest extends TestCase
     #[Test]
     public function it_can_filter_by_price_range()
     {
-        $product1 = Product::factory()->withPrices(1, 50)->create();
-        $product2 = Product::factory()->withPrices(1, 100)->create();
-        $product3 = Product::factory()->withPrices(1, 150)->create();
+        $product1 = Product::factory()->withPrices(1, 5000)->create();
+        $product2 = Product::factory()->withPrices(1, 10000)->create();
+        $product3 = Product::factory()->withPrices(1, 15000)->create();
 
-        $inRange = Product::priceRange(75, 125)->get();
+        // Filter in cents: 7500-12500 cents = $75-$125
+        $inRange = Product::priceRange(7500, 12500)->get();
 
         $this->assertCount(1, $inRange);
         $this->assertTrue($inRange->contains($product2));
@@ -74,11 +75,12 @@ class ProductScopeTest extends TestCase
     #[Test]
     public function it_can_filter_by_minimum_price_only()
     {
-        $product1 = Product::factory()->withPrices(1, 50)->create();
-        $product2 = Product::factory()->withPrices(1, 100)->create();
-        $product3 = Product::factory()->withPrices(1, 150)->create();
+        $product1 = Product::factory()->withPrices(1, 5000)->create();
+        $product2 = Product::factory()->withPrices(1, 10000)->create();
+        $product3 = Product::factory()->withPrices(1, 15000)->create();
 
-        $minPrice = Product::priceRange(100)->get();
+        // Filter minimum in cents: 10000 cents = $100
+        $minPrice = Product::priceRange(10000)->get();
 
         $this->assertCount(2, $minPrice);
         $this->assertTrue($minPrice->contains($product2));
@@ -88,11 +90,12 @@ class ProductScopeTest extends TestCase
     #[Test]
     public function it_can_filter_by_maximum_price_only()
     {
-        $product1 = Product::factory()->withPrices(1, 50)->create();
-        $product2 = Product::factory()->withPrices(1, 100)->create();
-        $product3 = Product::factory()->withPrices(1, 150)->create();
+        $product1 = Product::factory()->withPrices(1, 5000)->create();
+        $product2 = Product::factory()->withPrices(1, 10000)->create();
+        $product3 = Product::factory()->withPrices(1, 15000)->create();
 
-        $maxPrice = Product::priceRange(null, 100)->get();
+        // Filter maximum in cents: 10000 cents = $100
+        $maxPrice = Product::priceRange(null, 10000)->get();
 
         $this->assertCount(2, $maxPrice);
         $this->assertTrue($maxPrice->contains($product1));
@@ -102,9 +105,9 @@ class ProductScopeTest extends TestCase
     #[Test]
     public function it_can_order_products_by_price_ascending()
     {
-        $product1 = Product::factory()->withPrices(1, 150)->create(['name' => 'Expensive']);
-        $product2 = Product::factory()->withPrices(1, 50)->create(['name' => 'Cheap']);
-        $product3 = Product::factory()->withPrices(1, 100)->create(['name' => 'Medium']);
+        $product1 = Product::factory()->withPrices(1, 15000)->create(['name' => 'Expensive']);
+        $product2 = Product::factory()->withPrices(1, 5000)->create(['name' => 'Cheap']);
+        $product3 = Product::factory()->withPrices(1, 10000)->create(['name' => 'Medium']);
 
         $ordered = Product::orderByPrice('asc')->get();
 
@@ -115,9 +118,9 @@ class ProductScopeTest extends TestCase
     #[Test]
     public function it_can_order_products_by_price_descending()
     {
-        $product1 = Product::factory()->withPrices(1, 150)->create(['name' => 'Expensive']);
-        $product2 = Product::factory()->withPrices(1, 50)->create(['name' => 'Cheap']);
-        $product3 = Product::factory()->withPrices(1, 100)->create(['name' => 'Medium']);
+        $product1 = Product::factory()->withPrices(1, 15000)->create(['name' => 'Expensive']);
+        $product2 = Product::factory()->withPrices(1, 5000)->create(['name' => 'Cheap']);
+        $product3 = Product::factory()->withPrices(1, 10000)->create(['name' => 'Medium']);
 
         $ordered = Product::orderByPrice('desc')->get();
 
@@ -128,12 +131,13 @@ class ProductScopeTest extends TestCase
     #[Test]
     public function it_can_combine_price_range_and_order_by_price()
     {
-        $product1 = Product::factory()->withPrices(1, 50)->create();
-        $product2 = Product::factory()->withPrices(1, 100)->create();
-        $product3 = Product::factory()->withPrices(1, 150)->create();
-        $product4 = Product::factory()->withPrices(1, 200)->create();
+        $product1 = Product::factory()->withPrices(1, 5000)->create();
+        $product2 = Product::factory()->withPrices(1, 10000)->create();
+        $product3 = Product::factory()->withPrices(1, 15000)->create();
+        $product4 = Product::factory()->withPrices(1, 20000)->create();
 
-        $filtered = Product::priceRange(75, 175)->orderByPrice('asc')->get();
+        // Filter in cents: 7500-17500 cents = $75-$175
+        $filtered = Product::priceRange(7500, 17500)->orderByPrice('asc')->get();
 
         $this->assertCount(2, $filtered);
         $this->assertEquals($product2->id, $filtered->first()->id);

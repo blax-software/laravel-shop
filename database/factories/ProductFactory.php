@@ -82,11 +82,11 @@ class ProductFactory extends Factory
 
     public function withPrices(
         int $count = 1,
-        null|float $unit_amount = null,
-        null|float $sale_unit_amount = null
+        null|int $unit_amount = null,
+        null|int $sale_unit_amount = null
     ): static {
         return $this->afterCreating(function (Product $product) use ($count, $unit_amount, $sale_unit_amount) {
-            // Use realistic price range if not specified
+            // All prices are in cents (smallest currency unit)
             $priceAmount = $unit_amount ?? $this->faker->randomElement([
                 1999,  // $19.99
                 2999,  // $29.99

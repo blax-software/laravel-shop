@@ -20,7 +20,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_item_has_is_booking_attribute_for_booking_products()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::BOOKING]);
 
         $cart = Cart::create();
@@ -33,7 +33,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_item_has_is_booking_false_for_regular_products()
     {
         $regularProduct = Product::factory()
-            ->withPrices(unit_amount: 50.00)
+            ->withPrices(unit_amount: 5000)
             ->create(['type' => ProductType::SIMPLE]);
 
         $cart = Cart::create();
@@ -46,7 +46,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_item_is_booking_works_via_price_id()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::BOOKING]);
 
         $cart = Cart::create();
@@ -64,11 +64,11 @@ class CartItemAttributesTest extends TestCase
     public function cart_is_full_booking_is_true_when_all_items_are_bookings()
     {
         $booking1 = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::BOOKING]);
 
         $booking2 = Product::factory()
-            ->withPrices(unit_amount: 150.00)
+            ->withPrices(unit_amount: 15000)
             ->create(['type' => ProductType::BOOKING]);
 
         $cart = Cart::create();
@@ -82,11 +82,11 @@ class CartItemAttributesTest extends TestCase
     public function cart_is_full_booking_is_false_when_mixed_products()
     {
         $booking = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::BOOKING]);
 
         $regular = Product::factory()
-            ->withPrices(unit_amount: 50.00)
+            ->withPrices(unit_amount: 5000)
             ->create(['type' => ProductType::SIMPLE]);
 
         $cart = Cart::create();
@@ -108,15 +108,15 @@ class CartItemAttributesTest extends TestCase
     public function cart_booking_items_returns_correct_count()
     {
         $booking1 = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::BOOKING]);
 
         $booking2 = Product::factory()
-            ->withPrices(unit_amount: 150.00)
+            ->withPrices(unit_amount: 15000)
             ->create(['type' => ProductType::BOOKING]);
 
         $regular = Product::factory()
-            ->withPrices(unit_amount: 50.00)
+            ->withPrices(unit_amount: 5000)
             ->create(['type' => ProductType::SIMPLE]);
 
         $cart = Cart::create();
@@ -131,7 +131,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_booking_items_returns_zero_when_no_bookings()
     {
         $regular = Product::factory()
-            ->withPrices(unit_amount: 50.00)
+            ->withPrices(unit_amount: 5000)
             ->create(['type' => ProductType::SIMPLE]);
 
         $cart = Cart::create();
@@ -144,7 +144,7 @@ class CartItemAttributesTest extends TestCase
     public function price_id_is_automatically_assigned_when_adding_product_to_cart()
     {
         $product = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create();
 
         $cart = Cart::create();
@@ -244,7 +244,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_item_is_ready_to_checkout_is_true_for_regular_products()
     {
         $product = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::SIMPLE]);
 
         $cart = Cart::create();
@@ -257,7 +257,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_item_is_ready_to_checkout_is_false_for_booking_without_dates()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::BOOKING]);
 
         $cart = Cart::create();
@@ -270,7 +270,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_item_is_ready_to_checkout_is_true_for_booking_with_valid_dates()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->withStocks(quantity: 10)
             ->create(['type' => ProductType::BOOKING]);
 
@@ -287,7 +287,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_item_is_ready_to_checkout_is_false_for_booking_with_invalid_date_range()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->withStocks(quantity: 10)
             ->create(['type' => ProductType::BOOKING]);
 
@@ -307,11 +307,11 @@ class CartItemAttributesTest extends TestCase
     public function cart_is_ready_to_checkout_is_true_when_all_items_are_ready()
     {
         $product1 = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::SIMPLE]);
 
         $product2 = Product::factory()
-            ->withPrices(unit_amount: 150.00)
+            ->withPrices(unit_amount: 15000)
             ->create(['type' => ProductType::SIMPLE]);
 
         $cart = Cart::create();
@@ -325,11 +325,11 @@ class CartItemAttributesTest extends TestCase
     public function cart_is_ready_to_checkout_is_false_when_at_least_one_item_not_ready()
     {
         $regularProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->create(['type' => ProductType::SIMPLE]);
 
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 150.00)
+            ->withPrices(unit_amount: 15000)
             ->create(['type' => ProductType::BOOKING]);
 
         $cart = Cart::create();
@@ -343,7 +343,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_allows_adding_items_without_dates_that_require_them()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->withStocks(quantity: 10) // Has stock
             ->create(['type' => ProductType::BOOKING]);
 
@@ -362,7 +362,7 @@ class CartItemAttributesTest extends TestCase
     public function update_dates_allows_setting_any_dates()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->withStocks(quantity: 10) // Has stock
             ->create(['type' => ProductType::BOOKING]);
 
@@ -386,7 +386,7 @@ class CartItemAttributesTest extends TestCase
     public function cart_calculates_correctly_when_dates_are_adjusted()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->withStocks(quantity: 10)
             ->create(['type' => ProductType::BOOKING]);
 
@@ -397,23 +397,23 @@ class CartItemAttributesTest extends TestCase
         $cartItem = $cart->addToCart($bookingProduct, quantity: 1, from: $from, until: $until);
 
         // Initial price for 2 days
-        $this->assertEquals(200.00, $cartItem->price);
-        $this->assertEquals(200.00, $cartItem->subtotal);
+        $this->assertEquals(20000, $cartItem->price);
+        $this->assertEquals(20000, $cartItem->subtotal);
 
         // Adjust dates to 5 days
         $newUntil = Carbon::now()->addDays(6);
         $cartItem->updateDates($from, $newUntil);
 
         // Price should be recalculated for 5 days
-        $this->assertEquals(500.00, $cartItem->fresh()->price);
-        $this->assertEquals(500.00, $cartItem->fresh()->subtotal);
+        $this->assertEquals(50000, $cartItem->fresh()->price);
+        $this->assertEquals(50000, $cartItem->fresh()->subtotal);
     }
 
     #[Test]
     public function set_from_date_recalculates_pricing_when_both_dates_set()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->withStocks(quantity: 10)
             ->create(['type' => ProductType::BOOKING]);
 
@@ -424,21 +424,21 @@ class CartItemAttributesTest extends TestCase
         $cartItem = $cart->addToCart($bookingProduct, quantity: 1, from: $from, until: $until);
 
         // Initial price for 3 days
-        $this->assertEquals(300.00, $cartItem->price);
+        $this->assertEquals(30000, $cartItem->price);
 
         // Adjust from date to make it span more days (move 1 day earlier)
         $newFrom = $from->copy()->subDays(1);
         $cartItem->setFromDate($newFrom);
 
         // Price should be recalculated for 4 days
-        $this->assertEquals(400.00, $cartItem->fresh()->price);
+        $this->assertEquals(40000, $cartItem->fresh()->price);
     }
 
     #[Test]
     public function set_until_date_recalculates_pricing_when_both_dates_set()
     {
         $bookingProduct = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->withStocks(quantity: 10)
             ->create(['type' => ProductType::BOOKING]);
 
@@ -449,21 +449,21 @@ class CartItemAttributesTest extends TestCase
         $cartItem = $cart->addToCart($bookingProduct, quantity: 1, from: $from, until: $until);
 
         // Initial price for 2 days
-        $this->assertEquals(200.00, $cartItem->price);
+        $this->assertEquals(20000, $cartItem->price);
 
         // Adjust until date to make it 4 days
         $newUntil = Carbon::now()->addDays(5);
         $cartItem->setUntilDate($newUntil);
 
         // Price should be recalculated for 4 days
-        $this->assertEquals(400.00, $cartItem->fresh()->price);
+        $this->assertEquals(40000, $cartItem->fresh()->price);
     }
 
     #[Test]
     public function is_ready_to_checkout_checks_stock_for_regular_products_with_stock_management()
     {
         $product = Product::factory()
-            ->withPrices(unit_amount: 100.00)
+            ->withPrices(unit_amount: 10000)
             ->withStocks(quantity: 5)
             ->create([
                 'type' => ProductType::SIMPLE,
