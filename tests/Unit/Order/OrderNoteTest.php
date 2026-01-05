@@ -153,8 +153,7 @@ class OrderNoteTest extends TestCase
             'Note from user',
             'note',
             false,
-            get_class($user),
-            $user->id
+            $user
         );
 
         $this->assertEquals(get_class($user), $note->author_type);

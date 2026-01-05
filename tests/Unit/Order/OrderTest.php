@@ -599,4 +599,299 @@ class OrderTest extends TestCase
         $this->assertEquals('USD 100.00', Order::formatMoney(10000, 'usd'));
         $this->assertEquals('EUR 50.50', Order::formatMoney(5050, 'eur'));
     }
+
+    // =========================================================================
+    // ORDER BOOKING DATE RANGE TESTS
+    // =========================================================================
+
+    #[Test]
+    public function order_can_have_from_and_until_dates()
+    {
+        $from = now()->addDay();
+        $until = now()->addDays(5);
+
+        $order = Order::factory()->withDateRange($from, $until)->create();
+
+        $this->assertEquals($from->format('Y-m-d H:i:s'), $order->from->format('Y-m-d H:i:s'));
+        $this->assertEquals($until->format('Y-m-d H:i:s'), $order->until->format('Y-m-d H:i:s'));
+    }
+
+    #[Test]
+    public function order_factory_booking_state_sets_default_dates()
+    {
+        $order = Order::factory()->booking()->create();
+
+        $this->assertNotNull($order->from);
+        $this->assertNotNull($order->until);
+        $this->assertTrue($order->from->lt($order->until));
+    }
+
+    #[Test]
+    public function order_created_from_cart_inherits_booking_dates()
+    {
+        $user = User::factory()->create();
+        $from = now()->addDay();
+        $until = now()->addDays(3);
+
+        $cart = Cart::factory()->forCustomer($user)->create([
+            'converted_at' => now(),
+            'from' => $from,
+            'until' => $until,
+        ]);
+
+        $order = Order::createFromCart($cart);
+
+        $this->assertEquals($from->format('Y-m-d H:i:s'), $order->from->format('Y-m-d H:i:s'));
+        $this->assertEquals($until->format('Y-m-d H:i:s'), $order->until->format('Y-m-d H:i:s'));
+    }
+
+    #[Test]
+    public function order_without_booking_dates_has_null_from_until()
+    {
+        $user = User::factory()->create();
+        $cart = Cart::factory()->forCustomer($user)->create([
+            'converted_at' => now(),
+        ]);
+
+        $order = Order::createFromCart($cart);
+
+        $this->assertNull($order->from);
+        $this->assertNull($order->until);
+    }
+
+    // =========================================================================
+    // ORDER AUTOMATIC LOG CREATION TESTS
+    // =========================================================================
+
+    #[Test]
+    public function order_status_change_automatically_creates_log()
+    {
+        $order = Order::factory()->pending()->create();
+
+        $order->updateStatus(OrderStatus::PROCESSING);
+
+        $statusNote = $order->notes()
+            ->where('type', OrderNote::TYPE_STATUS_CHANGE)
+            ->first();
+
+        $this->assertNotNull($statusNote);
+        $this->assertStringContainsString('Pending Payment', $statusNote->content);
+        $this->assertStringContainsString('Processing', $statusNote->content);
+    }
+
+    #[Test]
+    public function order_payment_automatically_creates_log()
+    {
+        $order = Order::factory()->pending()->create([
+            'amount_total' => 10000,
+            'amount_paid' => 0,
+        ]);
+
+        $order->recordPayment(5000, 'pi_test123', 'card', 'stripe');
+
+        $paymentNote = $order->notes()
+            ->where('type', OrderNote::TYPE_PAYMENT)
+            ->first();
+
+        $this->assertNotNull($paymentNote);
+        $this->assertStringContainsString('50.00', $paymentNote->content);
+    }
+
+    #[Test]
+    public function order_refund_automatically_creates_log()
+    {
+        $order = Order::factory()->paid()->create([
+            'amount_total' => 10000,
+            'amount_paid' => 10000,
+        ]);
+
+        $order->recordRefund(3000, 'Partial refund');
+
+        $refundNote = $order->notes()
+            ->where('type', OrderNote::TYPE_REFUND)
+            ->first();
+
+        $this->assertNotNull($refundNote);
+        $this->assertStringContainsString('30.00', $refundNote->content);
+    }
+
+    #[Test]
+    public function order_shipping_creates_log_with_tracking()
+    {
+        $order = Order::factory()->processing()->create();
+
+        $order->markAsShipped('TRACK123456', 'FedEx');
+
+        $shippingNote = $order->notes()
+            ->where('type', OrderNote::TYPE_STATUS_CHANGE)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        $this->assertNotNull($shippingNote);
+        $this->assertStringContainsString('TRACK123456', $shippingNote->content);
+        $this->assertStringContainsString('FedEx', $shippingNote->content);
+    }
+
+    #[Test]
+    public function order_cancellation_creates_log_with_reason()
+    {
+        $order = Order::factory()->pending()->create();
+
+        $order->cancel('Customer changed their mind');
+
+        $cancelNote = $order->notes()
+            ->where('type', OrderNote::TYPE_STATUS_CHANGE)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        $this->assertNotNull($cancelNote);
+        $this->assertStringContainsString('Customer changed their mind', $cancelNote->content);
+    }
+
+    // =========================================================================
+    // ORDER MANUAL LOG CREATION TESTS
+    // =========================================================================
+
+    #[Test]
+    public function order_can_add_manual_internal_note()
+    {
+        $order = Order::factory()->create();
+
+        $note = $order->addNote('This is a manual internal note', OrderNote::TYPE_NOTE, false);
+
+        $this->assertEquals('This is a manual internal note', $note->content);
+        $this->assertEquals(OrderNote::TYPE_NOTE, $note->type);
+        $this->assertFalse($note->is_customer_note);
+    }
+
+    #[Test]
+    public function order_can_add_manual_customer_visible_note()
+    {
+        $order = Order::factory()->create();
+
+        $note = $order->addNote('Thank you for your order!', OrderNote::TYPE_CUSTOMER, true);
+
+        $this->assertEquals('Thank you for your order!', $note->content);
+        $this->assertTrue($note->is_customer_note);
+        $this->assertCount(1, $order->customerNotes);
+    }
+
+    #[Test]
+    public function order_can_add_note_with_author()
+    {
+        $order = Order::factory()->create();
+        $admin = User::factory()->create();
+
+        $note = $order->addNote(
+            'Admin reviewed this order',
+            OrderNote::TYPE_NOTE,
+            false,
+            $admin
+        );
+
+        $this->assertEquals($admin->id, $note->author_id);
+        $this->assertEquals(get_class($admin), $note->author_type);
+        $this->assertTrue($note->author->is($admin));
+    }
+
+    #[Test]
+    public function order_can_add_note_with_meta()
+    {
+        $order = Order::factory()->create();
+
+        $note = $order->addNote('Note with metadata', OrderNote::TYPE_SYSTEM, false, null, [
+            'source' => 'api',
+            'request_id' => 'req_12345',
+        ]);
+
+        $this->assertEquals('api', $note->meta->source);
+        $this->assertEquals('req_12345', $note->meta->request_id);
+    }
+
+    #[Test]
+    public function order_notes_are_ordered_by_newest_first()
+    {
+        $order = Order::factory()->create();
+
+        $note1 = $order->addNote('First note');
+        sleep(1); // Ensure different timestamps
+        $note2 = $order->addNote('Second note');
+
+        $notes = $order->notes()->get();
+
+        $this->assertEquals($note2->id, $notes->first()->id);
+        $this->assertEquals($note1->id, $notes->last()->id);
+    }
+
+    #[Test]
+    public function order_logs_multiple_status_changes()
+    {
+        $order = Order::factory()->pending()->create();
+
+        $order->updateStatus(OrderStatus::PROCESSING);
+        $order->updateStatus(OrderStatus::IN_PREPARATION);
+        $order->updateStatus(OrderStatus::SHIPPED);
+
+        $statusNotes = $order->notes()
+            ->where('type', OrderNote::TYPE_STATUS_CHANGE)
+            ->get();
+
+        // Should have 3 status change notes
+        $this->assertCount(3, $statusNotes);
+    }
+
+    #[Test]
+    public function order_logs_multiple_partial_payments()
+    {
+        $order = Order::factory()->pending()->create([
+            'amount_total' => 10000,
+            'amount_paid' => 0,
+        ]);
+
+        $order->recordPayment(3000);
+        $order->recordPayment(3000);
+        $order->recordPayment(4000);
+
+        $paymentNotes = $order->notes()
+            ->where('type', OrderNote::TYPE_PAYMENT)
+            ->get();
+
+        $this->assertCount(3, $paymentNotes);
+    }
+
+    // =========================================================================
+    // ORDER LOG FILTERING TESTS
+    // =========================================================================
+
+    #[Test]
+    public function order_can_filter_internal_notes()
+    {
+        $order = Order::factory()->create();
+
+        $order->addNote('Internal 1', OrderNote::TYPE_NOTE, false);
+        $order->addNote('Internal 2', OrderNote::TYPE_NOTE, false);
+        $order->addNote('Customer visible', OrderNote::TYPE_CUSTOMER, true);
+
+        $this->assertCount(2, $order->internalNotes);
+    }
+
+    #[Test]
+    public function order_can_get_notes_by_type()
+    {
+        $order = Order::factory()->pending()->create([
+            'amount_total' => 10000,
+        ]);
+
+        $order->addNote('Manual note', OrderNote::TYPE_NOTE);
+        $order->recordPayment(5000);
+        $order->updateStatus(OrderStatus::PROCESSING);
+
+        $notesByType = $order->notes()->where('type', OrderNote::TYPE_NOTE)->get();
+        $paymentsByType = $order->notes()->where('type', OrderNote::TYPE_PAYMENT)->get();
+        $statusChangesByType = $order->notes()->where('type', OrderNote::TYPE_STATUS_CHANGE)->get();
+
+        $this->assertCount(1, $notesByType);
+        $this->assertCount(1, $paymentsByType);
+        $this->assertCount(1, $statusChangesByType);
+    }
 }

@@ -234,4 +234,28 @@ class OrderFactory extends Factory
             'payment_reference' => $reference ?? 'pi_' . $this->faker->regexify('[A-Za-z0-9]{24}'),
         ]);
     }
+
+    /**
+     * Set booking date range.
+     */
+    public function withDateRange(
+        \DateTimeInterface $from,
+        \DateTimeInterface $until
+    ): static {
+        return $this->state([
+            'from' => $from,
+            'until' => $until,
+        ]);
+    }
+
+    /**
+     * Set as a booking order with default date range.
+     */
+    public function booking(): static
+    {
+        return $this->state([
+            'from' => now()->addDay(),
+            'until' => now()->addDays(3),
+        ]);
+    }
 }

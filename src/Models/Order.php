@@ -47,6 +47,8 @@ class Order extends Model
         'internal_note',
         'ip_address',
         'user_agent',
+        'from',
+        'until',
         'completed_at',
         'paid_at',
         'shipped_at',
@@ -68,6 +70,8 @@ class Order extends Model
         'billing_address' => 'object',
         'shipping_address' => 'object',
         'meta' => 'object',
+        'from' => 'datetime',
+        'until' => 'datetime',
         'completed_at' => 'datetime',
         'paid_at' => 'datetime',
         'shipped_at' => 'datetime',
@@ -458,20 +462,27 @@ class Order extends Model
 
     /**
      * Add a note to the order.
+     *
+     * @param  string  $content  The note content
+     * @param  string  $type  The note type (note, status_change, payment, etc.)
+     * @param  bool  $isCustomerNote  Whether the note is visible to the customer
+     * @param  \Illuminate\Database\Eloquent\Model|null  $author  The author model (User, Admin, etc.)
+     * @param  array|object|null  $meta  Additional metadata
      */
     public function addNote(
         string $content,
         string $type = 'note',
         bool $isCustomerNote = false,
-        ?string $authorType = null,
-        ?string $authorId = null
+        $author = null,
+        $meta = null
     ): OrderNote {
         return $this->notes()->create([
             'content' => $content,
             'type' => $type,
             'is_customer_note' => $isCustomerNote,
-            'author_type' => $authorType,
-            'author_id' => $authorId,
+            'author_type' => $author ? get_class($author) : null,
+            'author_id' => $author?->getKey(),
+            'meta' => $meta,
         ]);
     }
 
@@ -841,6 +852,8 @@ class Order extends Model
             'amount_total' => (int) $cart->getTotal(),
             'amount_paid' => 0,
             'amount_refunded' => 0,
+            'from' => $cart->from,
+            'until' => $cart->until,
             'status' => OrderStatus::PENDING,
         ]);
 
