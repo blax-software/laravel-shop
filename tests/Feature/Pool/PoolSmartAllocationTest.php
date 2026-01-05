@@ -343,7 +343,8 @@ class PoolSmartAllocationTest extends TestCase
         $cart->addToCart($this->pool, 3, [], $claimFrom, $claimUntil);
 
         $initialItems = $cart->fresh()->items->sortBy('price')->values();
-        $initialAllocations = $initialItems->map(fn($i) => $i->getMeta()->allocated_single_item_name)->toArray();
+        // Use product relationship to get allocated single item names
+        $initialAllocations = $initialItems->map(fn($i) => $i->product?->name)->toArray();
 
         // Should have expensive items allocated
         $this->assertContains('Spot 4 - 40000', $initialAllocations);
@@ -355,7 +356,8 @@ class PoolSmartAllocationTest extends TestCase
         $cart->setDates($newFrom, $newUntil);
 
         $newItems = $cart->fresh()->items->sortBy('price')->values();
-        $newAllocations = $newItems->map(fn($i) => $i->getMeta()->allocated_single_item_name)->toArray();
+        // Use product relationship to get allocated single item names
+        $newAllocations = $newItems->map(fn($i) => $i->product?->name)->toArray();
 
         // Should now have cheap items allocated
         $this->assertContains('Spot 1 - 10000', $newAllocations);

@@ -267,9 +267,9 @@ class PoolProductionBugTest extends TestCase
         // The 3x 5000 items might be merged since they have the same price_id (pool price)
         // But different single items should NOT be merged
 
-        // Get all allocated single item names
+        // Get all allocated single item names via product relationship
         $allocatedNames = $items->map(fn($item) => [
-            'name' => $item->getMeta()->allocated_single_item_name ?? 'unknown',
+            'name' => $item->product?->name ?? 'unknown',
             'price' => $item->price,
             'quantity' => $item->quantity,
         ])->toArray();
@@ -833,13 +833,12 @@ class PoolProductionBugTest extends TestCase
         $items = [];
         for ($i = 1; $i <= 4; $i++) {
             $item = $cart->addToCart($pool, 1);
-            $meta = $item->getMeta();
             $items[$i] = [
                 'id' => $item->id,
                 'quantity' => $item->quantity,
                 'price' => $item->price,
                 'allocated_id' => $item->product_id,
-                'allocated_name' => $meta->allocated_single_item_name ?? 'none',
+                'allocated_name' => $item->product?->name ?? 'none',
             ];
         }
 
@@ -850,13 +849,12 @@ class PoolProductionBugTest extends TestCase
         $cartItemDetails = [];
         $totalQuantity = 0;
         foreach ($cartItems as $item) {
-            $meta = $item->getMeta();
             $cartItemDetails[] = [
                 'id' => $item->id,
                 'quantity' => $item->quantity,
                 'price' => $item->price,
                 'allocated_id' => $item->product_id,
-                'allocated_name' => $meta->allocated_single_item_name ?? 'none',
+                'allocated_name' => $item->product?->name ?? 'none',
             ];
             $totalQuantity += $item->quantity;
         }

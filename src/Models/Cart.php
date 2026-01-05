@@ -686,6 +686,7 @@ class Cart extends Model
                             'single' => $single,
                             'price' => $price,
                             'price_id' => $priceModel?->id,
+                            'currency' => $priceModel?->currency,
                             'available' => $effectiveAvailable,
                         ];
                     }
@@ -707,7 +708,6 @@ class Cart extends Model
                         'subtotal' => null,
                         'unit_amount' => null,
                     ]);
-                    $cartItem->updateMetaKey('allocated_single_item_name', null);
                 }
                 continue;
             }
@@ -751,12 +751,10 @@ class Cart extends Model
                         if ($singleInfo['price_id'] && $singleInfo['price_id'] !== $cartItem->price_id) {
                             $updates['price_id'] = $singleInfo['price_id'];
                         }
-                        $cartItem->update($updates);
-                        $cartItem->updateMetaKey('allocated_single_item_name', $single->name);
-
-                        // Legacy: update price_id if changed (now handled in the update above)
-                        if (false) {
+                        if ($singleInfo['currency']) {
+                            $updates['currency'] = $singleInfo['currency'];
                         }
+                        $cartItem->update($updates);
 
                         // Track usage
                         $singleUsage[$single->id] = $usedFromSingle + $neededQty;
@@ -795,21 +793,19 @@ class Cart extends Model
                             if ($singleInfo['price_id'] && $singleInfo['price_id'] !== $cartItem->price_id) {
                                 $updates['price_id'] = $singleInfo['price_id'];
                             }
+                            if ($singleInfo['currency']) {
+                                $updates['currency'] = $singleInfo['currency'];
+                            }
                             $cartItem->update($updates);
                             $cartItem->refresh(); // Ensure model reflects database state
-                            $cartItem->updateMetaKey('allocated_single_item_name', $single->name);
 
                             $firstAllocation = false;
                         } else {
                             // Create a new cart item for the additional quantity
-                            // Get price from the single
-                            $priceModel = $single->defaultPrice()->first();
-                            $singlePrice = $priceModel?->getCurrentPrice($single->isOnSale());
-
-                            if ($singlePrice === null && $poolProduct->hasPrice()) {
-                                $priceModel = $poolProduct->defaultPrice()->first();
-                                $singlePrice = $priceModel?->getCurrentPrice($poolProduct->isOnSale());
-                            }
+                            // Use the price info from singleInfo (already calculated with pool fallback)
+                            $singlePrice = $singleInfo['price'];
+                            $priceId = $singleInfo['price_id'];
+                            $currency = $singleInfo['currency'];
 
                             $days = $this->calculateBookingDays($from, $until);
                             $pricePerUnit = (int) round($singlePrice * $days);
@@ -818,8 +814,9 @@ class Cart extends Model
                                 'purchasable_id' => $cartItem->purchasable_id,
                                 'purchasable_type' => $cartItem->purchasable_type,
                                 'product_id' => $single->id,
-                                'price_id' => $priceModel?->id,
+                                'price_id' => $priceId,
                                 'quantity' => $qtyToAllocate,
+                                'currency' => $currency,
                                 'price' => $pricePerUnit,
                                 'regular_price' => $pricePerUnit,
                                 'unit_amount' => (int) round($singlePrice),
@@ -828,8 +825,6 @@ class Cart extends Model
                                 'from' => $from,
                                 'until' => $until,
                             ]);
-
-                            $newCartItem->updateMetaKey('allocated_single_item_name', $single->name);
                         }
 
                         $singleUsage[$single->id] = $usedFromSingle + $qtyToAllocate;
@@ -847,7 +842,6 @@ class Cart extends Model
                                 'subtotal' => null,
                                 'unit_amount' => null,
                             ]);
-                            $cartItem->updateMetaKey('allocated_single_item_name', null);
                         } else {
                             // Partial allocation - the cart item was already updated with what we could allocate
                             // The remaining quantity is lost (over-capacity)
@@ -1263,7 +1257,7 @@ class Cart extends Model
                 $poolPriceId = $priceModel?->id;
 
                 // Still try to find a single item for allocation even with pool's direct price
-                // This ensures allocated_single_item_name is always set for pool items
+                // This ensures product_id is always set for pool items
                 if (!$poolSingleItem) {
                     $singleItems = $cartable->singleProducts;
                     foreach ($singleItems as $single) {
@@ -1338,20 +1332,26 @@ class Cart extends Model
             return $existingItem->fresh();
         }
 
-        // Determine price_id for the cart item
+        // Determine price_id and currency for the cart item
         $priceId = null;
+        $currency = null;
         if ($cartable instanceof Product) {
-            // For pool products, use the single item's price_id
+            // For pool products, use the single item's price_id and currency
             if ($is_pool && $poolPriceId) {
                 $priceId = $poolPriceId;
+                // Get currency from poolItemData if available
+                $poolItemData = $cartable->getNextAvailablePoolItemWithPrice($this, null, $from, $until);
+                $currency = $poolItemData['currency'] ?? null;
             } else {
                 // Get the default price for the product
                 $defaultPrice = $cartable->defaultPrice()->first();
                 $priceId = $defaultPrice?->id;
+                $currency = $defaultPrice?->currency;
             }
         } elseif ($cartable instanceof \Blax\Shop\Models\ProductPrice) {
-            // If adding a ProductPrice directly, use its ID
+            // If adding a ProductPrice directly, use its ID and currency
             $priceId = $cartable->id;
+            $currency = $cartable->currency;
         }
 
         // Create new cart item
@@ -1361,6 +1361,7 @@ class Cart extends Model
             'product_id' => ($cartable instanceof Product && $cartable->isPool() && $poolSingleItem) ? $poolSingleItem->id : null,
             'price_id' => $priceId,
             'quantity' => $quantity,
+            'currency' => $currency,
             'price' => $pricePerUnit,  // Price per unit for the period
             'regular_price' => $regularPricePerUnit,
             'unit_amount' => $unitAmount,  // Base price for 1 quantity, 1 day (in cents)
@@ -1369,11 +1370,6 @@ class Cart extends Model
             'from' => ($is_booking) ? $from : null,
             'until' => ($is_booking) ? $until : null,
         ]);
-
-        // For pool products, store the single item name in meta for display purposes
-        if ($cartable instanceof Product && $cartable->isPool() && $poolSingleItem) {
-            $cartItem->updateMetaKey('allocated_single_item_name', $poolSingleItem->name);
-        }
 
         // Touch activity timestamp
         $this->touchActivity();

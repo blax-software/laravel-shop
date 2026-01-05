@@ -285,6 +285,7 @@ return new class extends Migration
                 $table->foreignUuid('purchase_id')->nullable()->constrained(config('shop.tables.product_purchases', 'product_purchases'))->nullOnDelete();
                 $table->foreignUuid('price_id')->nullable()->constrained(config('shop.tables.product_prices', 'product_prices'))->nullOnDelete();
                 $table->integer('quantity')->default(1);
+                $table->string('currency', 3)->nullable(); // Currency from the selected price
                 $table->integer('price')->nullable(); // Stored in cents, null = unavailable
                 $table->integer('regular_price')->nullable(); // Stored in cents
                 $table->integer('unit_amount')->nullable(); // Base unit price for 1 quantity, 1 day (in cents)

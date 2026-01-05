@@ -129,11 +129,8 @@ class CartItemAvailabilityValidationTest extends TestCase
         // - Remove allocation (product_id = null)
         // - Set price to null (the real indicator of unavailability)
         $item = $this->cart->items()->first();
-        $meta = $item->getMeta();
-        unset($meta->allocated_single_item_name);
         $item->update([
             'product_id' => null,
-            'meta' => json_encode($meta),
             'price' => null,
             'subtotal' => null,
         ]);

@@ -140,9 +140,10 @@ class PoolProductPriceIdTest extends TestCase
         $this->assertNotNull($cartItem->product_id);
         $this->assertEquals($this->singleItem1->id, $cartItem->product_id);
 
-        // Meta should still have the name for display purposes
-        $meta = $cartItem->getMeta();
-        $this->assertEquals($this->singleItem1->name, $meta->allocated_single_item_name);
+        // Verify we can get the actual product through the relationship
+        $allocatedProduct = $cartItem->product;
+        $this->assertNotNull($allocatedProduct);
+        $this->assertEquals($this->singleItem1->name, $allocatedProduct->name);
     }
 
     #[Test]

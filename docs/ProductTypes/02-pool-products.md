@@ -305,13 +305,14 @@ $cartItem = $cart->addToCart($parkingPool, $quantity = 2, [], $from, $until);
    - Claims 1 unit from each: `$spot->claimStock(1, $cartItem, $from, $until)`
 
 3. **Store Claimed Items**
-   - Cart item metadata stores which single items were claimed
-   - Metadata: `claimed_single_items: [spot1_id, spot2_id]`
+   - Cart item's `product_id` column stores which single item was allocated
+   - Each cart item is linked to one specific single item
 
 4. **Calculate Price**
    - Gets price from available single items (using pricing strategy)
-   - Multiplies by number of days
-   - Stores in cart item
+   - If single has no price, falls back to pool's price
+   - Multiplies by number of days for booking products
+   - Stores in cart item (unit_amount, price, subtotal)
 
 ### Manual Stock Operations
 
@@ -399,11 +400,15 @@ $cartItem = $cart->addToCart($parkingPool, $quantity = 1, [], $from, $until);
 // Cart item properties:
 // - purchasable_id: Pool Product ID
 // - purchasable_type: Product::class  
-// - product_id: Allocated Single Item ID (NEW!)
+// - product_id: Allocated Single Item ID
+// - price_id: Price used (from single or pool fallback)
+// - currency: Currency from the selected price
 // - quantity: 1
 // - from: 2025-01-15
 // - until: 2025-01-17
-// - price: (unit_amount × 2 days)
+// - unit_amount: Price per day (in cents)
+// - price: unit_amount × days (calculated booking price)
+// - subtotal: price × quantity
 ```
 
 ### Product ID Column
@@ -687,13 +692,12 @@ $price = $pool->getLowestAvailablePoolPrice($from, $until);
 
 ### Single Items Not Released After Cart Deletion
 
-**Cause:** Metadata not properly storing claimed items
+**Cause:** Cart item's `product_id` not properly tracking claimed single
 
 **Solution:**
 ```php
-// Ensure cart item has metadata
-$meta = $cartItem->getMeta();
-$claimedItems = $meta->claimed_single_items ?? [];
+// Check the cart item's product_id
+$allocatedSingle = $cartItem->product;
 
 // Manually release if needed
 $pool->releasePoolStock($cartItem);

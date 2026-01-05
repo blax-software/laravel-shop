@@ -50,3 +50,41 @@ if ($singlePrice !== null) {
 - `src/Models/Cart.php` - removed pricing strategy comparison
 
 **Key Learning:** ALWAYS verify understanding of business logic before implementing. Pool pricing strategy is about allocation order, not price comparison.
+
+### 2026-01-05: Cart Item Price/Currency Fixes
+
+**Issues Fixed:**
+1. Pool singles bookings should show `unit_amount` when added (not 0), even without dates
+2. Bug: Date range adjustment was showing wrong price (5000 instead of 1755) when singles had no price
+3. Added `currency` column to cart_items table to store currency from selected price
+4. Removed obsolete `allocated_single_item_name` from meta (replaced by `product_id` column)
+
+**Root Cause of Price Bug:**
+- `updateDates()` was calling `$allocatedSingle->defaultPrice()->first()` instead of using `$this->price()->first()`
+- When single has no price, `reallocatePoolItems` sets `price_id` to the pool's price model
+- `updateDates()` was ignoring this and going back to the single's (non-existent) price
+
+**Fix Applied:**
+```php
+// In CartItem::updateDates()
+// IMPORTANT: Use the price_id relationship first, as it was set by reallocatePoolItems
+$priceModel = $this->price_id ? $this->price()->first() : null;
+if ($priceModel) {
+    $pricePerDay = $priceModel->getCurrentPrice(...);
+} else {
+    // Fallback: Get price from the allocated single, with fallback to pool price
+    ...
+}
+```
+
+**New CartItem Fields:**
+- `currency`: Currency from the selected price model (e.g., 'USD', 'EUR')
+
+**Removed:**
+- `meta->allocated_single_item_name` - use `$cartItem->product->name` instead via the `product_id` relationship
+
+**Files Modified:**
+- `src/Models/CartItem.php` - added currency, fixed updateDates price resolution
+- `src/Models/Cart.php` - added currency to addToCart and reallocatePoolItems
+- `src/Traits/MayBePoolProduct.php` - added currency to getNextAvailablePoolItemWithPrice return
+- `database/migrations/create_blax_shop_tables.php.stub` - added currency column

@@ -21,6 +21,7 @@ class CartItem extends Model
         'product_id',
         'price_id',
         'quantity',
+        'currency',
         'price',
         'regular_price',
         'unit_amount',
@@ -34,6 +35,7 @@ class CartItem extends Model
 
     protected $casts = [
         'quantity' => 'integer',
+        'currency' => 'string',
         'price' => 'integer',
         'regular_price' => 'integer',
         'unit_amount' => 'integer',
@@ -503,22 +505,37 @@ class CartItem extends Model
         // This ensures consistency when reallocatePoolItems has already assigned a specific single
         // The product_id column stores the actual single product being purchased
         $allocatedSingleItemId = $this->product_id;
+        $currency = null;
 
         if ($product->isPool() && $allocatedSingleItemId) {
             // Get the allocated single item from the product_id column
             $allocatedSingle = $this->product;
 
             if ($allocatedSingle) {
-                // Get price from the allocated single, with fallback to pool price
-                $priceModel = $allocatedSingle->defaultPrice()->first();
-                $pricePerDay = $priceModel?->getCurrentPrice($allocatedSingle->isOnSale());
-                $regularPricePerDay = $priceModel?->getCurrentPrice(false) ?? $pricePerDay;
+                // IMPORTANT: Use the price_id relationship first, as it was set by reallocatePoolItems
+                // to the correct price (either single's price or pool's fallback price).
+                // Only fall back to defaultPrice() if price_id is not set.
+                $priceModel = $this->price_id ? $this->price()->first() : null;
 
-                // Fallback to pool price if single has no price
-                if ($pricePerDay === null && $product->hasPrice()) {
-                    $poolPriceModel = $product->defaultPrice()->first();
-                    $pricePerDay = $poolPriceModel?->getCurrentPrice($product->isOnSale());
-                    $regularPricePerDay = $poolPriceModel?->getCurrentPrice(false) ?? $pricePerDay;
+                if ($priceModel) {
+                    // Use the price model from price_id relationship
+                    $pricePerDay = $priceModel->getCurrentPrice($allocatedSingle->isOnSale() || $product->isOnSale());
+                    $regularPricePerDay = $priceModel->getCurrentPrice(false) ?? $pricePerDay;
+                    $currency = $priceModel->currency;
+                } else {
+                    // Fallback: Get price from the allocated single, with fallback to pool price
+                    $priceModel = $allocatedSingle->defaultPrice()->first();
+                    $pricePerDay = $priceModel?->getCurrentPrice($allocatedSingle->isOnSale());
+                    $regularPricePerDay = $priceModel?->getCurrentPrice(false) ?? $pricePerDay;
+                    $currency = $priceModel?->currency;
+
+                    // Fallback to pool price if single has no price
+                    if ($pricePerDay === null && $product->hasPrice()) {
+                        $poolPriceModel = $product->defaultPrice()->first();
+                        $pricePerDay = $poolPriceModel?->getCurrentPrice($product->isOnSale());
+                        $regularPricePerDay = $poolPriceModel?->getCurrentPrice(false) ?? $pricePerDay;
+                        $currency = $poolPriceModel?->currency;
+                    }
                 }
             } else {
                 // Allocated single not found - this is an error state, mark as unavailable
@@ -538,6 +555,10 @@ class CartItem extends Model
             // Pass cart item ID to exclude this item from usage calculation
             $pricePerDay = $product->getCurrentPrice(null, $this->cart, $from, $until, $this->id);
             $regularPricePerDay = $product->getCurrentPrice(false, $this->cart, $from, $until, $this->id) ?? $pricePerDay;
+
+            // Get currency from the price model
+            $priceModel = $product->defaultPrice()->first();
+            $currency = $priceModel?->currency;
         }
 
         // If no price found, mark as unavailable
@@ -563,6 +584,7 @@ class CartItem extends Model
         $this->update([
             'from' => $from,
             'until' => $until,
+            'currency' => $currency,
             'price' => $pricePerUnit,
             'regular_price' => $regularPricePerUnit,
             'unit_amount' => $unitAmount,

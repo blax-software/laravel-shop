@@ -40,8 +40,17 @@ The goal of this file is to not miss any important model traits, relationships, 
 
 ### CartItem
 - An item within a Cart.
-- Links a `Product` and a specific `ProductPrice`.
-- **Key Attributes**: `quantity`, `dates` (for bookings), `configuration`.
+- Links a `Product` (purchasable) and a specific `ProductPrice`.
+- **Key Attributes**: 
+  - `purchasable_id`, `purchasable_type`: The product being purchased
+  - `product_id`: For pool items, the allocated single item; otherwise null
+  - `price_id`: The selected price model
+  - `currency`: Currency from the selected price
+  - `quantity`: Number of items
+  - `unit_amount`: Base price per unit (per day for bookings)
+  - `price`: Calculated price (unit_amount × days for bookings, same as unit_amount for simple)
+  - `subtotal`: Total (price × quantity)
+  - `from`, `until`: Booking date range (for booking products)
 
 ## Order Management
 ### Order

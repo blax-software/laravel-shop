@@ -744,7 +744,7 @@ trait MayBePoolProduct
      * @param \DateTimeInterface|null $from Start date for availability check
      * @param \DateTimeInterface|null $until End date for availability check
      * @param string|int|null $excludeCartItemId Cart item ID to exclude from usage calculation (for date updates)
-     * @return array|null ['price' => float, 'item' => Product, 'price_id' => string|null]
+     * @return array|null ['price' => float, 'item' => Product, 'price_id' => string|null, 'currency' => string|null]
      */
     public function getNextAvailablePoolItemWithPrice(
         \Blax\Shop\Models\Cart $cart,
@@ -856,6 +856,7 @@ trait MayBePoolProduct
                             'quantity' => $availableFromThisItem,
                             'item' => $item,
                             'price_id' => $priceModel?->id,
+                            'currency' => $priceModel?->currency,
                         ];
                     }
                 }
@@ -895,6 +896,7 @@ trait MayBePoolProduct
                 'price' => $averagePrice,
                 'item' => $availableItems[0]['item'],
                 'price_id' => $availableItems[0]['price_id'],
+                'currency' => $availableItems[0]['currency'],
             ];
         }
 
@@ -912,6 +914,7 @@ trait MayBePoolProduct
             'price' => $availableItems[0]['price'],
             'item' => $availableItems[0]['item'],
             'price_id' => $availableItems[0]['price_id'],
+            'currency' => $availableItems[0]['currency'],
         ];
     }
 
