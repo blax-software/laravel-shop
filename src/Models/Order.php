@@ -147,10 +147,11 @@ class Order extends Model
                 $difference = $newPaid - $oldPaid;
 
                 if ($difference > 0) {
+                    $currency = $order->currency ?? config('shop.currency', 'USD');
                     $order->addNote(
-                        "Payment received: " . static::formatMoney($difference, $order->currency),
+                        "Payment received: " . static::formatMoney($difference, $currency),
                         'payment',
-                        false
+                        true
                     );
 
                     // Mark as paid if fully paid
@@ -441,10 +442,12 @@ class Order extends Model
             $this->amount_refunded = ($this->amount_refunded ?? 0) + $amount;
             $this->save();
 
+            $currency = $this->currency ?? config('shop.currency', 'USD');
             $this->addNote(
-                "Refund processed: " . static::formatMoney($amount, $this->currency) .
+                "Refund processed: " . static::formatMoney($amount, $currency) .
                     ($reason ? " - Reason: {$reason}" : ''),
-                'refund'
+                'refund',
+                true
             );
 
             // If fully refunded, update status
@@ -567,6 +570,56 @@ class Order extends Model
     }
 
     /**
+     * Scope to get final/finished orders (completed, cancelled, refunded, failed, delivered).
+     * Uses OrderStatus::isFinal() to determine which statuses are final.
+     */
+    public function scopeFinal($query)
+    {
+        $finalStatuses = array_map(
+            fn(OrderStatus $status) => $status->value,
+            array_filter(OrderStatus::cases(), fn(OrderStatus $status) => $status->isFinal())
+        );
+
+        return $query->whereIn('status', $finalStatuses);
+    }
+
+    /**
+     * Alias for scopeFinal - get finished orders.
+     */
+    public function scopeFinished($query)
+    {
+        return $this->scopeFinal($query);
+    }
+
+    /**
+     * Scope to get orders requiring payment (pending status).
+     * Uses OrderStatus::requiresPayment() to determine which statuses require payment.
+     */
+    public function scopeRequiresPayment($query)
+    {
+        $requiresPaymentStatuses = array_map(
+            fn(OrderStatus $status) => $status->value,
+            array_filter(OrderStatus::cases(), fn(OrderStatus $status) => $status->requiresPayment())
+        );
+
+        return $query->whereIn('status', $requiresPaymentStatuses);
+    }
+
+    /**
+     * Scope to get orders with a paid status (processing, shipped, delivered, etc.).
+     * Uses OrderStatus::isPaid() - this is different from scopePaid() which checks amounts.
+     */
+    public function scopeStatusPaid($query)
+    {
+        $paidStatuses = array_map(
+            fn(OrderStatus $status) => $status->value,
+            array_filter(OrderStatus::cases(), fn(OrderStatus $status) => $status->isPaid())
+        );
+
+        return $query->whereIn('status', $paidStatuses);
+    }
+
+    /**
      * Scope to get completed orders.
      */
     public function scopeCompleted($query)
@@ -575,7 +628,7 @@ class Order extends Model
     }
 
     /**
-     * Scope to get paid orders.
+     * Scope to get paid orders (by amount).
      */
     public function scopePaid($query)
     {
@@ -583,7 +636,7 @@ class Order extends Model
     }
 
     /**
-     * Scope to get unpaid orders.
+     * Scope to get unpaid orders (by amount).
      */
     public function scopeUnpaid($query)
     {
@@ -857,7 +910,7 @@ class Order extends Model
             'status' => OrderStatus::PENDING,
         ]);
 
-        $order->addNote('Order created from cart checkout', 'system', false);
+        $order->addNote('Order created from cart checkout', 'system', true);
 
         return $order;
     }

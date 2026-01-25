@@ -685,7 +685,6 @@ class StripeWebhookOrderTest extends TestCase
         $paymentNote = $order->notes()->where('type', OrderNote::TYPE_PAYMENT)->first();
         $this->assertNotNull($paymentNote, 'Payment note should be created');
         $this->assertStringContainsString('50', $paymentNote->content);
-        $this->assertStringContainsString('Stripe checkout', $paymentNote->content);
     }
 
     #[Test]

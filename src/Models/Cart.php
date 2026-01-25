@@ -2058,6 +2058,7 @@ class Cart extends Model
         // Prepare session parameters
         $sessionParams = [
             'payment_method_types' => ['card'],
+            'currency' => strtoupper($this->currency),
             'line_items' => $lineItems,
             'mode' => 'payment',
             'success_url' => $success_url,

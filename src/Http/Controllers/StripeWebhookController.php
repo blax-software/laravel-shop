@@ -163,10 +163,11 @@ class StripeWebhookController
         // recordPayment(int $amount, ?string $reference, ?string $method, ?string $provider)
         $order->recordPayment($amountPaid, $session->payment_intent, 'stripe', 'stripe');
 
-        // Add a detailed note
+        // Add a detailed note (customer-visible)
         $order->addNote(
-            "Payment of " . Order::formatMoney($amountPaid, $currency) . " received via Stripe checkout (Session: {$session->id})",
-            OrderNote::TYPE_PAYMENT
+            "Payment of " . Order::formatMoney($amountPaid, $currency) . " received",
+            OrderNote::TYPE_PAYMENT,
+            true
         );
 
         // Mark order as processing if payment is successful
@@ -202,10 +203,11 @@ class StripeWebhookController
             $order = $cart->order;
             if ($order && $order->status->canTransitionTo(OrderStatus::FAILED)) {
                 $order->update(['status' => OrderStatus::FAILED]);
-                // addNote(string $content, string $type, bool $isCustomerNote, ?string $authorType, ?string $authorId)
+                // Internal note - payment failure details should not be shown to customer
                 $order->addNote(
                     "Payment failed via Stripe checkout (Session: {$session->id})",
-                    OrderNote::TYPE_PAYMENT
+                    OrderNote::TYPE_PAYMENT,
+                    false
                 );
             }
         }
@@ -231,9 +233,11 @@ class StripeWebhookController
                 // Add note to order if it exists
                 $order = $cart->order;
                 if ($order) {
+                    // Internal note - session expiry is a technical detail
                     $order->addNote(
                         "Stripe checkout session expired (Session: {$session->id})",
-                        OrderNote::TYPE_SYSTEM
+                        OrderNote::TYPE_SYSTEM,
+                        false
                     );
                 }
             }
