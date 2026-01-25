@@ -2031,7 +2031,7 @@ class Cart extends Model
             // Build line item using price_data for dynamic pricing
             $lineItem = [
                 'price_data' => [
-                    'currency' => config('shop.currency', 'usd'),
+                    'currency' => $item->price->currency ?? strtoupper($this->currency),
                     'product_data' => [
                         'name' => $productName,
                         ...($description ? ['description' => $description] : []),
