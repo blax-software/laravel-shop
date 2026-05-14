@@ -1,3 +1,5 @@
+[![Blax Software OSS](https://raw.githubusercontent.com/blax-software/laravel-workkit/master/art/oss-initiative-banner.svg)](https://github.com/blax-software)
+
 # Laravel Shop Package
 
 [![Tests](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml/badge.svg)](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml)
@@ -188,3 +190,17 @@ The tests use an in-memory SQLite database and Orchestra Testbench.
 ## Documentation
 
 For more detailed documentation, please refer to the `docs/` directory in the repository.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=blax-software%2Flaravel-shop&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=blax-software/laravel-shop&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=blax-software/laravel-shop&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=blax-software/laravel-shop&type=date&legend=top-left" />
+ </picture>
+</a>
