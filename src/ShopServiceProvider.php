@@ -93,13 +93,16 @@ class ShopServiceProvider extends ServiceProvider
      * concisely. Currently provides:
      *
      *   Route::shopLoans('loans', \App\Http\Controllers\LoanController::class)
-     *     → POST   {prefix}                     index of caller's loans
+     *     → GET    {prefix}                     index of caller's loans
      *     → POST   {prefix}                     check out a new loan
      *     → GET    {prefix}/{purchase}          show a single loan
      *     → POST   {prefix}/{purchase}/extend   extend the due date
      *     → POST   {prefix}/{purchase}/return   return the item
      *
-     * The controller is expected to use {@see \Blax\Shop\Http\Controllers\Concerns\HandlesLoans}.
+     * The controller must expose matching methods: index, store, show,
+     * extend, returnLoan. The {purchase} route parameter is passed as a
+     * raw UUID string — controllers typically resolve it through the
+     * authenticated user's loans relation so ownership falls out for free.
      */
     protected function registerRouteMacros(): void
     {
