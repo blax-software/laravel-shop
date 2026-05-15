@@ -94,22 +94,26 @@ class ShopServiceProvider extends ServiceProvider
      *
      *   Route::shopLoans('loans', \App\Http\Controllers\LoanController::class)
      *     → GET    {prefix}                     index of caller's loans
-     *     → POST   {prefix}                     check out a new loan
      *     → GET    {prefix}/{purchase}          show a single loan
      *     → POST   {prefix}/{purchase}/extend   extend the due date
      *     → POST   {prefix}/{purchase}/return   return the item
      *
-     * The controller must expose matching methods: index, store, show,
-     * extend, returnLoan. The {purchase} route parameter is passed as a
-     * raw UUID string — controllers typically resolve it through the
-     * authenticated user's loans relation so ownership falls out for free.
+     * The controller must expose matching methods: index, show, extend,
+     * returnLoan. The {purchase} route parameter is passed as a raw UUID
+     * string — controllers typically resolve it through the authenticated
+     * user's loans relation so ownership falls out for free.
+     *
+     * Loan creation (store) is intentionally not registered here: the URL
+     * shape is host-specific because it depends on which product model is
+     * being checked out (e.g. POST /books/{book}/loans). Hosts wire that
+     * route themselves so they can use implicit route model binding on
+     * their own model class.
      */
     protected function registerRouteMacros(): void
     {
         \Illuminate\Support\Facades\Route::macro('shopLoans', function (string $prefix, string $controller): void {
             \Illuminate\Support\Facades\Route::prefix($prefix)->group(function () use ($controller): void {
                 \Illuminate\Support\Facades\Route::get('/', [$controller, 'index']);
-                \Illuminate\Support\Facades\Route::post('/', [$controller, 'store']);
                 \Illuminate\Support\Facades\Route::get('/{purchase}', [$controller, 'show']);
                 \Illuminate\Support\Facades\Route::post('/{purchase}/extend', [$controller, 'extend']);
                 \Illuminate\Support\Facades\Route::post('/{purchase}/return', [$controller, 'returnLoan']);
