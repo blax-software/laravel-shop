@@ -334,6 +334,47 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertEquals('mock_session_id', $meta->stripe_session_id);
     }
 
+    #[Test]
+    public function checkout_session_emits_lowercase_currency_codes(): void
+    {
+        // Regression: Cart::checkoutSession() used to call
+        // `strtoupper($this->currency)`, but Stripe expects lowercase ISO
+        // codes — host apps were sending 'USD' / 'EUR' to Stripe by mistake.
+        // The implementation now consistently lowercases the resolved
+        // currency at both the session level and per line item.
+        config(['shop.stripe.enabled' => true]);
+        config(['shop.currency' => 'eur']);
+        config(['services.stripe.secret' => 'sk_test_fake']);
+
+        $product = Product::factory()->create(['name' => 'P', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 1000,
+            'currency' => 'EUR', // intentionally uppercase on the price model
+            'is_default' => true,
+        ]);
+        $this->cart->addToCart($product, 1);
+
+        $captured = null;
+        \Stripe\Checkout\Session::$createCallback = function ($params) use (&$captured) {
+            $captured = $params;
+            $session = new \stdClass();
+            $session->id = 'mock';
+            return $session;
+        };
+
+        $this->cart->checkoutSession([
+            'success_url' => 'https://example.com/s',
+            'cancel_url' => 'https://example.com/c',
+        ]);
+
+        // Session-level: lowercase regardless of how the cart row spells it.
+        $this->assertSame('eur', $captured['currency']);
+        // Line-item: derives from the price model's currency and lowercases it.
+        $this->assertSame('eur', $captured['line_items'][0]['price_data']['currency']);
+    }
+
     /**
      * Mock Stripe Checkout Session creation to avoid actual API calls
      */

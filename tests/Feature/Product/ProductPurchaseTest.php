@@ -62,6 +62,64 @@ class ProductPurchaseTest extends TestCase
     }
 
     #[Test]
+    public function user_relation_resolves_to_the_purchaser_when_it_is_a_user(): void
+    {
+        // Regression: ProductPurchase::user() previously inspected
+        // `purchasable_type` (what was sold), which could never equal the
+        // configured auth model — so user() always returned null. The
+        // correct column to inspect is `purchaser_type` (who bought).
+        config()->set('auth.providers.users.model', User::class);
+
+        $user = User::factory()->create();
+        $product = Product::factory()->withPrices()->create([
+            'manage_stock' => false,
+        ]);
+
+        $purchase = ProductPurchase::create([
+            'purchaser_id' => $user->id,
+            'purchaser_type' => User::class,
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'quantity' => 1,
+            'amount' => 5000,
+            'status' => 'unpaid',
+        ]);
+
+        $resolved = $purchase->user();
+
+        $this->assertNotNull($resolved, 'user() must resolve when purchaser is a User');
+        $this->assertSame($user->id, $resolved->first()?->id);
+    }
+
+    #[Test]
+    public function user_relation_returns_null_when_purchaser_is_not_a_user(): void
+    {
+        // The previous bug masked this branch: with the column check fixed,
+        // a purchase made by a non-user model (e.g. a Product purchasing
+        // another product in a B2B flow) must still return null.
+        config()->set('auth.providers.users.model', User::class);
+
+        $product = Product::factory()->withPrices()->create([
+            'manage_stock' => false,
+        ]);
+        $otherProduct = Product::factory()->withPrices()->create([
+            'manage_stock' => false,
+        ]);
+
+        $purchase = ProductPurchase::create([
+            'purchaser_id' => $otherProduct->id,
+            'purchaser_type' => get_class($otherProduct),
+            'purchasable_id' => $product->id,
+            'purchasable_type' => get_class($product),
+            'quantity' => 1,
+            'amount' => 5000,
+            'status' => 'unpaid',
+        ]);
+
+        $this->assertNull($purchase->user());
+    }
+
+    #[Test]
     public function purchase_belongs_to_purchasable()
     {
         $user = User::factory()->create();

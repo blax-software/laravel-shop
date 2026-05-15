@@ -1,12 +1,16 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Traits;
 
 use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Events\LoanExtended;
 use Blax\Shop\Events\LoanReturned;
 use Blax\Shop\Models\ProductPrice;
-use Illuminate\Support\Carbon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
 
 /**
  * Loan / rental lifecycle for a {@see \Blax\Shop\Models\ProductPurchase} row.
@@ -27,6 +31,19 @@ use Illuminate\Support\Carbon;
  *
  * The product-side counterpart is {@see IsLoanableProduct}, which exposes a
  * `loan()` helper to create a purchase row pre-filled for this lifecycle.
+ *
+ * # Host-model contract
+ *
+ * Designed for {@see \Blax\Shop\Models\ProductPurchase}; expects these
+ * columns and accessors on the host:
+ *
+ * @property \Illuminate\Support\Carbon|null $from   Loan check-out timestamp.
+ * @property \Illuminate\Support\Carbon|null $until  Loan due timestamp (mutated by {@see self::extend()}).
+ * @property array<string, mixed>|\stdClass|null $meta Carries `returned_at` and `extensions_used` keys.
+ * @property \Blax\Shop\Enums\PurchaseStatus $status Set to `COMPLETED` on {@see self::markReturned()}.
+ * @property string|null $price_id        FK to {@see ProductPrice} used for cost calculation.
+ * @property-read ProductPrice|null $price  Eager-loadable price relation.
+ * @property-read Model|null $purchasable  The loaned item — typically a {@see IsLoanableProduct}-using model.
  */
 trait HasLoanLifecycle
 {
@@ -154,8 +171,11 @@ trait HasLoanLifecycle
 
     /**
      * Scope: loans currently in the borrower's hands (not returned).
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
      */
-    public function scopeActiveLoans($query)
+    public function scopeActiveLoans(Builder $query): Builder
     {
         return $query
             ->where('status', PurchaseStatus::PENDING->value)
@@ -164,16 +184,22 @@ trait HasLoanLifecycle
 
     /**
      * Scope: loans that have been handed back.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
      */
-    public function scopeReturned($query)
+    public function scopeReturned(Builder $query): Builder
     {
         return $query->whereNotNull('meta->returned_at');
     }
 
     /**
      * Scope: loans past their due date and not yet returned.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
      */
-    public function scopeOverdue($query)
+    public function scopeOverdue(Builder $query): Builder
     {
         return $query->activeLoans()->where('until', '<', now());
     }

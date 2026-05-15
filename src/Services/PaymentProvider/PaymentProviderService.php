@@ -14,7 +14,7 @@ class PaymentProviderService
 {
     protected StripeService $stripeService;
 
-    public function __construct(StripeService $stripeService = null)
+    public function __construct(?StripeService $stripeService = null)
     {
         $this->stripeService = $stripeService ?? app(StripeService::class);
     }

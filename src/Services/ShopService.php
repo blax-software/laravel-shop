@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Services;
 
 use Blax\Shop\Enums\OrderStatus;
@@ -11,7 +13,7 @@ use Blax\Shop\Models\ProductCategory;
 use Blax\Shop\Models\ProductPurchase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Carbon;
+use Carbon\Carbon;
 
 class ShopService
 {

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Enums\OrderStatus;
@@ -179,7 +181,8 @@ class Order extends Model
         if ($lastOrder) {
             // Extract the sequence number and increment
             $lastNumber = (int) substr($lastOrder->order_number, strlen("{$prefix}{$date}"));
-            $sequence = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+            // str_pad requires a string under strict_types — cast the int explicitly.
+            $sequence = str_pad((string) ($lastNumber + 1), 4, '0', STR_PAD_LEFT);
         } else {
             $sequence = '0001';
         }

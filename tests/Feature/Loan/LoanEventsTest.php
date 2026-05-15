@@ -19,9 +19,11 @@ use Workbench\App\Models\User;
 /**
  * Loan lifecycle domain events.
  *
- *   LoanCreated   — host dispatches it explicitly after creating a ProductPurchase
- *                   for a loanable item (the package can't tell loans apart from
- *                   carts / one-off purchases without ambiguity).
+ *   LoanCreated   — auto-dispatched from IsLoanableProduct::checkOutTo()
+ *                   (see CheckOutToTest). Hosts that build ProductPurchase
+ *                   rows directly — bypassing checkOutTo — must dispatch
+ *                   the event themselves; that direct-construction path is
+ *                   what this file exercises.
  *   LoanExtended  — dispatched from HasLoanLifecycle::extend()
  *   LoanReturned  — dispatched from HasLoanLifecycle::markReturned()
  */
@@ -91,11 +93,12 @@ class LoanEventsTest extends TestCase
     }
 
     #[Test]
-    public function loan_created_is_a_host_dispatched_event(): void
+    public function loan_created_can_be_dispatched_manually_when_bypassing_checkOutTo(): void
     {
-        // The package does NOT auto-dispatch LoanCreated — it can't reliably
-        // distinguish loans from other ProductPurchase rows. Test that the
-        // event class exists and can be dispatched by an integrating host.
+        // The package auto-dispatches LoanCreated from IsLoanableProduct::
+        // checkOutTo() (see CheckOutToTest). Hosts that assemble a
+        // ProductPurchase row directly — e.g. importing historical loans —
+        // can still raise the same event so downstream listeners fire.
         Event::fake([LoanCreated::class]);
 
         $loan = $this->loan();

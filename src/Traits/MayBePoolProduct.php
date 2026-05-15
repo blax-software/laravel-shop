@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Traits;
 
 use Blax\Shop\Enums\ProductRelationType;
@@ -29,7 +31,7 @@ trait MayBePoolProduct
      * For pool products, returns the count of available single items
      * For regular products, returns available stock
      */
-    public function getAvailableQuantity(\DateTimeInterface $from = null, \DateTimeInterface $until = null): int
+    public function getAvailableQuantity(?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null): int
     {
         if ($this->isPool()) {
             return $this->getPoolMaxQuantity($from, $until);
@@ -41,7 +43,7 @@ trait MayBePoolProduct
     /**
      * Get the maximum available quantity for a pool product based on single items
      */
-    public function getPoolMaxQuantity(\DateTimeInterface $from = null, \DateTimeInterface $until = null): int
+    public function getPoolMaxQuantity(?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null): int
     {
         if (!$this->isPool()) {
             return $this->getAvailableStock();

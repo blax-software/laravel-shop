@@ -2,6 +2,7 @@
 
 namespace Blax\Shop\Tests\Feature\Product;
 
+use Blax\Shop\Enums\ProductAttributeType;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductAttribute;
 use Blax\Shop\Tests\TestCase;
@@ -207,6 +208,33 @@ class ProductAttributeTest extends TestCase
         $this->assertCount(1, $product2->attributes);
         $this->assertEquals('Brand A', $product1->attributes->first()->value);
         $this->assertEquals('Brand B', $product2->attributes->first()->value);
+    }
+
+    #[Test]
+    public function type_and_meta_round_trip_through_mass_assignment(): void
+    {
+        // Regression: `type` and `meta` were missing from $fillable, so
+        // create([... 'type' => 'color' ...]) silently dropped them and every
+        // attribute came back as the default 'text' type. The cast on `type`
+        // now also resolves it to the ProductAttributeType enum on read.
+        $product = Product::factory()->create();
+
+        $color = ProductAttribute::create([
+            'product_id' => $product->id,
+            'key' => 'Accent color',
+            'value' => '#1e293b',
+            'type' => ProductAttributeType::COLOR,
+            'meta' => ['display_as' => 'swatch'],
+        ]);
+
+        $fresh = $color->fresh();
+
+        $this->assertSame(ProductAttributeType::COLOR, $fresh->type);
+        $this->assertSame(['display_as' => 'swatch'], $fresh->meta);
+        $this->assertDatabaseHas('product_attributes', [
+            'id' => $fresh->id,
+            'type' => ProductAttributeType::COLOR->value,
+        ]);
     }
 
     #[Test]

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Contracts\Cartable;
@@ -8,11 +10,42 @@ use Blax\Shop\Enums\BillingScheme;
 use Blax\Shop\Enums\PriceType;
 use Blax\Shop\Enums\RecurringInterval;
 use Blax\Workkit\Traits\HasMetaTranslation;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
+/**
+ * A price record attached to a {@see Purchasable} (usually a {@see Product},
+ * but anything can carry prices via the polymorphic `purchasable_*` columns).
+ *
+ * A single purchasable can carry several prices — one default, plus
+ * alternative tiers (bulk, region, customer-segment). Pricing follows the
+ * package-wide rule: amounts are integer cents, currency lives in a
+ * separate `currency` column, never inferred from the amount.
+ *
+ * @property string $id
+ * @property string $purchasable_type
+ * @property string $purchasable_id
+ * @property string|null $stripe_price_id
+ * @property string|null $name
+ * @property \Blax\Shop\Enums\PriceType $type
+ * @property string $currency  ISO 4217.
+ * @property float $unit_amount       Per-unit price in the smallest currency unit (cents). Cast to float for math.
+ * @property float|null $sale_unit_amount Sale price; defaults to `unit_amount` when unset.
+ * @property bool $is_default
+ * @property bool $active
+ * @property \Blax\Shop\Enums\BillingScheme $billing_scheme
+ * @property \Blax\Shop\Enums\RecurringInterval|null $interval
+ * @property int|null $interval_count
+ * @property int|null $trial_period_days
+ * @property \stdClass $meta
+ *
+ * @property-read Model $purchasable
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, ProductPriceTier> $tiers
+ */
 class ProductPrice extends Model implements Cartable
 {
     use HasFactory, HasUuids, HasMetaTranslation;
@@ -48,17 +81,34 @@ class ProductPrice extends Model implements Cartable
         'trial_period_days' => 'integer',
     ];
 
-    public function purchasable()
+    /**
+     * The {@see Purchasable} this price belongs to (usually a {@see Product}).
+     *
+     * @return MorphTo<Model, $this>
+     */
+    public function purchasable(): MorphTo
     {
         return $this->morphTo();
     }
 
-    public function scopeIsActive($query)
+    /**
+     * Filter to only currently-active prices (default scope alternative).
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeIsActive(Builder $query): Builder
     {
         return $query->where('active', true);
     }
 
-    public function getCurrentPrice(bool|null $sale_price = null): float
+    /**
+     * Resolve the unit price this record currently sells at.
+     *
+     * Returns the sale price when `$sale_price` is true *and* a
+     * `sale_unit_amount` is configured; otherwise the regular `unit_amount`.
+     */
+    public function getCurrentPrice(?bool $sale_price = null): float
     {
         if ($sale_price) {
             return $this->sale_unit_amount ?? $this->unit_amount;

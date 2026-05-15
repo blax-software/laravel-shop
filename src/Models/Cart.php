@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Contracts\Cartable;
@@ -946,7 +948,7 @@ class Cart extends Model
             ->where('customer_type', $userModel);
     }
 
-    public static function scopeUnpaid($query)
+    public function scopeUnpaid($query)
     {
         return $query->whereDoesntHave('purchases', function ($q) {
             $q->whereColumn('total_amount', '!=', 'amount_paid');
@@ -2034,10 +2036,20 @@ class Cart extends Model
             // Price is already stored in cents, Stripe expects smallest currency unit
             $unitAmountCents = (int) $item->price;
 
+            // Stripe wants lowercase ISO-4217 currency codes. Resolve from
+            // the cart item's price relation first (the source of truth for
+            // the line being charged), then the cart's own currency column,
+            // then the package default — never assume the cart row has one.
+            $lineCurrency = strtolower(
+                $item->price()->first()?->currency
+                    ?? $this->currency
+                    ?? config('shop.currency', 'usd')
+            );
+
             // Build line item using price_data for dynamic pricing
             $lineItem = [
                 'price_data' => [
-                    'currency' => $item->price->currency ?? strtoupper($this->currency),
+                    'currency' => $lineCurrency,
                     'product_data' => [
                         'name' => $productName,
                         ...($description ? ['description' => $description] : []),
@@ -2064,7 +2076,7 @@ class Cart extends Model
         // Prepare session parameters
         $sessionParams = [
             'payment_method_types' => ['card'],
-            'currency' => strtoupper($this->currency),
+            'currency' => strtolower($this->currency ?? config('shop.currency', 'usd')),
             'line_items' => $lineItems,
             'mode' => 'payment',
             'success_url' => $success_url,

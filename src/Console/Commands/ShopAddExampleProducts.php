@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Console\Commands;
 
 use Blax\Shop\Enums\ProductStatus;
@@ -673,7 +675,7 @@ class ShopAddExampleProducts extends Command
             $parking = Product::create([
                 'slug' => $pool->slug . '-' . \Illuminate\Support\Str::slug($itemName),
                 'name' => $itemName,
-                'sku' => $pool->sku . '-' . str_pad($i + 1, 2, '0', STR_PAD_LEFT),
+                'sku' => $pool->sku . '-' . str_pad((string) ($i + 1), 2, '0', STR_PAD_LEFT),
                 'type' => ProductType::BOOKING,
                 'status' => ProductStatus::PUBLISHED,
                 'is_visible' => false,

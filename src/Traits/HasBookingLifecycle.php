@@ -1,6 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Traits;
+
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Booking lifecycle for a {@see \Blax\Shop\Models\ProductPurchase} row.
@@ -9,6 +13,11 @@ namespace Blax\Shop\Traits;
  * time-bounded reservation. The trait is purchase-side — the corresponding
  * product-side concept is the BOOKING product type plus
  * {@see ChecksIfBooking}.
+ *
+ * # Host-model contract
+ *
+ * @property \Illuminate\Support\Carbon|null $from  Reservation window start.
+ * @property \Illuminate\Support\Carbon|null $until Reservation window end.
  */
 trait HasBookingLifecycle
 {
@@ -34,16 +43,22 @@ trait HasBookingLifecycle
 
     /**
      * Scope to date-bounded bookings only.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
      */
-    public function scopeBookings($query)
+    public function scopeBookings(Builder $query): Builder
     {
         return $query->whereNotNull('from')->whereNotNull('until');
     }
 
     /**
      * Scope to bookings whose window is in the past.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
      */
-    public function scopeEndedBookings($query)
+    public function scopeEndedBookings(Builder $query): Builder
     {
         return $query->bookings()->where('until', '<', now());
     }

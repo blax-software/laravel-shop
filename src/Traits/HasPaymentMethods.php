@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Traits;
 
 use Blax\Shop\Models\PaymentMethod;
@@ -69,7 +71,7 @@ trait HasPaymentMethods
      * @param bool $activeOnly Only return active payment methods
      * @return Collection
      */
-    public function paymentMethods(string $provider = null, bool $activeOnly = true): Collection
+    public function paymentMethods(?string $provider = null, bool $activeOnly = true): Collection
     {
         $identities = $this->paymentProviderIdentities();
 
@@ -156,7 +158,7 @@ trait HasPaymentMethods
      * @param string|null $provider
      * @return bool
      */
-    public function hasPaymentMethods(string $provider = null): bool
+    public function hasPaymentMethods(?string $provider = null): bool
     {
         return $this->paymentMethods($provider)->isNotEmpty();
     }

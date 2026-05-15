@@ -608,4 +608,37 @@ class PoolProductStockTest extends TestCase
         // Day 16 onwards should be fully available
         $this->assertEquals(['min' => 3, 'max' => 3], $availability['dates'][now()->addDays(16)->toDateString()]);
     }
+
+    #[Test]
+    public function pool_day_availability_returns_int_max_when_no_managed_singles_exist(): void
+    {
+        // Regression: getPoolDayAvailability() declared a `: array` return
+        // type but legitimately returns PHP_INT_MAX when every single item
+        // has manage_stock=false (the "all unlimited" path). Under that
+        // declared type PHP fatals with a TypeError. The return type must
+        // be `array|int` to match the documented behavior.
+        $pool = Product::factory()->create([
+            'name' => 'Unlimited Pool',
+            'type' => ProductType::POOL,
+            'manage_stock' => false,
+        ]);
+
+        // Attach singles that all have manage_stock=false — the pool path
+        // that triggers the unlimited fast-return.
+        for ($i = 0; $i < 2; $i++) {
+            $single = Product::factory()->create([
+                'type' => ProductType::BOOKING,
+                'manage_stock' => false,
+            ]);
+            $pool->productRelations()->attach($single->id, [
+                'type' => \Blax\Shop\Enums\ProductRelationType::SINGLE->value,
+            ]);
+        }
+
+        // Must not TypeError. Calling dayAvailability on a pool with only
+        // unmanaged singles delegates to getPoolDayAvailability.
+        $result = $pool->dayAvailability(now());
+
+        $this->assertSame(PHP_INT_MAX, $result);
+    }
 }

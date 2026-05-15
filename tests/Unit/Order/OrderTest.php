@@ -894,4 +894,29 @@ class OrderTest extends TestCase
         $this->assertCount(1, $paymentsByType);
         $this->assertCount(1, $statusChangesByType);
     }
+
+    #[Test]
+    public function generate_order_number_increments_sequence_when_prior_orders_exist_today(): void
+    {
+        // Regression: Order::generateOrderNumber() called str_pad() with an
+        // int ($lastNumber + 1) — under strict_types this throws a TypeError
+        // and even under loose mode it was relying on implicit string
+        // coercion. The function must always return a well-formed string.
+        $first = Order::generateOrderNumber();
+
+        // Create an order with that number so the sequence path is exercised.
+        Order::factory()->create(['order_number' => $first]);
+
+        $second = Order::generateOrderNumber();
+
+        $prefix = config('shop.orders.number_prefix', 'ORD-');
+        $datePart = now()->format('Ymd');
+
+        $this->assertIsString($second);
+        $this->assertStringStartsWith("{$prefix}{$datePart}", $second);
+        // Ends with a 4-digit zero-padded sequence number, strictly greater
+        // than the first.
+        $this->assertMatchesRegularExpression('/\d{4}$/', $second);
+        $this->assertGreaterThan($first, $second);
+    }
 }

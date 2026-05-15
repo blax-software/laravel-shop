@@ -1,10 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Traits;
 
 use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
 use Blax\Shop\Exceptions\NotEnoughStockException;
+use Blax\Shop\Models\ProductStock;
 use Carbon\Carbon;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -12,29 +15,43 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 
 /**
- * HasStocks Trait
- * 
- * Provides stock management functionality to Product models.
- * 
- * Key Features:
- * - Basic stock operations (increase, decrease, adjust)
- * - Stock claims for bookings/reservations
- * - Date-based availability checking
- * - Low stock detection
- * - Stock movement logging
- * 
- * Usage:
- * - Add 'manage_stock' boolean column to products table
- * - Set manage_stock = true to enable stock tracking
- * - Use increaseStock/decreaseStock for inventory changes
- * - Use claimStock for reservations/bookings
- * - Use availableOnDate for date-based availability
- * 
- * Stock Calculation:
- * - Physical Stock = Sum of all COMPLETED entries
- * - Available Stock = Physical Stock (accounts for pending claims via their DECREASE entries)
- * - Claimed Stock = Sum of PENDING claims
- * - Available on Date = Available Stock + All Claims - Claims Active on Date
+ * HasStocks — stock management surface for Product-shaped models.
+ *
+ * Provides:
+ *  - Basic stock operations: {@see self::increaseStock()}, {@see self::decreaseStock()},
+ *    {@see self::adjustStock()}.
+ *  - Reservation / booking claims via {@see self::claimStock()}.
+ *  - Date-based availability: {@see self::availableOnDate()},
+ *    {@see self::getAvailableForDateRange()}, {@see self::calendarAvailability()}.
+ *  - Low-stock detection: {@see self::isLowStock()} and the
+ *    {@see self::scopeLowStock()} query scope.
+ *  - Audit log writes via {@see self::logStockChange()} → `product_stock_logs`.
+ *
+ * # Stock calculation
+ *
+ *  - **Physical stock**: sum of all COMPLETED entries (positive INCREASE +
+ *    RETURN, negative DECREASE) that haven't expired.
+ *  - **Available stock**: physical stock, with active CLAIMED entries netted
+ *    out (their DECREASE side reduces availability while the PENDING claim
+ *    sits open).
+ *  - **Claimed stock**: sum of PENDING `CLAIMED` entries (returned as a
+ *    positive number by the getters).
+ *  - **Available on a given date**: physical stock at that date, minus claims
+ *    whose window covers that date.
+ *
+ * # Host-model contract
+ *
+ * The trait is designed to be applied to {@see \Blax\Shop\Models\Product} and
+ * its subclasses. It reads the columns declared below and the
+ * `singleProducts` relation supplied by {@see MayBePoolProduct} (when the
+ * host opts into pool support). Host models that don't manage stock should
+ * set `manage_stock = false`; in that mode every read returns
+ * `PHP_INT_MAX` and every mutation is a no-op returning `true`.
+ *
+ * @property string|int $id Primary key on the host model — used for cross-table FK writes.
+ * @property bool $manage_stock When `false`, stock methods short-circuit (treated as infinite supply).
+ * @property int|null $low_stock_threshold Threshold for {@see self::isLowStock()} / {@see self::scopeLowStock()}; null disables low-stock detection.
+ * @property \Illuminate\Database\Eloquent\Collection<int, \Blax\Shop\Models\Product> $singleProducts Pool-product relation supplied by {@see MayBePoolProduct}; only consulted in pool aggregation paths.
  */
 trait HasStocks
 {
@@ -48,7 +65,7 @@ trait HasStocks
     public function stocks(): HasMany
     {
         return $this->hasMany(
-            config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'),
+            config('shop.models.product_stock', ProductStock::class),
             'product_id'
         );
     }
@@ -59,7 +76,7 @@ trait HasStocks
     public function allStocks(): HasMany
     {
         return $this->hasMany(
-            config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'),
+            config('shop.models.product_stock', ProductStock::class),
             'product_id'
         )
             ->withExpired()
@@ -131,7 +148,7 @@ trait HasStocks
      * @return bool True if successful
      * @throws NotEnoughStockException If insufficient stock available
      */
-    public function decreaseStock(int $quantity = 1, Carbon|null $until = null): bool
+    public function decreaseStock(int $quantity = 1, ?Carbon $until = null): bool
     {
         if (!$this->manage_stock) {
             return true;
@@ -215,12 +232,12 @@ trait HasStocks
     public function adjustStock(
         StockType $type,
         int $quantity,
-        DateTimeInterface|null $until = null,
-        DateTimeInterface|null $from = null,
+        ?DateTimeInterface $until = null,
+        ?DateTimeInterface $from = null,
         ?StockStatus $status = null,
-        string|null $note = null,
-        Model|null $referencable = null
-    ) {
+        ?string $note = null,
+        ?Model $referencable = null
+    ): bool|\Blax\Shop\Models\ProductStock {
         if (!$this->manage_stock) {
             return false;
         }
@@ -298,7 +315,7 @@ trait HasStocks
             return null;
         }
 
-        $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
+        $stockModel = config('shop.models.product_stock', ProductStock::class);
 
         return $stockModel::claim(
             $this,
@@ -451,6 +468,9 @@ trait HasStocks
      * Includes products with:
      * - Stock management disabled (always in stock), OR
      * - Stock management enabled AND available stock > 0
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<static>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<static>
      */
     public function scopeInStock($query)
     {
@@ -470,6 +490,9 @@ trait HasStocks
      * - Stock management is enabled
      * - low_stock_threshold is set
      * - Available stock <= threshold
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<static>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<static>
      */
     public function scopeLowStock($query)
     {
@@ -506,11 +529,11 @@ trait HasStocks
      * - Checking what's claimed but not released
      * - Managing active bookings
      * 
-     * @return \Illuminate\Database\Eloquent\Builder
+     * @return \Illuminate\Database\Eloquent\Builder<\Blax\Shop\Models\ProductStock>
      */
-    public function claims()
+    public function claims(): \Illuminate\Database\Eloquent\Builder
     {
-        $stockModel = config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock');
+        $stockModel = config('shop.models.product_stock', ProductStock::class);
 
         return $stockModel::claims()
             ->willExpire()
@@ -675,10 +698,10 @@ trait HasStocks
      * Gets the availability on the day by time. 00:00 shows the availables at the start of the day.
      * Every other timestamp shows what total current availability is at that time.
      * 
-     * @param null|DateTimeInterface $date
-     * @return array|int
+     * @param  null|DateTimeInterface  $date
+     * @return array<string, int>|int Map of HH:MM → available units, or PHP_INT_MAX when stock management is disabled.
      */
-    public function dayAvailability(?DateTimeInterface $date = null)
+    public function dayAvailability(?DateTimeInterface $date = null): array|int
     {
         // For pool products, aggregate availability from all single items
         if (method_exists($this, 'isPool') && $this->isPool()) {
@@ -794,7 +817,7 @@ trait HasStocks
         // Get all date keys from first single (they should all have the same dates)
         if (!empty($singleAvailabilities)) {
             $firstAvailability = $singleAvailabilities[0];
-            foreach ($firstAvailability['dates'] as $dateKey => $dayData) {
+            foreach (array_keys($firstAvailability['dates']) as $dateKey) {
                 $dayMin = 0;
                 $dayMax = 0;
 
@@ -826,10 +849,10 @@ trait HasStocks
     /**
      * Get day availability for pool products by aggregating all single items
      * 
-     * @param DateTimeInterface|null $date
-     * @return array
+     * @param  DateTimeInterface|null  $date
+     * @return array<string, int>|int Map of HH:MM → available units across all single items, or PHP_INT_MAX when no managed single items exist.
      */
-    protected function getPoolDayAvailability(?DateTimeInterface $date = null): array
+    protected function getPoolDayAvailability(?DateTimeInterface $date = null): array|int
     {
         // Eager load single products if not already loaded
         if (!$this->relationLoaded('singleProducts')) {
@@ -897,16 +920,16 @@ trait HasStocks
      * - The idea is that users can add items freely and adjust dates later
      * - Date-based validation happens at checkout, not when adding to cart
      * 
-     * @param \Blax\Shop\Models\Cart|null $cart Optional cart to subtract items from
+     * @param  \Blax\Shop\Models\Cart|null  $cart Optional cart to subtract items from
      * @return int Available quantity (PHP_INT_MAX if unlimited)
      */
-    public function getHasMore($cart = null): int
+    public function getHasMore(?\Blax\Shop\Models\Cart $cart = null): int
     {
         // Try to get current cart from facade if not provided
         if ($cart === null) {
             try {
                 $cart = \Blax\Shop\Facades\Cart::current();
-            } catch (\Exception $e) {
+            } catch (\Exception) {
                 // No cart available, that's fine
                 $cart = null;
             }
@@ -943,10 +966,9 @@ trait HasStocks
      * Returns total pool capacity minus items already in cart.
      * Does NOT consider date-based availability - that's validated at checkout.
      * 
-     * @param \Blax\Shop\Models\Cart|null $cart
-     * @return int
+     * @param  \Blax\Shop\Models\Cart|null  $cart
      */
-    protected function getPoolHasMore($cart = null): int
+    protected function getPoolHasMore(?\Blax\Shop\Models\Cart $cart = null): int
     {
         // Get total pool capacity (NOT date-restricted)
         if (method_exists($this, 'getPoolTotalCapacity')) {
@@ -991,13 +1013,12 @@ trait HasStocks
      * 
      * @param DateTimeInterface $from
      * @param DateTimeInterface $until
-     * @param \Blax\Shop\Models\Cart|null $cart Optional cart to subtract items from
-     * @return int
+     * @param  \Blax\Shop\Models\Cart|null  $cart Optional cart to subtract items from
      */
     public function getAvailableForDateRange(
         DateTimeInterface $from,
         DateTimeInterface $until,
-        $cart = null
+        ?\Blax\Shop\Models\Cart $cart = null
     ): int {
         if ($this->manage_stock === false) {
             return PHP_INT_MAX;

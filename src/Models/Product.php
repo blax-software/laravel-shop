@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Contracts\Cartable;
@@ -24,13 +26,65 @@ use Blax\Shop\Traits\HasPricingStrategy;
 use Blax\Shop\Traits\HasProductRelations;
 use Blax\Shop\Traits\HasStocks;
 use Blax\Shop\Traits\MayBePoolProduct;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Cache;
 
+/**
+ * Core product entity — sellable, stockable, priceable.
+ *
+ * Product is the polymorphic root for the whole package. Specialized
+ * behaviour comes from composed traits:
+ *
+ *  - {@see HasStocks} — inventory and reservations.
+ *  - {@see HasPrices} — price list and default-price resolution.
+ *  - {@see HasPricingStrategy} — average / lowest / highest tier strategy.
+ *  - {@see HasCategories} — category attachment.
+ *  - {@see HasProductRelations} — cross-sells, upsells, pool↔single links.
+ *  - {@see MayBePoolProduct} — pool aggregation when `type = POOL`.
+ *  - {@see ChecksIfBooking} — booking-product helpers when `type = BOOKING`.
+ *
+ * Host apps can extend this model (`Book extends Product` style) for free —
+ * every relation declares its FK explicitly so subclasses don't break.
+ *
+ * @property string $id
+ * @property string $slug
+ * @property string|null $sku
+ * @property \Blax\Shop\Enums\ProductType $type
+ * @property string|null $stripe_product_id
+ * @property \Illuminate\Support\Carbon|null $sale_start
+ * @property \Illuminate\Support\Carbon|null $sale_end
+ * @property bool $manage_stock
+ * @property int|null $low_stock_threshold
+ * @property float|null $weight
+ * @property float|null $length
+ * @property float|null $width
+ * @property float|null $height
+ * @property bool $virtual
+ * @property bool $downloadable
+ * @property string|null $parent_id
+ * @property bool $featured
+ * @property bool $is_visible
+ * @property \Blax\Shop\Enums\ProductStatus $status
+ * @property \Illuminate\Support\Carbon|null $published_at
+ * @property \stdClass $meta
+ * @property string|null $tax_class
+ * @property int $sort_order
+ * @property string $name
+ * @property string|null $description
+ * @property string|null $short_description
+ *
+ * @property-read Product|null $parent
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Product> $children
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, ProductAttribute> $attributes
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, ProductAction> $actions
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, ProductPurchase> $purchases
+ */
 class Product extends Model implements Purchasable, Cartable
 {
     use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasPricingStrategy, HasCategories, HasProductRelations, MayBePoolProduct, ChecksIfBooking;
@@ -141,11 +195,23 @@ class Product extends Model implements Purchasable, Cartable
         });
     }
 
-    public function parent()
+    /**
+     * Parent product when this row is a variant / grouped child / pool single
+     * item. Top-level products have `parent_id = null`.
+     *
+     * @return BelongsTo<static, $this>
+     */
+    public function parent(): BelongsTo
     {
         return $this->belongsTo(static::class, 'parent_id');
     }
 
+    /**
+     * Variants, grouped children, or pool single items hanging off this
+     * product. Returns an empty collection for leaf rows.
+     *
+     * @return HasMany<static, $this>
+     */
     public function children(): HasMany
     {
         return $this->hasMany(static::class, 'parent_id');
@@ -156,7 +222,7 @@ class Product extends Model implements Purchasable, Cartable
         // Explicit FK so the relation still targets `product_id` when a host
         // app subclasses Product (e.g. `Book extends Product`).
         return $this->hasMany(
-            config('shop.models.product_attribute', 'Blax\Shop\Models\ProductAttribute'),
+            config('shop.models.product_attribute', ProductAttribute::class),
             'product_id'
         );
     }
@@ -177,12 +243,20 @@ class Product extends Model implements Purchasable, Cartable
         );
     }
 
-    public function scopePublished($query)
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopePublished(Builder $query): Builder
     {
         return $query->where('status', ProductStatus::PUBLISHED->value);
     }
 
-    public function scopeFeatured($query)
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeFeatured(Builder $query): Builder
     {
         return $query->where('featured', true);
     }
@@ -364,7 +438,14 @@ class Product extends Model implements Purchasable, Cartable
         return ProductAction::getAvailableActions();
     }
 
-    public function callActions(string $event = 'purchased', ?ProductPurchase $productPurchase = null, array $additionalData = [])
+    /**
+     * Dispatch every {@see ProductAction} configured on this product for
+     * `$event`. Returns whatever {@see ProductAction::callForProduct()}
+     * returns (typically a collection of {@see ProductActionRun} rows).
+     *
+     * @param  array<string, mixed>  $additionalData Free-form payload merged into the action context.
+     */
+    public function callActions(string $event = 'purchased', ?ProductPurchase $productPurchase = null, array $additionalData = []): mixed
     {
         return ProductAction::callForProduct(
             $this,
@@ -374,7 +455,14 @@ class Product extends Model implements Purchasable, Cartable
         );
     }
 
-    public function scopeVisible($query)
+    /**
+     * Visible to customers right now: `is_visible = true`, status PUBLISHED,
+     * and `published_at` either null or in the past.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeVisible(Builder $query): Builder
     {
         return $query->where('is_visible', true)
             ->where('status', ProductStatus::PUBLISHED->value)
@@ -384,7 +472,15 @@ class Product extends Model implements Purchasable, Cartable
             });
     }
 
-    public function scopeSearch($query, string $search)
+    /**
+     * Substring match on slug / SKU / name. Cheap LIKE — not a full-text
+     * index; host apps that need stronger search should add Scout or
+     * MeiliSearch alongside this scope.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeSearch(Builder $query, string $search): Builder
     {
         return $query->where(function ($q) use ($search) {
             $q->where('slug', 'like', "%{$search}%")
@@ -544,8 +640,11 @@ class Product extends Model implements Purchasable, Cartable
 
     /**
      * Scope for booking products
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
      */
-    public function scopeBookings($query)
+    public function scopeBookings(Builder $query): Builder
     {
         return $query->where('type', ProductType::BOOKING->value);
     }

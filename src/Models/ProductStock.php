@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Enums\StockStatus;
@@ -312,7 +314,7 @@ class ProductStock extends Model
      * Scope: Get completed/available stock entries
      * These are physical stock changes (INCREASE/DECREASE) that have been finalized
      */
-    public static function scopeAvailable($query)
+    public function scopeAvailable($query)
     {
         return $query->where('status', StockStatus::COMPLETED->value);
     }
@@ -321,7 +323,7 @@ class ProductStock extends Model
      * Scope: Get active (pending) claimed stock entries
      * These represent stock currently claimed but not yet released
      */
-    public static function scopeAvailableClaims($query)
+    public function scopeAvailableClaims($query)
     {
         return $query->where('type', StockType::CLAIMED->value)->where('status', StockStatus::PENDING->value);
     }
@@ -350,7 +352,7 @@ class ProductStock extends Model
      * 
      * @param \DateTimeInterface $date The date to check availability for
      */
-    public static function scopeAvailableOnDate($query, \DateTimeInterface $date)
+    public function scopeAvailableOnDate($query, \DateTimeInterface $date)
     {
         return $query->where('type', StockType::CLAIMED->value)
             ->where('status', StockStatus::PENDING->value)

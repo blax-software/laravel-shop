@@ -1,7 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Blax\Shop\Models;
 
+use Blax\Shop\Enums\ProductAttributeType;
 use Blax\Shop\Models\Product;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -15,11 +18,15 @@ class ProductAttribute extends Model
         'product_id',
         'key',
         'value',
+        'type',
         'sort_order',
+        'meta',
     ];
 
     protected $casts = [
         'sort_order' => 'integer',
+        'type' => ProductAttributeType::class,
+        'meta' => 'array',
     ];
 
     protected $hidden = [
