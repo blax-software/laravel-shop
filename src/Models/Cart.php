@@ -987,6 +987,12 @@ class Cart extends Model
             throw new CartableInterfaceException();
         }
 
+        // Defaults for cartables that aren't Product / ProductPrice (e.g. an app
+        // model using IsSimplePurchasable). Pool + booking are Product-specific
+        // features; non-Product cartables flow through the simple path.
+        $is_pool = false;
+        $is_booking = false;
+
         if ($cartable instanceof Product) {
             $is_pool = $cartable->isPool();
             $is_booking = $cartable->isBooking();

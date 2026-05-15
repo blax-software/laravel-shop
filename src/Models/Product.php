@@ -153,12 +153,20 @@ class Product extends Model implements Purchasable, Cartable
 
     public function attributes(): HasMany
     {
-        return $this->hasMany(config('shop.models.product_attribute', 'Blax\Shop\Models\ProductAttribute'));
+        // Explicit FK so the relation still targets `product_id` when a host
+        // app subclasses Product (e.g. `Book extends Product`).
+        return $this->hasMany(
+            config('shop.models.product_attribute', 'Blax\Shop\Models\ProductAttribute'),
+            'product_id'
+        );
     }
 
     public function actions(): HasMany
     {
-        return $this->hasMany(config('shop.models.product_action', ProductAction::class));
+        return $this->hasMany(
+            config('shop.models.product_action', ProductAction::class),
+            'product_id'
+        );
     }
 
     public function purchases(): MorphMany

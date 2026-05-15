@@ -1,0 +1,272 @@
+<?php
+
+namespace Blax\Shop\Traits;
+
+use Blax\Shop\Enums\PurchaseStatus;
+use Blax\Shop\Events\LoanExtended;
+use Blax\Shop\Events\LoanReturned;
+use Blax\Shop\Models\ProductPrice;
+use Illuminate\Support\Carbon;
+
+/**
+ * Loan / rental lifecycle for a {@see \Blax\Shop\Models\ProductPurchase} row.
+ *
+ * Loans are modelled directly as ProductPurchase rows: `from` is when the
+ * borrower checked the item out, `until` is the due date, and the `meta`
+ * column carries two domain-specific keys:
+ *
+ *   meta.returned_at      ISO timestamp; null means the item is still out
+ *   meta.extensions_used  int; counts how many times extend() was called
+ *
+ * The package's e-commerce status enum stays orthogonal to loan state:
+ *   pending   → loan is in progress (default for new rows with no payment)
+ *   completed → bookkeeping-final (set automatically on markReturned())
+ *
+ * Domain status (returned / overdue / active) is derived; see
+ * {@see getDomainStatus()} and the corresponding scopes.
+ *
+ * The product-side counterpart is {@see IsLoanableProduct}, which exposes a
+ * `loan()` helper to create a purchase row pre-filled for this lifecycle.
+ */
+trait HasLoanLifecycle
+{
+    /**
+     * True once the borrower has returned the item.
+     */
+    public function isReturned(): bool
+    {
+        return $this->returnedAt() !== null;
+    }
+
+    /**
+     * Has the due date passed without a return?
+     */
+    public function isOverdue(): bool
+    {
+        if ($this->isReturned() || $this->until === null) {
+            return false;
+        }
+
+        return $this->until->isPast();
+    }
+
+    /**
+     * Domain-flavoured status for resource serialisation:
+     *   active   → loan is in progress, never extended
+     *   extended → loan is in progress and has been extended at least once
+     *   overdue  → past due_at, not returned (regardless of extensions)
+     *   returned → borrower has handed it back (regardless of extensions)
+     *
+     * `overdue` and `returned` take precedence over `extended` — once a
+     * loan is past due or handed back, the fact that it was extended is
+     * less informative than its terminal state.
+     */
+    public function getDomainStatus(): string
+    {
+        if ($this->isReturned()) {
+            return 'returned';
+        }
+
+        if ($this->isOverdue()) {
+            return 'overdue';
+        }
+
+        return $this->extensionsUsed() > 0 ? 'extended' : 'active';
+    }
+
+    /**
+     * Read meta.returned_at safely against either array or object meta cast.
+     */
+    public function returnedAt(): ?string
+    {
+        $meta = (array) ($this->meta ?? []);
+
+        return $meta['returned_at'] ?? null;
+    }
+
+    /**
+     * Number of extensions the borrower has consumed on this loan.
+     */
+    public function extensionsUsed(): int
+    {
+        $meta = (array) ($this->meta ?? []);
+
+        return (int) ($meta['extensions_used'] ?? 0);
+    }
+
+    /**
+     * Can this loan still be extended? Defaults to config('shop.loan.max_extensions').
+     */
+    public function canExtend(?int $max = null): bool
+    {
+        if ($this->isReturned() || $this->isOverdue()) {
+            return false;
+        }
+
+        $max ??= (int) config('shop.loan.max_extensions', 2);
+
+        return $this->extensionsUsed() < $max;
+    }
+
+    /**
+     * Push the due date forward by the given week count (or
+     * shop.loan.extension_weeks if null) and increment extensions_used.
+     *
+     * Callers should check canExtend() first — extend() is permissive and
+     * does not enforce the cap, so it stays composable with custom policies.
+     */
+    public function extend(?int $weeks = null): self
+    {
+        $weeks ??= (int) config('shop.loan.extension_weeks', 1);
+
+        if ($this->until !== null) {
+            $this->until = $this->until->copy()->addWeeks($weeks);
+        }
+
+        $meta = (array) ($this->meta ?? []);
+        $meta['extensions_used'] = (int) ($meta['extensions_used'] ?? 0) + 1;
+        $this->meta = $meta;
+        $this->save();
+
+        event(new LoanExtended($this, $weeks));
+
+        return $this;
+    }
+
+    /**
+     * Mark the item returned: stamp meta.returned_at with the given moment
+     * (or now()) and flip status to completed so the row reads as final.
+     */
+    public function markReturned(?\DateTimeInterface $at = null): self
+    {
+        $at ??= now();
+
+        $meta = (array) ($this->meta ?? []);
+        $meta['returned_at'] = Carbon::instance($at)->toIso8601String();
+        $this->meta = $meta;
+        $this->status = PurchaseStatus::COMPLETED;
+        $this->save();
+
+        event(new LoanReturned($this));
+
+        return $this;
+    }
+
+    /**
+     * Scope: loans currently in the borrower's hands (not returned).
+     */
+    public function scopeActiveLoans($query)
+    {
+        return $query
+            ->where('status', PurchaseStatus::PENDING->value)
+            ->whereNull('meta->returned_at');
+    }
+
+    /**
+     * Scope: loans that have been handed back.
+     */
+    public function scopeReturned($query)
+    {
+        return $query->whereNotNull('meta->returned_at');
+    }
+
+    /**
+     * Scope: loans past their due date and not yet returned.
+     */
+    public function scopeOverdue($query)
+    {
+        return $query->activeLoans()->where('until', '<', now());
+    }
+
+    /* ──────────────────────────────────────────────────────────────────────
+     * Cost calculation
+     *
+     * A loan accrues cost based on the {@see ProductPrice} attached to the
+     * purchase (`$this->price`). The price model owns the tier ladder, the
+     * billing scheme (per-unit vs tiered), and the currency — so the math
+     * here is simple: count fractional days between `from` and the relevant
+     * end timestamp, then ask the price what that adds up to.
+     *
+     * Day count is fractional (minute precision / 1440), matching
+     * {@see HasBookingPriceCalculation}.
+     *
+     * For returned loans, the end timestamp is `meta.returned_at` so the
+     * cost stays stable post-return.
+     * ────────────────────────────────────────────────────────────────────── */
+
+    /**
+     * Compute accrued loan cost in cents as of $asOf (defaults to now).
+     *
+     * If $price is omitted the purchase's attached price ($this->price_id)
+     * is used. If no price is associated, the cost is 0 — the loan is free.
+     */
+    public function calculateCost(
+        ?\DateTimeInterface $asOf = null,
+        ?ProductPrice $price = null
+    ): int {
+        if ($this->from === null) {
+            return 0;
+        }
+
+        $start = Carbon::instance($this->from);
+        $returnedAt = $this->returnedAt();
+        if ($returnedAt !== null) {
+            $end = Carbon::parse($returnedAt);
+        } else {
+            $end = $asOf !== null ? Carbon::instance($asOf) : Carbon::now();
+        }
+
+        if ($end->lessThanOrEqualTo($start)) {
+            return 0;
+        }
+
+        $totalDays = max(0.0, $start->diffInMinutes($end) / 1440.0);
+
+        $price ??= $this->resolvePriceForCost();
+        if ($price === null) {
+            return 0;
+        }
+
+        return $price->calculateForUsage($totalDays);
+    }
+
+    /**
+     * Convenience: accrued cost as of now, in cents. Useful inside resources
+     * where no parameters are available.
+     */
+    public function accruedCost(): int
+    {
+        return $this->calculateCost();
+    }
+
+    /**
+     * Find the price to bill this loan against. Order of resolution:
+     *   1. The purchase's `price_id`        (explicit choice at checkout)
+     *   2. The purchasable's default price  (Product->defaultPrice())
+     * Returns null when neither is set — interpreted as a free loan.
+     */
+    protected function resolvePriceForCost(): ?ProductPrice
+    {
+        if ($this->price_id !== null) {
+            $relation = $this->relationLoaded('price')
+                ? $this->getRelation('price')
+                : $this->price;
+            if ($relation instanceof ProductPrice) {
+                return $relation;
+            }
+        }
+
+        $purchasable = $this->relationLoaded('purchasable')
+            ? $this->getRelation('purchasable')
+            : $this->purchasable;
+
+        if ($purchasable !== null && method_exists($purchasable, 'defaultPrice')) {
+            $default = $purchasable->defaultPrice()->first();
+            if ($default instanceof ProductPrice) {
+                return $default;
+            }
+        }
+
+        return null;
+    }
+}

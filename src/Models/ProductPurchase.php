@@ -3,12 +3,14 @@
 namespace Blax\Shop\Models;
 
 use Blax\Shop\Enums\PurchaseStatus;
+use Blax\Shop\Traits\HasBookingLifecycle;
+use Blax\Shop\Traits\HasLoanLifecycle;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
 class ProductPurchase extends Model
 {
-    use HasUuids;
+    use HasBookingLifecycle, HasLoanLifecycle, HasUuids;
 
     protected $fillable = [
         'status',
@@ -56,6 +58,17 @@ class ProductPurchase extends Model
     public function product()
     {
         return $this->belongsTo(config('shop.models.product', Product::class));
+    }
+
+    /**
+     * The price this purchase bills against (see HasLoanLifecycle::calculateCost).
+     */
+    public function price()
+    {
+        return $this->belongsTo(
+            config('shop.models.product_price', ProductPrice::class),
+            'price_id'
+        );
     }
 
     public function user()
@@ -126,39 +139,13 @@ class ProductPurchase extends Model
         );
     }
 
-    /**
-     * Check if this is a booking purchase
+    /*
+     * Lifecycle methods live in product-type traits:
+     *   - HasBookingLifecycle  → isBooking, isBookingEnded, scopeBookings,
+     *                            scopeEndedBookings   (booking products)
+     *   - HasLoanLifecycle     → isReturned, isOverdue, getDomainStatus,
+     *                            returnedAt, extensionsUsed, canExtend,
+     *                            extend, markReturned, scopeActiveLoans,
+     *                            scopeReturned, scopeOverdue  (loanable products)
      */
-    public function isBooking(): bool
-    {
-        return !is_null($this->from) && !is_null($this->until);
-    }
-
-    /**
-     * Check if the booking has ended
-     */
-    public function isBookingEnded(): bool
-    {
-        if (!$this->isBooking()) {
-            return false;
-        }
-
-        return now()->isAfter($this->until);
-    }
-
-    /**
-     * Scope for booking purchases
-     */
-    public function scopeBookings($query)
-    {
-        return $query->whereNotNull('from')->whereNotNull('until');
-    }
-
-    /**
-     * Scope for ended bookings
-     */
-    public function scopeEndedBookings($query)
-    {
-        return $query->bookings()->where('until', '<', now());
-    }
 }

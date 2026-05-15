@@ -1,6 +1,6 @@
 [![Blax Software OSS](https://raw.githubusercontent.com/blax-software/laravel-workkit/master/art/oss-initiative-banner.svg)](https://github.com/blax-software)
 
-# Laravel Shop Package
+# Laravel Shop
 
 [![Tests](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml/badge.svg)](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml)
 [![Latest Version](https://img.shields.io/packagist/v/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
@@ -29,19 +29,24 @@ A comprehensive headless e-commerce package for Laravel with stock management, S
 
 ```bash
 composer require blax-software/laravel-shop
-```
-
-Publish the configuration:
-
-```bash
-php artisan vendor:publish --provider="Blax\Shop\ShopServiceProvider"
-```
-
-Run migrations:
-
-```bash
 php artisan migrate
 ```
+
+That's it — the package's migrations are auto-loaded from `vendor/` so a fresh `migrate` is all you need.
+
+Optionally publish the config:
+
+```bash
+php artisan vendor:publish --tag="shop-config"
+```
+
+If you'd rather own the migrations in your own `database/migrations/` directory (e.g. to customise schemas, switch ID types, etc.):
+
+```bash
+php artisan vendor:publish --tag="shop-migrations"
+```
+
+To stop the package from also auto-loading them, set `'run_migrations' => false` in `config/shop.php`.
 
 ## Configuration
 

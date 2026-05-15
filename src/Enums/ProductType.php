@@ -11,6 +11,12 @@ enum ProductType: string
     case BOOKING = 'booking';
     case VARIATION = 'variation';
     case POOL = 'pool';
+    /**
+     * Loanable: a checked-out-and-returned product. Pair with
+     * {@see \Blax\Shop\Traits\HasLoanLifecycle} on ProductPurchase to operate
+     * the borrow → extend → return flow.
+     */
+    case LOANABLE = 'loanable';
 
     public function label(): string
     {
@@ -22,6 +28,7 @@ enum ProductType: string
             self::BOOKING => 'Booking',
             self::VARIATION => 'Variation',
             self::POOL => 'Pool',
+            self::LOANABLE => 'Loanable',
         };
     }
 }

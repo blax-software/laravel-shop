@@ -28,23 +28,11 @@ class ShopServiceProvider extends ServiceProvider
 
     public function boot()
     {
-        // Publish config
-        $this->publishes([
-            __DIR__ . '/../config/shop.php' => config_path('shop.php'),
-        ], ['shop-config', 'config']);
+        $this->offerPublishing();
 
-        // Publish migrations
-        $this->publishes([
-            __DIR__ . '/../database/migrations/create_blax_shop_tables.php.stub' => $this->getMigrationFileName('create_blax_shop_tables.php'),
-            __DIR__ . '/../database/migrations/add_stripe_to_users_table.php.stub' => $this->getMigrationFileName('add_stripe_to_users_table.php'),
-        ], ['shop-migrations', 'migrations']);
+        $this->registerMigrations();
 
-        // Publish all shop assets
-        $this->publishes([
-            __DIR__ . '/../config/shop.php' => config_path('shop.php'),
-            __DIR__ . '/../database/migrations/create_blax_shop_tables.php.stub' => $this->getMigrationFileName('create_blax_shop_tables.php'),
-            __DIR__ . '/../database/migrations/add_stripe_to_users_table.php.stub' => $this->getMigrationFileName('add_stripe_to_users_table.php'),
-        ], 'shop');
+        $this->registerRouteMacros();
 
         // Load routes if enabled (API only)
         if (config('shop.routes.enabled', true)) {
@@ -87,17 +75,76 @@ class ShopServiceProvider extends ServiceProvider
     }
 
     /**
-     * Returns existing migration file if found, else uses the current timestamp.
+     * Auto-load the package's migrations so fresh installs work without
+     * publishing. Disabled via `shop.run_migrations = false` for projects
+     * that prefer to publish + manage migrations themselves.
      */
-    protected function getMigrationFileName(string $migrationFileName): string
+    protected function registerMigrations(): void
     {
-        $timestamp = date('Y_m_d_His');
+        if (! config('shop.run_migrations', true)) {
+            return;
+        }
 
-        $filesystem = $this->app->make(\Illuminate\Filesystem\Filesystem::class);
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+    }
 
-        return \Illuminate\Support\Collection::make([$this->app->databasePath() . DIRECTORY_SEPARATOR . 'migrations' . DIRECTORY_SEPARATOR])
-            ->flatMap(fn($path) => $filesystem->glob($path . '*_' . $migrationFileName))
-            ->push($this->app->databasePath() . "/migrations/{$timestamp}_{$migrationFileName}")
-            ->first();
+    /**
+     * Register Route macros that hosts can use to wire shop endpoints
+     * concisely. Currently provides:
+     *
+     *   Route::shopLoans('loans', \App\Http\Controllers\LoanController::class)
+     *     → POST   {prefix}                     index of caller's loans
+     *     → POST   {prefix}                     check out a new loan
+     *     → GET    {prefix}/{purchase}          show a single loan
+     *     → POST   {prefix}/{purchase}/extend   extend the due date
+     *     → POST   {prefix}/{purchase}/return   return the item
+     *
+     * The controller is expected to use {@see \Blax\Shop\Http\Controllers\Concerns\HandlesLoans}.
+     */
+    protected function registerRouteMacros(): void
+    {
+        \Illuminate\Support\Facades\Route::macro('shopLoans', function (string $prefix, string $controller): void {
+            \Illuminate\Support\Facades\Route::prefix($prefix)->group(function () use ($controller): void {
+                \Illuminate\Support\Facades\Route::get('/', [$controller, 'index']);
+                \Illuminate\Support\Facades\Route::post('/', [$controller, 'store']);
+                \Illuminate\Support\Facades\Route::get('/{purchase}', [$controller, 'show']);
+                \Illuminate\Support\Facades\Route::post('/{purchase}/extend', [$controller, 'extend']);
+                \Illuminate\Support\Facades\Route::post('/{purchase}/return', [$controller, 'returnLoan']);
+            });
+        });
+    }
+
+    /**
+     * Set up publishing of config and migrations for `php artisan vendor:publish`.
+     *
+     * Migrations are published keeping the source filename so that any
+     * migration already run via auto-load is marked as run for the
+     * published copy too — no duplicate execution.
+     */
+    protected function offerPublishing(): void
+    {
+        if (! $this->app->runningInConsole()) {
+            return;
+        }
+
+        $this->publishes([
+            __DIR__ . '/../config/shop.php' => $this->app->configPath('shop.php'),
+        ], ['shop-config', 'config']);
+
+        $migrationsPath = __DIR__ . '/../database/migrations';
+        $publishMap = [];
+        foreach (glob($migrationsPath . '/*.php') as $sourcePath) {
+            $publishMap[$sourcePath] = $this->app->databasePath('migrations/' . basename($sourcePath));
+        }
+
+        $this->publishes($publishMap, ['shop-migrations', 'migrations']);
+
+        $this->publishes(
+            array_merge(
+                [__DIR__ . '/../config/shop.php' => $this->app->configPath('shop.php')],
+                $publishMap,
+            ),
+            'shop',
+        );
     }
 }

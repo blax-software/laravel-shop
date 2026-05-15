@@ -1,6 +1,24 @@
 <?php
 
 return [
+
+    /*
+     * Whether the package should auto-run its migrations.
+     *
+     * Default: true — fresh installs work plug-and-play (composer require +
+     * php artisan migrate). The package's own migrations live in vendor/ and
+     * are auto-loaded.
+     *
+     * Set to false if you have already published migrations to your project's
+     * database/migrations directory and want to manage the schema yourself.
+     * If you publish *and* leave this true, Laravel's migrator will see the
+     * same filenames in both locations and run each migration once — but
+     * that requires the published filename to match the source filename. If
+     * you've published with a different timestamp prefix, disable this flag
+     * to avoid re-runs.
+     */
+    'run_migrations' => true,
+
     // Table names (customizable for multi-tenancy)
     'tables' => [
         'cart_items' => 'cart_items',
@@ -17,6 +35,7 @@ return [
         'product_purchases' => 'product_purchases',
         'product_actions' => 'product_actions',
         'product_stocks' => 'product_stocks',
+        'product_price_tiers' => 'product_price_tiers',
         'products' => 'products',
         'cart_discounts' => 'cart_discounts',
     ],
@@ -27,6 +46,7 @@ return [
         'product_price' => \Blax\Shop\Models\ProductPrice::class,
         'product_category' => \Blax\Shop\Models\ProductCategory::class,
         'product_stock' => \Blax\Shop\Models\ProductStock::class,
+        'product_price_tier' => \Blax\Shop\Models\ProductPriceTier::class,
         'product_attribute' => \Blax\Shop\Models\ProductAttribute::class,
         'product_purchase' => \Blax\Shop\Models\ProductPurchase::class,
         'cart' => \Blax\Shop\Models\Cart::class,
@@ -133,6 +153,25 @@ return [
         'include_meta' => true,
         'wrap_response' => true,
         'response_key' => 'data',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Loan / rental defaults
+    |--------------------------------------------------------------------------
+    |
+    | Consumed by ProductPurchase::extend() and ProductPurchase::canExtend()
+    | when no overrides are passed. Lets a host app (library, equipment-rental
+    | etc.) tune the lifecycle without subclassing the model.
+    |
+    */
+    'loan' => [
+        // Loan policy knobs (used by ProductPurchase lifecycle helpers).
+        // Pricing lives on the ProductPrice itself (billing_scheme=tiered +
+        // associated product_price_tiers rows), not here.
+        'default_duration_weeks' => env('SHOP_LOAN_DURATION_WEEKS', 2),
+        'extension_weeks' => env('SHOP_LOAN_EXTENSION_WEEKS', 1),
+        'max_extensions' => env('SHOP_LOAN_MAX_EXTENSIONS', 2),
     ],
 
 ];

@@ -12,7 +12,9 @@ abstract class TestCase extends Orchestra
     {
         parent::setUp();
 
-        ini_set('memory_limit', '256M');
+        // The suite has grown past what 256M can comfortably sustain across
+        // ~1,200 tests sharing in-memory SQLite + Orchestra Testbench fixtures.
+        ini_set('memory_limit', '1024M');
 
         Factory::guessFactoryNamesUsing(
             fn(string $modelName) => match (true) {
@@ -57,10 +59,13 @@ abstract class TestCase extends Orchestra
         });
 
         // Run package migrations
-        $migration = include __DIR__ . '/../database/migrations/create_blax_shop_tables.php.stub';
+        $migration = include __DIR__ . '/../database/migrations/2025_01_01_000001_create_blax_shop_tables.php';
         $migration->up();
 
-        $migration = include __DIR__ . '/../database/migrations/add_stripe_to_users_table.php.stub';
+        $migration = include __DIR__ . '/../database/migrations/2025_01_01_000003_add_stripe_to_users_table.php';
+        $migration->up();
+
+        $migration = include __DIR__ . '/../database/migrations/2025_01_01_000002_create_product_price_tiers_table.php';
         $migration->up();
     }
 }

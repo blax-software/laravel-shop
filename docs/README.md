@@ -3,8 +3,18 @@
 ## Table of Contents
 
 ### Product Types
-- [Booking Products](./ProductTypes/01-booking-products.md) - Time-based reservations and rentals
-- [Pool Products](./ProductTypes/02-pool-products.md) - Managing groups of booking items
+- [**Overview & matrix**](./ProductTypes/00-overview.md) — every product type at a glance plus which prices apply
+- [Booking Products](./ProductTypes/01-booking-products.md) — time-windowed reservations (`from` / `until`)
+- [Pool Products](./ProductTypes/02-pool-products.md) — interchangeable groups of booking items
+- [Simple Products](./ProductTypes/03-simple-products.md) — stand-alone single-SKU items (the default)
+- [Variable Products](./ProductTypes/04-variable-products.md) — parents of variants (T-shirt → S/M/L)
+- [Variation Products](./ProductTypes/05-variation-products.md) — the actual cartable variants
+- [Grouped Products](./ProductTypes/06-grouped-products.md) — bundles / multi-packs
+- [External Products](./ProductTypes/07-external-products.md) — affiliate / "view on partner site"
+- [Loanable Products](./ProductTypes/08-loanable-products.md) — borrow → extend → return (library / rental)
+
+### Prices
+- [Price types & billing schemes](./Prices/01-price-types-and-billing-schemes.md) — `ONE_TIME` vs `RECURRING`, `PER_UNIT` vs `TIERED`, sale prices, `ProductPriceTier`
 
 ### Core Features
 - [Products Overview](./01-products.md) - Basic product management
@@ -148,13 +158,14 @@ $upsell = $basicPlan->upsellProducts->first();
 
 ```
 ProductType Enum:
-├── SIMPLE      → Standard products
-├── VARIABLE    → Products with variations
-├── GROUPED     → Product groups
-├── EXTERNAL    → External/affiliate products
-├── BOOKING     → Time-based reservations ⭐
-├── VARIATION   → Variant of a variable product
-└── POOL        → Container for booking items ⭐
+├── SIMPLE      → Stand-alone single-SKU products (default)
+├── VARIABLE    → Parents of variants
+├── VARIATION   → A specific variant of a Variable parent
+├── GROUPED     → Bundle / multi-pack of independent children
+├── EXTERNAL    → External / affiliate listing (no checkout)
+├── BOOKING     → Time-windowed reservations ⭐
+├── POOL        → Interchangeable group of booking items ⭐
+└── LOANABLE    → Borrow → extend → return (library / rental) ⭐
 ```
 
 ### Relation Types

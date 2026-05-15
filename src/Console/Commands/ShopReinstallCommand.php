@@ -98,7 +98,6 @@ class ShopReinstallCommand extends Command
         $this->info('Running shop migrations...');
 
         $this->call('migrate', [
-            '--path' => 'database/migrations/create_blax_shop_tables.php.stub',
             '--force' => true,
         ]);
     }

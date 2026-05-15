@@ -39,19 +39,29 @@ use Illuminate\Support\Facades\DB;
 trait HasStocks
 {
     /**
-     * Get all available stock entries for this product
+     * Get all available stock entries for this product.
+     *
+     * The foreign key is named explicitly so this trait works on Product
+     * subclasses too (e.g. a library Book extending Product) — Eloquent's
+     * default convention would otherwise infer `{subclass}_id`.
      */
     public function stocks(): HasMany
     {
-        return $this->hasMany(config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'));
+        return $this->hasMany(
+            config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'),
+            'product_id'
+        );
     }
 
     /**
-     * Get all stock entries for this product including unavailable ones
+     * Get all stock entries for this product including unavailable ones.
      */
     public function allStocks(): HasMany
     {
-        return $this->hasMany(config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'))
+        return $this->hasMany(
+            config('shop.models.product_stock', 'Blax\Shop\Models\ProductStock'),
+            'product_id'
+        )
             ->withExpired()
             ->where('status', 'LIKE', '%');
     }
