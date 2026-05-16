@@ -2,13 +2,13 @@
 
 namespace Blax\Shop\Tests\Feature\Loan;
 
+use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Events\LoanCreated;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Tests\TestCase;
-use Blax\Shop\Traits\IsLoanableProduct;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Workbench\App\Models\User;
 
 /**
- * Coverage for {@see IsLoanableProduct::checkOutTo()} — the atomic
+ * Coverage for {@see MayBeLoanableProduct::checkOutTo()} — the atomic
  * decreaseStock + purchase row + LoanCreated event path that every host
  * controller uses to start a loan. Until this file existed, the trait that
  * production code actually depends on had zero direct test coverage; the
@@ -200,15 +200,16 @@ class CheckOutToTest extends TestCase
 }
 
 /**
- * Minimal loanable fixture: extending Product picks up the package's
- * polymorphism, the IsLoanableProduct trait wires up checkOutTo and the
- * total_quantity / available_quantity virtuals. Both base and subclass
- * resolve to the `products` table via Product::__construct, so no migration
- * is needed.
+ * Minimal loanable fixture: extending Product gives us the package's
+ * polymorphism and the MayBeLoanableProduct helpers (it's mixed into Product
+ * itself); declaring DEFAULT_TYPE = LOANABLE is the plug-n-pray opt-in that
+ * flips checkOutTo and the total_quantity / available_quantity virtuals into
+ * loan mode. Both base and subclass resolve to the `products` table via
+ * Product::__construct, so no migration is needed.
  */
 class LoanableBook extends Product
 {
-    use IsLoanableProduct;
+    public const DEFAULT_TYPE = ProductType::LOANABLE;
 
     protected $guarded = [];
 }

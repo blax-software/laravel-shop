@@ -25,6 +25,7 @@ use Blax\Shop\Traits\HasPrices;
 use Blax\Shop\Traits\HasPricingStrategy;
 use Blax\Shop\Traits\HasProductRelations;
 use Blax\Shop\Traits\HasStocks;
+use Blax\Shop\Traits\MayBeLoanableProduct;
 use Blax\Shop\Traits\MayBePoolProduct;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -47,6 +48,7 @@ use Illuminate\Support\Facades\Cache;
  *  - {@see HasCategories} — category attachment.
  *  - {@see HasProductRelations} — cross-sells, upsells, pool↔single links.
  *  - {@see MayBePoolProduct} — pool aggregation when `type = POOL`.
+ *  - {@see MayBeLoanableProduct} — loan lifecycle when `type = LOANABLE`.
  *  - {@see ChecksIfBooking} — booking-product helpers when `type = BOOKING`.
  *
  * Host apps can extend this model (`Book extends Product` style) for free —
@@ -87,7 +89,7 @@ use Illuminate\Support\Facades\Cache;
  */
 class Product extends Model implements Purchasable, Cartable
 {
-    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasPricingStrategy, HasCategories, HasProductRelations, MayBePoolProduct, ChecksIfBooking;
+    use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasPricingStrategy, HasCategories, HasProductRelations, MayBePoolProduct, MayBeLoanableProduct, ChecksIfBooking;
 
     protected $fillable = [
         'slug',

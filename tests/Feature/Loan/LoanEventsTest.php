@@ -19,7 +19,7 @@ use Workbench\App\Models\User;
 /**
  * Loan lifecycle domain events.
  *
- *   LoanCreated   — auto-dispatched from IsLoanableProduct::checkOutTo()
+ *   LoanCreated   — auto-dispatched from MayBeLoanableProduct::checkOutTo()
  *                   (see CheckOutToTest). Hosts that build ProductPurchase
  *                   rows directly — bypassing checkOutTo — must dispatch
  *                   the event themselves; that direct-construction path is
@@ -95,7 +95,7 @@ class LoanEventsTest extends TestCase
     #[Test]
     public function loan_created_can_be_dispatched_manually_when_bypassing_checkOutTo(): void
     {
-        // The package auto-dispatches LoanCreated from IsLoanableProduct::
+        // The package auto-dispatches LoanCreated from MayBeLoanableProduct::
         // checkOutTo() (see CheckOutToTest). Hosts that assemble a
         // ProductPurchase row directly — e.g. importing historical loans —
         // can still raise the same event so downstream listeners fire.

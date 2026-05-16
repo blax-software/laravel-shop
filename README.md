@@ -3,6 +3,8 @@
 # Laravel Shop
 
 [![Tests](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml/badge.svg)](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml)
+[![Tests Count](https://img.shields.io/badge/tests-1228%20passing-success?style=flat-square)](#testing)
+[![Assertions](https://img.shields.io/badge/assertions-3291-blue?style=flat-square)](#testing)
 [![Latest Version](https://img.shields.io/packagist/v/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
 [![License](https://img.shields.io/packagist/l/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
 [![PHP Version](https://img.shields.io/packagist/php-v/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
@@ -184,13 +186,24 @@ $isAvailable = $room->availableOnDate(now(), now()->addHour());
 
 ## Testing
 
-To run the package tests:
+We test this package for many edge cases across every surface — products,
+stock, pricing strategies, cart/checkout, loan lifecycle, pool aggregation,
+booking, Stripe sync and the event surface — so host applications can lean
+on the behaviour with confidence.
+
+```
+Tests: 1228, Assertions: 3291
+```
+
+CI runs the full suite on every push (see the badge above). To run it
+locally:
 
 ```bash
 ./vendor/bin/phpunit
 ```
 
-The tests use an in-memory SQLite database and Orchestra Testbench.
+The tests use an in-memory SQLite database and Orchestra Testbench, so they
+run in roughly a minute with no external services required.
 
 ## Documentation
 

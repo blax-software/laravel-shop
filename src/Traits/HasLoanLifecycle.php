@@ -29,7 +29,7 @@ use Carbon\Carbon;
  * Domain status (returned / overdue / active) is derived; see
  * {@see getDomainStatus()} and the corresponding scopes.
  *
- * The product-side counterpart is {@see IsLoanableProduct}, which exposes a
+ * The product-side counterpart is {@see MayBeLoanableProduct}, which exposes a
  * `loan()` helper to create a purchase row pre-filled for this lifecycle.
  *
  * # Host-model contract
@@ -43,7 +43,7 @@ use Carbon\Carbon;
  * @property \Blax\Shop\Enums\PurchaseStatus $status Set to `COMPLETED` on {@see self::markReturned()}.
  * @property string|null $price_id        FK to {@see ProductPrice} used for cost calculation.
  * @property-read ProductPrice|null $price  Eager-loadable price relation.
- * @property-read Model|null $purchasable  The loaned item — typically a {@see IsLoanableProduct}-using model.
+ * @property-read Model|null $purchasable  The loaned item — typically a {@see MayBeLoanableProduct}-using model.
  */
 trait HasLoanLifecycle
 {
