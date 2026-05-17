@@ -402,7 +402,13 @@ trait HasStocks
 
         $date = $date ?? now();
 
-        // Base stock: all COMPLETED entries except CLAIMED, filtered using the provided date
+        // Base stock: all COMPLETED entries except CLAIMED, filtered using
+        // the provided date. This intentionally does NOT gate by the ledger
+        // row's created_at — callers like {@see ProductStock::claim} pass a
+        // booking-window start (which can predate the seed row by seconds)
+        // and rightly expect the current physical inventory back. For
+        // historical "as of date X, ignoring later changes" queries, use
+        // {@see self::availableOnDate()} instead.
         $baseStock = $this->stocks()
             ->withoutGlobalScope('willExpire')
             ->where('status', StockStatus::COMPLETED->value)
@@ -667,7 +673,41 @@ trait HasStocks
             return PHP_INT_MAX;
         }
 
-        return $this->getAvailableStock($date);
+        // Historically-aware variant of {@see self::getAvailableStock()}:
+        // ledger rows created AFTER $date are excluded, so a DECREASE placed
+        // today doesn't retroactively reduce availability on a prior day.
+        // Day-level comparison (against end of $date's day) so a row seeded
+        // mid-day still counts for queries on that same day.
+        $dateDayEnd = Carbon::instance($date)->copy()->endOfDay();
+
+        $baseStock = $this->stocks()
+            ->withoutGlobalScope('willExpire')
+            ->where('status', StockStatus::COMPLETED->value)
+            ->where('type', '!=', StockType::CLAIMED->value)
+            ->where('created_at', '<=', $dateDayEnd)
+            ->where(function ($query) use ($date) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', $date);
+            })
+            ->sum('quantity');
+
+        // Add back claims that should not reduce availability at the given date.
+        $inactiveClaims = $this->stocks()
+            ->withoutGlobalScope('willExpire')
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->where(function ($query) use ($date) {
+                $query->where(function ($q) use ($date) {
+                    $q->whereNotNull('claimed_from')
+                        ->where('claimed_from', '>', $date);
+                })->orWhere(function ($q) use ($date) {
+                    $q->whereNotNull('expires_at')
+                        ->where('expires_at', '<=', $date);
+                });
+            })
+            ->sum('quantity');
+
+        return max(0, $baseStock + $inactiveClaims);
     }
 
     /**
@@ -734,6 +774,14 @@ trait HasStocks
                 if ($stock->expires_at && $stock->expires_at->between($dayStart, $dayEnd)) {
                     $events[] = Carbon::parse($stock->expires_at);
                 }
+                // The moment a COMPLETED entry becomes effective is itself a
+                // transition point — without sampling here, a DECREASE at
+                // 13:32 followed by an INCREASE at 17:00 (or vice versa)
+                // would be invisible to min/max if we only inspected day
+                // boundaries.
+                if ($stock->created_at && $stock->created_at->between($dayStart, $dayEnd)) {
+                    $events[] = Carbon::parse($stock->created_at);
+                }
             }
 
             // Remove exact duplicates
@@ -743,11 +791,21 @@ trait HasStocks
             $dayMax = PHP_INT_MIN;
 
             // Check availability at each event timestamp to find min/max for the day
+            $eventDayEnd = $dayEnd->copy();
             foreach ($events as $eventTime) {
                 $available = 0;
                 foreach ($allStocks as $stock) {
                     if ($stock->status === StockStatus::COMPLETED && $stock->type !== StockType::CLAIMED) {
-                        if (is_null($stock->expires_at) || $stock->expires_at > $eventTime) {
+                        // A COMPLETED entry only contributes from the day it
+                        // was created — without this gate, a DECREASE from a
+                        // loan placed today would retroactively reduce
+                        // availability on every prior day in the grid.
+                        // Compared at day granularity (against end-of-day of
+                        // the rendered day) so a stock seeded mid-day still
+                        // contributes for every event in that same day.
+                        $hasStarted = $stock->created_at === null || $stock->created_at <= $eventDayEnd;
+                        $notExpired = is_null($stock->expires_at) || $stock->expires_at > $eventTime;
+                        if ($hasStarted && $notExpired) {
                             $available += $stock->quantity;
                         }
                     } elseif ($stock->status === StockStatus::PENDING && $stock->type === StockType::CLAIMED) {
