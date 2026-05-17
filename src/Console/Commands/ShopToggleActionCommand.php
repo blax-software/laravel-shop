@@ -26,20 +26,25 @@ class ShopToggleActionCommand extends Command
             return 1;
         }
 
+        // The ProductAction column is `active`, not `enabled` — the old code
+        // wrote to a non-existent attribute, which silently no-op'd (or threw
+        // a SQL error in strict mode). The user-facing verbs stay
+        // "enabled"/"disabled" since that's what operators understand, but the
+        // column we touch is `active`.
         if ($this->option('enable')) {
-            $action->enabled = true;
+            $action->active = true;
             $status = 'enabled';
         } elseif ($this->option('disable')) {
-            $action->enabled = false;
+            $action->active = false;
             $status = 'disabled';
         } else {
-            $action->enabled = !$action->enabled;
-            $status = $action->enabled ? 'enabled' : 'disabled';
+            $action->active = ! $action->active;
+            $status = $action->active ? 'enabled' : 'disabled';
         }
 
         $action->save();
 
-        $this->info("Action #{$action->id} ({$action->action_class}) has been {$status}.");
+        $this->info("Action #{$action->id} ({$action->class}) has been {$status}.");
 
         return 0;
     }

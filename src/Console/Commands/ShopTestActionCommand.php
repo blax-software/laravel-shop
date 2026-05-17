@@ -25,7 +25,7 @@ class ShopTestActionCommand extends Command
             return 1;
         }
 
-        $this->info("Testing action: {$action->action_class}");
+        $this->info("Testing action: {$action->class}");
         $this->info("Product: {$action->product->name} (ID: {$action->product_id})");
         $this->info("Event: {$action->event}");
 
@@ -36,8 +36,14 @@ class ShopTestActionCommand extends Command
 
         try {
             if ($this->option('sync')) {
-                $namespace = config('shop.actions.namespace', 'App\\Jobs\\ProductAction');
-                $action_job = $namespace . '\\' . $action->action_class;
+                // Resolve the action class. If a fully-qualified name is set
+                // on `class`, use it as-is; otherwise prefix the configured
+                // actions namespace so short names still resolve.
+                $actionClass = $action->class;
+                if (! str_contains($actionClass, '\\')) {
+                    $namespace = config('shop.actions.namespace', 'App\\Jobs\\ProductAction');
+                    $actionClass = $namespace . '\\' . $actionClass;
+                }
 
                 $params = [
                     'product' => $action->product,
@@ -46,10 +52,22 @@ class ShopTestActionCommand extends Command
                     ...($action->parameters ?? []),
                 ];
 
-                (new $action_job(...$params))->handle();
+                $instance = new $actionClass(...$params);
+                if (method_exists($instance, 'handle')) {
+                    $instance->handle();
+                } elseif (is_callable($instance)) {
+                    $instance();
+                } else {
+                    throw new \RuntimeException("Action class {$actionClass} is neither callable nor has a handle() method.");
+                }
                 $this->info('Action executed synchronously.');
             } else {
-                $action->execute($action->product, null, []);
+                // Run the action through the package's normal runner — which
+                // honours defer/method/parameters and writes a ProductActionRun
+                // row. ProductAction::callForProduct() looks up matching
+                // actions by event; passing the action's own first event
+                // guarantees this single action fires.
+                ProductAction::callForProduct($action->product, $action->event, null, []);
                 $this->info('Action dispatched to queue.');
             }
 

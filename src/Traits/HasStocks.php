@@ -576,6 +576,48 @@ trait HasStocks
     }
 
     /**
+     * When does the next unit become available? Returns null when stock is
+     * already free right now.
+     *
+     * Considers both ends of the package's two-track availability model:
+     *   - Active loans / bookings — earliest `until` on a not-yet-returned
+     *     {@see \Blax\Shop\Models\ProductPurchase} via the HasLoanLifecycle
+     *     `activeLoans()` scope.
+     *   - Active stock claims — earliest `expires_at` on a PENDING/CLAIMED
+     *     {@see \Blax\Shop\Models\ProductStock} that hasn't already lapsed.
+     *
+     * The minimum of those candidates is when *something* frees up. Hosts can
+     * render this directly (`$product->nextAvailableAt()?->toIso8601String()`)
+     * instead of redefining the same query in every Resource.
+     */
+    public function nextAvailableAt(): ?Carbon
+    {
+        if ($this->getAvailableStock() > 0) {
+            return null;
+        }
+
+        $candidates = [];
+
+        $nextLoanEnd = $this->purchases()->activeLoans()->min('until');
+        if ($nextLoanEnd) {
+            $candidates[] = Carbon::parse($nextLoanEnd);
+        }
+
+        $nextClaimEnd = $this->stocks()
+            ->withoutGlobalScope('willExpire')
+            ->where('type', StockType::CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value)
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '>', now())
+            ->min('expires_at');
+        if ($nextClaimEnd) {
+            $candidates[] = Carbon::parse($nextClaimEnd);
+        }
+
+        return empty($candidates) ? null : Carbon::parse(min($candidates));
+    }
+
+    /**
      * Get active claims for this product
      * 
      * Returns query builder for PENDING claims that haven't expired yet.

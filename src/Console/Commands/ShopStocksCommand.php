@@ -37,7 +37,7 @@ class ShopStocksCommand extends Command
         }
 
         $rows = $products->map(function (Product $product): array {
-            $assigned = $product->manage_stock ? (int) $product->getMaxStocksAttribute() : null;
+            $assigned = $product->manage_stock ? $this->assignedCapacity($product) : null;
             $used = $product->manage_stock ? $this->totalUsed($product) : null;
             $available = $product->getAvailableStock();
             $claimed = $product->getCurrentlyClaimedStock();
@@ -88,7 +88,7 @@ class ShopStocksCommand extends Command
             return self::SUCCESS;
         }
 
-        $assigned = (int) $product->getMaxStocksAttribute();
+        $assigned = $this->assignedCapacity($product);
         $used = $this->totalUsed($product);
         $available = $product->getAvailableStock();
         $currentClaims = $product->getCurrentlyClaimedStock();
@@ -144,6 +144,23 @@ class ShopStocksCommand extends Command
                 ->where('status', StockStatus::COMPLETED->value)
                 ->sum('quantity')
         );
+    }
+
+    /**
+     * Physical inventory the operator should see as "Assigned" — i.e. how many
+     * copies the business actually owns.
+     *
+     * For non-loanable products this is just `getMaxStocksAttribute()` (sum of
+     * INCREASE + RETURN entries). For loanable products that calc inflates
+     * after every borrow→return cycle because the host's restock fires a
+     * fresh INCREASE row; MayBeLoanableProduct's `total_quantity` accessor
+     * sidesteps that by computing "available + active loans" instead. The
+     * trait is mixed into Product unconditionally, so it's safe to consult
+     * here for every product type.
+     */
+    private function assignedCapacity(Product $product): int
+    {
+        return (int) $product->total_quantity;
     }
 
     /**
