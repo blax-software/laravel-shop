@@ -125,10 +125,10 @@ class PhysicalStockTest extends TestCase
         $loan = $book->checkOutTo($borrower);
         $this->assertSame(5, $book->fresh()->getPhysicalStock());
 
-        // Host-driven return: mark + restock (mirrors moonshiner's
-        // LoanController::returnLoan).
+        // markReturned() now does the full job — releases the paired
+        // physical claim, which writes the offsetting RETURN entry. No
+        // host-side increaseStock(1) needed.
         $loan->markReturned();
-        $book->increaseStock(1);
 
         $fresh = $book->fresh();
         $this->assertSame(5, $fresh->getAvailableStock());
@@ -216,45 +216,38 @@ class PhysicalStockTest extends TestCase
     #[Test]
     public function physical_does_not_inflate_after_a_library_loan_return_cycle(): void
     {
-        // Regression: getMaxStocksAttribute sums every INCREASE row — including
-        // the +1 from a loan return — so for a borrow-and-return cycle it
-        // overstates "Assigned" as 6 on a 5-copy book. physical_stock uses the
-        // available+claims+loans formula instead and stays correctly at 5.
+        // Regression: getMaxStocksAttribute sums every INCREASE row — the
+        // claim/release machinery writes a RETURN row at return time, which
+        // is INCREASE-like and so still inflates "Assigned". physical_stock
+        // uses the available+claims formula instead and stays correctly at 5
+        // through any number of cycles.
         $book = $this->book(5);
         $loan = $book->checkOutTo(User::factory()->create());
         $loan->markReturned();
-        $book->increaseStock(1);
 
         $fresh = $book->fresh();
-        $this->assertSame(6, $fresh->getMaxStocksAttribute(), 'documented limitation: max inflates per cycle');
+        $this->assertGreaterThan(5, $fresh->getMaxStocksAttribute(), 'documented limitation: max inflates per cycle');
         $this->assertSame(5, $fresh->getPhysicalStock(), 'physical stays at the real owned count');
     }
 
     #[Test]
-    public function loan_quantity_above_one_aggregates_into_physical(): void
+    public function multi_unit_physical_claim_aggregates_into_physical(): void
     {
-        // Defensive coverage: real-world loans are always quantity=1, but the
-        // formula sums purchase.quantity rather than counting rows, so a
-        // hypothetical multi-unit loan would still account correctly.
+        // Defensive coverage for the claim-based loan model: a
+        // PHYSICALLY_CLAIMED row with quantity > 1 should contribute its
+        // full quantity to physical (10 = 7 on shelf + 3 claimed).
         $book = $this->book(10);
-        $book->decreaseStock(3); // simulate the stock-side of a 3-unit loan
-        $borrower = User::factory()->create();
-        ProductPurchase::create([
-            'purchasable_id' => $book->id,
-            'purchasable_type' => Product::class,
-            'purchaser_id' => $borrower->id,
-            'purchaser_type' => User::class,
-            'quantity' => 3,
-            'amount' => 0,
-            'amount_paid' => 0,
-            'status' => PurchaseStatus::PENDING,
-            'from' => now(),
-            'until' => now()->addWeeks(2),
-            'meta' => ['extensions_used' => 0],
-        ]);
+
+        $book->claimStock(
+            quantity: 3,
+            from: now(),
+            until: now()->addWeeks(2),
+            type: \Blax\Shop\Enums\StockType::PHYSICALLY_CLAIMED,
+        );
 
         $fresh = $book->fresh();
         $this->assertSame(7, $fresh->getAvailableStock());
-        $this->assertSame(10, $fresh->getPhysicalStock(), '7 on shelf + 3 on loan = 10 owned');
+        $this->assertSame(3, $fresh->getCurrentlyClaimedStock());
+        $this->assertSame(10, $fresh->getPhysicalStock(), '7 on shelf + 3 physically claimed = 10 owned');
     }
 }

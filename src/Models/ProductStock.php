@@ -159,15 +159,31 @@ class ProductStock extends Model
      * @param string|null $note Optional note about the claim
      * @return self|null The created claim entry, or null if insufficient stock
      */
+    /**
+     * Claim stock for a product (reservation/booking/loan).
+     *
+     * Creates a two-row entry:
+     *  1. DECREASE row (negative quantity, COMPLETED) — removes from
+     *     `available` immediately.
+     *  2. Claim row (positive quantity, PENDING) — tracks the reservation
+     *     until released. `$type` controls whether the claim auto-releases
+     *     at `expires_at` (CLAIMED) or stays manual-release only
+     *     (PHYSICALLY_CLAIMED, used for loans).
+     *
+     * @param  StockType  $type  Either CLAIMED (default — booking-style,
+     *         {@see self::releaseExpired()} eligible) or PHYSICALLY_CLAIMED
+     *         (loan-style, manual release only).
+     */
     public static function claim(
         Product $product,
         int $quantity,
         $reference = null,
         ?\DateTimeInterface $from = null,
         ?\DateTimeInterface $until = null,
-        ?string $note = null
+        ?string $note = null,
+        StockType $type = StockType::CLAIMED,
     ): ?self {
-        return DB::transaction(function () use ($product, $quantity, $reference, $from, $until, $note) {
+        return DB::transaction(function () use ($product, $quantity, $reference, $from, $until, $note, $type) {
             // When claiming for a future booking, check availability at the start date
             // Otherwise claims for different time periods would incorrectly conflict
             $checkDate = $from ?? now();
@@ -193,7 +209,7 @@ class ProductStock extends Model
             return self::create([
                 'product_id' => $product->id,
                 'quantity' => $quantity,
-                'type' => StockType::CLAIMED,
+                'type' => $type,
                 'status' => StockStatus::PENDING,
                 'reference_type' => $reference ? get_class($reference) : null,
                 'reference_id' => $reference?->id,
@@ -304,7 +320,14 @@ class ProductStock extends Model
      */
     public static function releaseExpired(): int
     {
-        $expired = self::expired()->get();
+        // Auto-release only the CLAIMED type. PHYSICALLY_CLAIMED rows carry
+        // an `expires_at` to drive overdue tracking on the loan side, but
+        // they must NOT be auto-released — the borrower physically has the
+        // item until they bring it back, regardless of how overdue the
+        // due date is.
+        $expired = self::expired()
+            ->where('type', StockType::CLAIMED->value)
+            ->get();
         $count = 0;
 
         foreach ($expired as $stock) {
@@ -331,7 +354,9 @@ class ProductStock extends Model
      */
     public function scopeAvailableClaims($query)
     {
-        return $query->where('type', StockType::CLAIMED->value)->where('status', StockStatus::PENDING->value);
+        return $query
+            ->whereIn('type', StockType::claimTypeValues())
+            ->where('status', StockStatus::PENDING->value);
     }
 
     /**
@@ -360,7 +385,7 @@ class ProductStock extends Model
      */
     public function scopeAvailableOnDate($query, \DateTimeInterface $date)
     {
-        return $query->where('type', StockType::CLAIMED->value)
+        return $query->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->where(function ($q) use ($date) {
                 $q->where(function ($subQuery) use ($date) {

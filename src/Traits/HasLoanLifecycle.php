@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Blax\Shop\Traits;
 
 use Blax\Shop\Enums\PurchaseStatus;
+use Blax\Shop\Enums\StockStatus;
+use Blax\Shop\Enums\StockType;
 use Blax\Shop\Events\LoanExtended;
 use Blax\Shop\Events\LoanReturned;
 use Blax\Shop\Models\ProductPrice;
+use Blax\Shop\Models\ProductStock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 /**
@@ -145,28 +149,84 @@ trait HasLoanLifecycle
         $this->meta = $meta;
         $this->save();
 
+        // Push the paired physical claim's expires_at to match the new due
+        // date so calendar/overdue checks at the stock level stay in sync
+        // with the purchase's `until`. Loans created before this rewiring
+        // (no linked claim) silently skip.
+        if ($this->until !== null) {
+            $this->loanClaimQuery()
+                ->whereNotNull('expires_at')
+                ->update(['expires_at' => $this->until]);
+        }
+
         event(new LoanExtended($this, $weeks));
 
         return $this;
     }
 
     /**
-     * Mark the item returned: stamp meta.returned_at with the given moment
-     * (or now()) and flip status to completed so the row reads as final.
+     * Mark the item returned: stamp meta.returned_at, flip status to
+     * COMPLETED, and release the paired PHYSICALLY_CLAIMED stock entry
+     * (which automatically creates the offsetting RETURN row via
+     * {@see ProductStock::release()}). All three operations happen inside
+     * a single transaction so physical inventory is consistent at every
+     * observable instant.
+     *
+     * Idempotent: a second call on an already-returned loan is a no-op —
+     * the returned_at timestamp is not restamped and the claim is not
+     * re-released.
      */
     public function markReturned(?\DateTimeInterface $at = null): self
     {
+        if ($this->isReturned()) {
+            return $this;
+        }
+
         $at ??= now();
 
-        $meta = (array) ($this->meta ?? []);
-        $meta['returned_at'] = Carbon::instance($at)->toIso8601String();
-        $this->meta = $meta;
-        $this->status = PurchaseStatus::COMPLETED;
-        $this->save();
+        DB::transaction(function () use ($at) {
+            $meta = (array) ($this->meta ?? []);
+            $meta['returned_at'] = Carbon::instance($at)->toIso8601String();
+            $this->meta = $meta;
+            $this->status = PurchaseStatus::COMPLETED;
+            $this->save();
+
+            // Release the paired physical claim. Each release() call
+            // creates a RETURN entry that offsets the DECREASE written
+            // alongside the original claim at checkout, so available stock
+            // naturally restores. For loans created before this rewiring
+            // (no linked claim), this short-circuits and the host is still
+            // responsible for the increaseStock(1) — but new code paths
+            // won't need to do anything.
+            $this->loanClaimQuery()->each(fn (ProductStock $claim) => $claim->release());
+        });
 
         event(new LoanReturned($this));
 
         return $this;
+    }
+
+    /**
+     * Builder for the PHYSICALLY_CLAIMED stock row(s) created alongside
+     * this loan at checkout. Used by {@see self::markReturned()} (to
+     * release the claim) and {@see self::extend()} (to push expires_at).
+     *
+     * Polymorphic lookup uses the purchase's primary key directly — the
+     * reference_type was stored as the concrete ProductPurchase class at
+     * checkout time, but we look up by id alone since UUIDs are unique
+     * across the table. Filters to PENDING + PHYSICALLY_CLAIMED so any
+     * already-released or unrelated rows are skipped.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder<ProductStock>
+     */
+    protected function loanClaimQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        $stockModel = config('shop.models.product_stock', ProductStock::class);
+
+        return $stockModel::query()
+            ->where('reference_id', $this->getKey())
+            ->where('type', StockType::PHYSICALLY_CLAIMED->value)
+            ->where('status', StockStatus::PENDING->value);
     }
 
     /**

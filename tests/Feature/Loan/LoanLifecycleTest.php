@@ -194,12 +194,12 @@ class LoanLifecycleTest extends TestCase
     /* ───────────────────── edge cases ───────────────────── */
 
     #[Test]
-    public function mark_returned_called_twice_keeps_the_first_returned_at_timestamp(): void
+    public function mark_returned_is_idempotent_first_write_wins(): void
     {
-        // markReturned is idempotent-ish: calling it again overwrites the
-        // returned_at timestamp. We document that behaviour explicitly so a
-        // future refactor knows whether to keep it. If you want first-write-
-        // wins, change markReturned() to no-op when already returned.
+        // markReturned() now no-ops on already-returned loans so a retried
+        // call (network flake, double-submit) can't re-release the paired
+        // claim and inflate available stock past the catalogue size. The
+        // first returned_at timestamp is the canonical one.
         Carbon::setTestNow(Carbon::parse('2026-05-14 10:00:00'));
         $loan = $this->checkout();
 
@@ -209,10 +209,11 @@ class LoanLifecycleTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-05-20 10:00:00'));
         $loan->markReturned();
 
-        $this->assertNotSame($firstReturnedAt, $loan->returnedAt(), 'second call overwrites');
+        $this->assertSame($firstReturnedAt, $loan->returnedAt(), 'second call does not restamp');
         $this->assertSame(
-            Carbon::parse('2026-05-20 10:00:00')->toIso8601String(),
+            Carbon::parse('2026-05-14 10:00:00')->toIso8601String(),
             $loan->returnedAt(),
+            'first write wins',
         );
     }
 

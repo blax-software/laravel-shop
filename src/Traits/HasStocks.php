@@ -100,7 +100,7 @@ trait HasStocks
     {
         return $this->stocks()
             ->available()
-            ->where('type', '!=', StockType::CLAIMED->value)
+            ->whereNotIn('type', StockType::claimTypeValues())
             ->willExpire()
             ->sum('quantity') ?? 0;
     }
@@ -148,29 +148,27 @@ trait HasStocks
      * regardless of whether they're temporarily out (on loan, claimed by a
      * cart/booking) or sitting on the shelf.
      *
-     *   available + currentlyClaimed + activeLoans
+     *   physical = available + currentlyClaimed
      *
-     * Why three terms?
-     *  - available             — units on the shelf, free for new use.
-     *  - currentlyClaimed      — units held by a cart, booking, or other
-     *                            reservation that hasn't been finalised
-     *                            (will come back if the claim expires).
-     *  - activeLoans           — units checked out via a PENDING
-     *                            {@see \Blax\Shop\Models\ProductPurchase}
-     *                            row that hasn't been returned yet
-     *                            (loaned items still belong to the library).
+     * Why only two terms? Both CLAIMED and PHYSICALLY_CLAIMED rows count
+     * toward `currentlyClaimed` (see {@see StockType::claimTypeValues()}),
+     * so cart reservations, bookings, AND loans all flow through the same
+     * claim machinery. Loans no longer need a separate `activeLoans` term —
+     * the PHYSICALLY_CLAIMED stock row IS the active loan.
      *
      * Worked examples:
      *  - Tomato shop: bought 10, sold 3 → DECREASE -3 is permanent (no
      *    claim/loan to offset). Physical = 7. Available = 7.
-     *  - Library:     bought 5,  loaned 1 → DECREASE -1 + active loan → +1.
-     *    Physical = 4 + 0 + 1 = 5. Available = 4.
-     *  - Hotel:       1 room, future booking → claim sits in the future, no
-     *    current claim yet. Physical = 1 + 0 + 0 = 1.
+     *  - Library:     bought 5,  loaned 1 → one PHYSICALLY_CLAIMED row.
+     *    Available = 4, currentlyClaimed = 1, physical = 5.
+     *  - Hotel:       1 room, future booking → CLAIMED row, claimed_from
+     *    in the future. Available = 1 today, currentlyClaimed = 0 today,
+     *    physical = 1.
      *
      * Distinct from {@see self::getMaxStocksAttribute} (which sums every
      * INCREASE/RETURN row ever written and so inflates after every loan
-     * return), and from {@see \Blax\Shop\Traits\MayBeLoanableProduct::getTotalQuantityAttribute}
+     * return cycle) and from
+     * {@see \Blax\Shop\Traits\MayBeLoanableProduct::getTotalQuantityAttribute}
      * (which is loanable-only). This one works for every Product type.
      */
     public function getPhysicalStockAttribute(): int
@@ -179,25 +177,7 @@ trait HasStocks
             return PHP_INT_MAX;
         }
 
-        $available = $this->getAvailableStock();
-        $currentClaims = $this->getCurrentlyClaimedStock();
-
-        // Query loans by purchasable_id only — the morphMany on $this->purchases()
-        // narrows by purchasable_type using static::class, which silently
-        // misses rows written under a subclass type (e.g. App\Models\Book)
-        // when the caller resolved the product via the base Product class
-        // (as `shop:stocks:availability` does). Product UUIDs are unique
-        // across the table so dropping the type filter is safe.
-        $purchaseModel = config(
-            'shop.models.product_purchase',
-            \Blax\Shop\Models\ProductPurchase::class,
-        );
-        $activeLoans = (int) $purchaseModel::query()
-            ->where('purchasable_id', $this->getKey())
-            ->activeLoans()
-            ->sum('quantity');
-
-        return $available + $currentClaims + $activeLoans;
+        return $this->getAvailableStock() + $this->getCurrentlyClaimedStock();
     }
 
     /**
@@ -354,14 +334,16 @@ trait HasStocks
             return false;
         }
 
-        // For CLAIMED type, delegate to claimStock which handles the two-entry pattern
-        if ($type === StockType::CLAIMED) {
+        // For claim-style types, delegate to claimStock which handles the
+        // two-entry pattern (DECREASE + PENDING claim row).
+        if ($type->isClaim()) {
             return $this->claimStock(
                 quantity: $quantity,
                 reference: $referencable,
                 from: $from,
                 until: $until,
-                note: $note
+                note: $note,
+                type: $type
             );
         }
 
@@ -395,24 +377,22 @@ trait HasStocks
     }
 
     /**
-     * Claim stock for temporary use (reservation/booking)
-     * 
-     * This is different from decreaseStock - it:
+     * Claim stock for temporary use (reservation/booking/loan).
+     *
+     * Different from decreaseStock — it:
      * 1. Removes stock from available inventory (via DECREASE entry)
-     * 2. Tracks it as a claim (via CLAIMED entry with PENDING status)
-     * 3. Can be released back later (changes CLAIMED to COMPLETED)
-     * 4. Supports date ranges for bookings (claimed_from to expires_at)
-     * 
+     * 2. Tracks it as a claim (via CLAIMED/PHYSICALLY_CLAIMED entry with PENDING status)
+     * 3. Can be released later (status PENDING → COMPLETED + paired RETURN)
+     * 4. Supports date ranges (claimed_from → expires_at)
+     *
      * Use cases:
-     * - Hotel room bookings (claimed_from = check-in, expires_at = check-out)
-     * - Equipment rentals (claimed_from = rental start, expires_at = return date)
-     * - Cart reservations (no claimed_from, expires_at = cart expiry)
-     * 
-     * @param int $quantity Amount to claim
-     * @param mixed $reference Optional reference model (Order, Booking, Cart, etc.)
-     * @param DateTimeInterface|null $from When claim starts (null = immediately)
-     * @param DateTimeInterface|null $until When claim expires (null = permanent)
-     * @param string|null $note Optional note about the claim
+     * - Hotel room bookings  → CLAIMED, expires_at = check-out (auto-releases).
+     * - Cart reservations    → CLAIMED, expires_at = cart expiry (auto-releases).
+     * - Library loans        → PHYSICALLY_CLAIMED, expires_at = due date
+     *                          (overdue tracking only — does not auto-release).
+     *
+     * @param  StockType  $type  CLAIMED (default, auto-release) or
+     *         PHYSICALLY_CLAIMED (manual release only — used by loans).
      * @return \Blax\Shop\Models\ProductStock|null The claim entry, or null if insufficient stock
      */
     public function claimStock(
@@ -420,7 +400,8 @@ trait HasStocks
         $reference = null,
         ?DateTimeInterface $from = null,
         ?DateTimeInterface $until = null,
-        ?string $note = null
+        ?string $note = null,
+        StockType $type = StockType::CLAIMED,
     ): ?\Blax\Shop\Models\ProductStock {
 
         if (!$this->manage_stock) {
@@ -437,7 +418,8 @@ trait HasStocks
             $reference,
             $from,
             $until,
-            $note
+            $note,
+            $type,
         );
 
         if ($claim) {
@@ -478,7 +460,7 @@ trait HasStocks
         $baseStock = $this->stocks()
             ->withoutGlobalScope('willExpire')
             ->where('status', StockStatus::COMPLETED->value)
-            ->where('type', '!=', StockType::CLAIMED->value)
+            ->whereNotIn('type', StockType::claimTypeValues())
             ->where(function ($query) use ($date) {
                 $query->whereNull('expires_at')
                     ->orWhere('expires_at', '>', $date);
@@ -488,16 +470,20 @@ trait HasStocks
         // Add back claims that should not reduce availability at the given date
         $inactiveClaims = $this->stocks()
             ->withoutGlobalScope('willExpire')
-            ->where('type', StockType::CLAIMED->value)
+            ->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->where(function ($query) use ($date) {
                 $query->where(function ($q) use ($date) {
-                    // Claim has not started yet
+                    // Claim has not started yet — applies to both claim types.
                     $q->whereNotNull('claimed_from')
                         ->where('claimed_from', '>', $date);
                 })->orWhere(function ($q) use ($date) {
-                    // Claim expired before the date
-                    $q->whereNotNull('expires_at')
+                    // Claim expired before the date — only for CLAIMED, which
+                    // auto-releases at expires_at. PHYSICALLY_CLAIMED (loans)
+                    // stays reserved until manually returned; expires_at is
+                    // informational/overdue-tracking only.
+                    $q->where('type', StockType::CLAIMED->value)
+                        ->whereNotNull('expires_at')
                         ->where('expires_at', '<=', $date);
                 });
             })
@@ -518,7 +504,7 @@ trait HasStocks
     public function getCurrentlyClaimedStock(): int
     {
         return abs($this->stocks()
-            ->where('type', StockType::CLAIMED->value)
+            ->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->willExpire()
             ->where(function ($query) {
@@ -538,7 +524,7 @@ trait HasStocks
     public function getActiveAndPlannedClaimedStock(): int
     {
         return abs($this->stocks()
-            ->where('type', StockType::CLAIMED->value)
+            ->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->willExpire()
             ->sum('quantity'));
@@ -553,7 +539,7 @@ trait HasStocks
     public function getFutureClaimedStock(?DateTimeInterface $from = null): int
     {
         $query = $this->stocks()
-            ->where('type', StockType::CLAIMED->value)
+            ->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->willExpire();
 
@@ -677,7 +663,7 @@ trait HasStocks
 
         $nextClaimEnd = $this->stocks()
             ->withoutGlobalScope('willExpire')
-            ->where('type', StockType::CLAIMED->value)
+            ->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->whereNotNull('expires_at')
             ->where('expires_at', '>', now())
@@ -749,7 +735,7 @@ trait HasStocks
         $baseStock = $this->stocks()
             ->withoutGlobalScope('willExpire')
             ->where('status', StockStatus::COMPLETED->value)
-            ->where('type', '!=', StockType::CLAIMED->value)
+            ->whereNotIn('type', StockType::claimTypeValues())
             ->where('created_at', '<=', $dateDayEnd)
             ->where(function ($query) use ($date) {
                 $query->whereNull('expires_at')
@@ -758,16 +744,19 @@ trait HasStocks
             ->sum('quantity');
 
         // Add back claims that should not reduce availability at the given date.
+        // Same asymmetry as getAvailableStock: PHYSICALLY_CLAIMED rows stay
+        // reserved past expires_at (overdue loan still in borrower's hands).
         $inactiveClaims = $this->stocks()
             ->withoutGlobalScope('willExpire')
-            ->where('type', StockType::CLAIMED->value)
+            ->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->where(function ($query) use ($date) {
                 $query->where(function ($q) use ($date) {
                     $q->whereNotNull('claimed_from')
                         ->where('claimed_from', '>', $date);
                 })->orWhere(function ($q) use ($date) {
-                    $q->whereNotNull('expires_at')
+                    $q->where('type', StockType::CLAIMED->value)
+                        ->whereNotNull('expires_at')
                         ->where('expires_at', '<=', $date);
                 });
             })
@@ -814,10 +803,10 @@ trait HasStocks
                 // Group conditions with OR to keep them within the product_id scope
                 $query->where(function ($q) {
                     $q->where('status', StockStatus::COMPLETED->value)
-                        ->where('type', '!=', StockType::CLAIMED->value);
+                        ->whereNotIn('type', StockType::claimTypeValues());
                 })->orWhere(function ($q) {
                     $q->where('status', StockStatus::PENDING->value)
-                        ->where('type', StockType::CLAIMED->value);
+                        ->whereIn('type', StockType::claimTypeValues());
                 });
             })
             ->get();
@@ -861,7 +850,8 @@ trait HasStocks
             foreach ($events as $eventTime) {
                 $available = 0;
                 foreach ($allStocks as $stock) {
-                    if ($stock->status === StockStatus::COMPLETED && $stock->type !== StockType::CLAIMED) {
+                    $isClaim = $stock->type instanceof StockType && $stock->type->isClaim();
+                    if ($stock->status === StockStatus::COMPLETED && ! $isClaim) {
                         // A COMPLETED entry only contributes from the day it
                         // was created — without this gate, a DECREASE from a
                         // loan placed today would retroactively reduce
@@ -874,10 +864,19 @@ trait HasStocks
                         if ($hasStarted && $notExpired) {
                             $available += $stock->quantity;
                         }
-                    } elseif ($stock->status === StockStatus::PENDING && $stock->type === StockType::CLAIMED) {
-                        // Add back if NOT active at this timestamp
+                    } elseif ($stock->status === StockStatus::PENDING && $isClaim) {
+                        // Add back if NOT active at this timestamp. For
+                        // CLAIMED (auto-release booking) we also add back
+                        // past-expires_at — the booking window is over so the
+                        // unit is free again. PHYSICALLY_CLAIMED (loans)
+                        // stays reserved past expires_at because the
+                        // borrower physically has the item until they return
+                        // it — the calendar should show "unavailable" even
+                        // for overdue loans.
                         $isNotStarted = $stock->claimed_from && $stock->claimed_from > $eventTime;
-                        $isExpired = $stock->expires_at && $stock->expires_at <= $eventTime;
+                        $isExpired = $stock->type === StockType::CLAIMED
+                            && $stock->expires_at
+                            && $stock->expires_at <= $eventTime;
                         if ($isNotStarted || $isExpired) {
                             $available += $stock->quantity;
                         }

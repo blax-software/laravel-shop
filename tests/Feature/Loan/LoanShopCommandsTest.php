@@ -95,11 +95,14 @@ class LoanShopCommandsTest extends TestCase
         $book = $this->newBook('Hyperion', 'CMD-HYP');
         $book->increaseStock(3);
 
-        // Borrow twice, return one. Ledger = seed + 2 decreases + 1 increase.
+        // Borrow twice, return one. With the claim-based loan model the
+        // ledger carries: seed INCREASE, two claim cycles each writing a
+        // DECREASE + PHYSICALLY_CLAIMED row, plus one RETURN from the
+        // released claim — six rows total, but the operator only needs to
+        // see the standard increase/decrease verbs that the command renders.
         $loan = $book->checkOutTo($this->borrower);
         $book->checkOutTo(User::factory()->create());
         $loan->markReturned();
-        $book->increaseStock(1);
 
         $output = $this->runOk(ShopStocksCommand::class, ['product' => 'CMD-HYP']);
 
@@ -119,25 +122,20 @@ class LoanShopCommandsTest extends TestCase
     public function assigned_for_loanable_product_must_not_inflate_after_a_return_cycle(): void
     {
         // Regression test for the bug where shop:stocks rendered Assigned=4
-        // for a 3-copy book that had been borrowed-and-returned once. The
-        // sequence is: INCREASE +3 (seed), DECREASE -1 (loan), INCREASE +1
-        // (host-driven return restock). getMaxStocksAttribute sums every
-        // positive entry — so it returned 3 + 1 = 4 — which the command then
-        // rendered verbatim. Fix: consult `total_quantity`, which is loan-aware
-        // (available stock + active loans = physical inventory we own).
+        // for a 3-copy book that had been borrowed-and-returned once. With
+        // the new claim-based loan model the issue disappears at the source:
+        // checkout writes a DECREASE + PHYSICALLY_CLAIMED pair, the return
+        // releases the claim (status flip + RETURN row), and the net effect
+        // on every accessor reads exactly 3 copies — no inflation possible.
         $book = $this->newBook('Hyperion', 'CMD-HYP-RC');
         $book->increaseStock(3);
 
         $loan = $book->checkOutTo($this->borrower);
         $loan->markReturned();
-        $book->increaseStock(1);
 
-        // Sanity: model accessors disagree — getMaxStocksAttribute is inflated
-        // (this is the documented limitation of the underlying calc), while
-        // total_quantity reports the truth. The command must use total_quantity.
         $fresh = $book->fresh();
-        $this->assertSame(4, $fresh->getMaxStocksAttribute(), 'inflated by design');
-        $this->assertSame(3, (int) $fresh->total_quantity, 'loan-aware accessor');
+        $this->assertSame(3, (int) $fresh->total_quantity, 'loan-aware accessor reads true count');
+        $this->assertSame(3, $fresh->getPhysicalStock(), 'physical reads true count');
 
         // Detail view: ASSIGNED row must be 3, not 4.
         $output = $this->runOk(ShopStocksCommand::class, ['product' => 'CMD-HYP-RC']);
@@ -228,8 +226,7 @@ class LoanShopCommandsTest extends TestCase
         $book = $this->newBook('Singular', 'CMD-SIN');
         $book->increaseStock(1);
         $loan = $book->checkOutTo($this->borrower);
-        $loan->markReturned();
-        $book->increaseStock(1);
+        $loan->markReturned();  // releases the claim → restores available
 
         $output = $this->runOk(ShopAvailabilityCommand::class, [
             'product' => 'CMD-SIN',

@@ -163,12 +163,11 @@ trait MayBeLoanableProduct
 
         $weeks ??= (int) config('shop.loan.default_duration_weeks', 2);
         $now = Carbon::now();
+        $until = $now->copy()->addWeeks($weeks);
         $price ??= $this->defaultPrice()->first();
 
-        $purchase = DB::transaction(function () use ($borrower, $weeks, $price, $now): ProductPurchase {
-            $this->decreaseStock(1);
-
-            return $this->purchases()->create([
+        $purchase = DB::transaction(function () use ($borrower, $price, $now, $until): ProductPurchase {
+            $purchase = $this->purchases()->create([
                 'purchaser_id' => $borrower->getKey(),
                 'purchaser_type' => $borrower::class,
                 'price_id' => $price?->id,
@@ -177,9 +176,27 @@ trait MayBeLoanableProduct
                 'amount_paid' => 0,
                 'status' => PurchaseStatus::PENDING,
                 'from' => $now,
-                'until' => $now->copy()->addWeeks($weeks),
+                'until' => $until,
                 'meta' => ['extensions_used' => 0],
             ]);
+
+            // Loan model = booking-style claim that doesn't auto-release.
+            // The PHYSICALLY_CLAIMED row drives availability/calendar and
+            // carries the due date in `expires_at` for overdue tracking,
+            // while ProductStock::releaseExpired() pointedly skips this
+            // type — the borrower physically has the item until they bring
+            // it back, regardless of how overdue they get. markReturned()
+            // releases the claim, which creates the offsetting RETURN entry.
+            $this->claimStock(
+                quantity: 1,
+                reference: $purchase,
+                from: $now,
+                until: $until,
+                note: 'Loan to ' . class_basename($borrower::class) . ' #' . substr((string) $borrower->getKey(), 0, 8),
+                type: \Blax\Shop\Enums\StockType::PHYSICALLY_CLAIMED,
+            );
+
+            return $purchase;
         });
 
         event(new LoanCreated($purchase));

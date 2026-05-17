@@ -179,23 +179,47 @@ class CheckOutToTest extends TestCase
     }
 
     #[Test]
-    public function mark_returned_does_not_restore_stock_intentionally(): void
+    public function mark_returned_releases_the_paired_physical_claim_and_restores_stock(): void
     {
-        // Locking-in regression test for an opinionated design choice: the
-        // package's markReturned() flips lifecycle state but leaves stock
-        // alone. Hosts that model loans as borrow-and-return (rather than
-        // permanent ownership transfer) must follow up with an explicit
-        // increaseStock(1) — see moonshiner-library's LoanController.
+        // Replaces the prior "must not restore stock" assertion. Loans are
+        // now modelled as PHYSICALLY_CLAIMED stock entries; markReturned()
+        // releases that claim, which creates the offsetting RETURN row via
+        // ProductStock::release() — so available stock comes back to where
+        // it was before the loan with no host bookkeeping required.
+        $availableBefore = $this->book->fresh()->getAvailableStock();
+
         $loan = $this->book->checkOutTo($this->borrower);
-        $availableAfterCheckout = $this->book->fresh()->getAvailableStock();
+        $this->assertSame(
+            $availableBefore - 1,
+            $this->book->fresh()->getAvailableStock(),
+            'checkout drops available by quantity',
+        );
 
         $loan->markReturned();
 
         $this->assertSame(
-            $availableAfterCheckout,
+            $availableBefore,
             $this->book->fresh()->getAvailableStock(),
-            'markReturned() must not change stock — hosts opt in to that explicitly.',
+            'markReturned() restores available via the released claim',
         );
+    }
+
+    #[Test]
+    public function mark_returned_is_idempotent_and_does_not_double_restore_stock(): void
+    {
+        // A retried markReturned() call (network flake, double-click on a
+        // librarian button, etc.) must not inflate stock past the catalogue
+        // size by re-releasing an already-released claim.
+        $availableBefore = $this->book->fresh()->getAvailableStock();
+        $loan = $this->book->checkOutTo($this->borrower);
+
+        $loan->markReturned();
+        $afterFirst = $this->book->fresh()->getAvailableStock();
+        $loan->markReturned();
+        $afterSecond = $this->book->fresh()->getAvailableStock();
+
+        $this->assertSame($availableBefore, $afterFirst);
+        $this->assertSame($afterFirst, $afterSecond, 'second call must be a no-op');
     }
 }
 
