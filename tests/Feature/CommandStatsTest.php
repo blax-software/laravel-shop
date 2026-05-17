@@ -144,6 +144,35 @@ class CommandStatsTest extends TestCase
     }
 
     #[Test]
+    public function shop_stats_reports_physical_units_summed_across_managed_products(): void
+    {
+        // Two managed products: 10 tomatoes (physical=10), library book with
+        // 5 copies one of which is on loan (physical=5 since loans count).
+        // Plus an unmanaged eBook that must NOT be summed in (would render ∞).
+        $tomato = $this->newProduct(['manage_stock' => true]);
+        $tomato->increaseStock(10);
+
+        $book = Product::create([
+            'name' => 'Library Book',
+            'sku' => 'STAT-BOOK',
+            'type' => ProductType::LOANABLE,
+            'status' => ProductStatus::PUBLISHED,
+            'is_visible' => true,
+            'manage_stock' => true,
+        ]);
+        $book->increaseStock(5);
+        $book->checkOutTo(\Workbench\App\Models\User::factory()->create());
+
+        $this->newProduct(['manage_stock' => false]); // unmanaged, must skip
+
+        Artisan::call(ShopStatsCommand::class);
+        $output = Artisan::output();
+
+        // Tomato 10 + Book 5 (loaned copy still counts) = 15 physical units.
+        $this->assertMatchesRegularExpression('/Products: physical units\s*\|\s*15\b/', $output);
+    }
+
+    #[Test]
     public function shop_stats_includes_carts_and_orders_when_models_are_configured(): void
     {
         Cart::create(['session_id' => 'sess-stats-1']);

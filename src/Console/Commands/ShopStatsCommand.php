@@ -32,6 +32,15 @@ class ShopStatsCommand extends Command
         $rows[] = ['Products: published', $publishedProducts];
         $rows[] = ['Products: visible', $visibleProducts];
 
+        // Physical inventory rollup — how many units the business still owns
+        // across every managed product (loaned/claimed copies count). Skips
+        // unmanaged products so a single "no scarcity" item doesn't render
+        // ∞ at the rollup level.
+        $physicalUnits = $productModel::where('manage_stock', true)
+            ->get()
+            ->sum(fn ($product) => $product->getPhysicalStock());
+        $rows[] = ['Products: physical units', $physicalUnits];
+
         $rows[] = ['---', '---'];
 
         // Actions

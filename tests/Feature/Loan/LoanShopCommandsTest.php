@@ -166,6 +166,39 @@ class LoanShopCommandsTest extends TestCase
     /* ─────────────────── shop:stocks:availability (calendar) ─────────────── */
 
     #[Test]
+    public function shop_stocks_availability_headline_surfaces_physical_count(): void
+    {
+        // Coverage for the new "Physical N" headline that complements
+        // "Available N". For a loanable product the gap between the two is the
+        // loan tally — physical stays at the catalogue size while available
+        // drops as copies go out.
+        $book = $this->newBook('Hyperion', 'CMD-HYP-PHYS');
+        $book->increaseStock(3);
+        $book->checkOutTo($this->borrower);
+
+        $output = $this->runOk(ShopAvailabilityCommand::class, ['product' => 'CMD-HYP-PHYS']);
+
+        $this->assertStringContainsString('Physical 3', $output, 'physical = 2 on shelf + 1 active loan = 3');
+        $this->assertStringContainsString('Available 2', $output);
+    }
+
+    #[Test]
+    public function shop_stocks_detail_view_carries_a_physical_box(): void
+    {
+        // Operator-side: shop:stocks {product} renders the totals box; the
+        // PHYSICAL cell should sit next to ASSIGNED and reflect the loan-aware
+        // count.
+        $book = $this->newBook('Atlas', 'CMD-ATLAS-PHYS');
+        $book->increaseStock(4);
+        $book->checkOutTo($this->borrower);
+
+        $output = $this->runOk(ShopStocksCommand::class, ['product' => 'CMD-ATLAS-PHYS']);
+
+        $this->assertStringContainsString('PHYSICAL', $output);
+        $this->assertSame(4, $book->fresh()->getPhysicalStock(), 'model agrees with command');
+    }
+
+    #[Test]
     public function shop_stocks_availability_headline_reads_zero_for_a_fully_loaned_book(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-05-14 10:00:00'));

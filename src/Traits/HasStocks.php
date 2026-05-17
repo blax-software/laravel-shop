@@ -131,7 +131,7 @@ trait HasStocks
 
     /**
      * Check if product is in stock
-     * 
+     *
      * @return bool True if stock management is disabled OR available stock > 0
      */
     public function isInStock(): bool
@@ -141,6 +141,72 @@ trait HasStocks
         }
 
         return $this->getAvailableStock() > 0;
+    }
+
+    /**
+     * Physical inventory — how many units the business still owns right now,
+     * regardless of whether they're temporarily out (on loan, claimed by a
+     * cart/booking) or sitting on the shelf.
+     *
+     *   available + currentlyClaimed + activeLoans
+     *
+     * Why three terms?
+     *  - available             — units on the shelf, free for new use.
+     *  - currentlyClaimed      — units held by a cart, booking, or other
+     *                            reservation that hasn't been finalised
+     *                            (will come back if the claim expires).
+     *  - activeLoans           — units checked out via a PENDING
+     *                            {@see \Blax\Shop\Models\ProductPurchase}
+     *                            row that hasn't been returned yet
+     *                            (loaned items still belong to the library).
+     *
+     * Worked examples:
+     *  - Tomato shop: bought 10, sold 3 → DECREASE -3 is permanent (no
+     *    claim/loan to offset). Physical = 7. Available = 7.
+     *  - Library:     bought 5,  loaned 1 → DECREASE -1 + active loan → +1.
+     *    Physical = 4 + 0 + 1 = 5. Available = 4.
+     *  - Hotel:       1 room, future booking → claim sits in the future, no
+     *    current claim yet. Physical = 1 + 0 + 0 = 1.
+     *
+     * Distinct from {@see self::getMaxStocksAttribute} (which sums every
+     * INCREASE/RETURN row ever written and so inflates after every loan
+     * return), and from {@see \Blax\Shop\Traits\MayBeLoanableProduct::getTotalQuantityAttribute}
+     * (which is loanable-only). This one works for every Product type.
+     */
+    public function getPhysicalStockAttribute(): int
+    {
+        if (!$this->manage_stock) {
+            return PHP_INT_MAX;
+        }
+
+        $available = $this->getAvailableStock();
+        $currentClaims = $this->getCurrentlyClaimedStock();
+
+        // Query loans by purchasable_id only — the morphMany on $this->purchases()
+        // narrows by purchasable_type using static::class, which silently
+        // misses rows written under a subclass type (e.g. App\Models\Book)
+        // when the caller resolved the product via the base Product class
+        // (as `shop:stocks:availability` does). Product UUIDs are unique
+        // across the table so dropping the type filter is safe.
+        $purchaseModel = config(
+            'shop.models.product_purchase',
+            \Blax\Shop\Models\ProductPurchase::class,
+        );
+        $activeLoans = (int) $purchaseModel::query()
+            ->where('purchasable_id', $this->getKey())
+            ->activeLoans()
+            ->sum('quantity');
+
+        return $available + $currentClaims + $activeLoans;
+    }
+
+    /**
+     * Convenience method form so callers reading dynamically can pick either
+     * `$product->physical_stock` or `$product->getPhysicalStock()`.
+     */
+    public function getPhysicalStock(): int
+    {
+        return $this->getPhysicalStockAttribute();
     }
 
     /**

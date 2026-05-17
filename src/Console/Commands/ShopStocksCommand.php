@@ -38,6 +38,7 @@ class ShopStocksCommand extends Command
 
         $rows = $products->map(function (Product $product): array {
             $assigned = $product->manage_stock ? $this->assignedCapacity($product) : null;
+            $physical = $product->manage_stock ? $product->getPhysicalStock() : null;
             $used = $product->manage_stock ? $this->totalUsed($product) : null;
             $available = $product->getAvailableStock();
             $claimed = $product->getCurrentlyClaimedStock();
@@ -48,6 +49,7 @@ class ShopStocksCommand extends Command
                 'name' => $this->truncate((string) $product->name, 30),
                 'type' => $type,
                 'assigned' => $assigned === null ? '∞' : (string) $assigned,
+                'physical' => $physical === null ? '∞' : (string) $physical,
                 'used' => $used === null ? '—' : (string) $used,
                 'available' => $available === PHP_INT_MAX ? '∞' : (string) $available,
                 'claimed' => (string) $claimed,
@@ -56,7 +58,7 @@ class ShopStocksCommand extends Command
 
         $this->newLine();
         $this->table(
-            ['ID', 'Name', 'Type', 'Assigned', 'Used', 'Available', 'Claimed'],
+            ['ID', 'Name', 'Type', 'Assigned', 'Physical', 'Used', 'Available', 'Claimed'],
             $rows,
         );
         $this->line('  <fg=gray>Total products: '.$products->count().'   '.
@@ -89,6 +91,7 @@ class ShopStocksCommand extends Command
         }
 
         $assigned = $this->assignedCapacity($product);
+        $physical = $product->getPhysicalStock();
         $used = $this->totalUsed($product);
         $available = $product->getAvailableStock();
         $currentClaims = $product->getCurrentlyClaimedStock();
@@ -97,6 +100,7 @@ class ShopStocksCommand extends Command
 
         $this->renderTotalsBox([
             ['ASSIGNED', $assigned, 'cyan'],
+            ['PHYSICAL', $physical, 'cyan'],
             ['USED', $used, 'gray'],
             ['AVAILABLE', $available, $available > 0 ? 'green' : 'red'],
             ['CLAIMED NOW', $currentClaims, $currentClaims > 0 ? 'yellow' : 'gray'],

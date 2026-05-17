@@ -80,13 +80,19 @@ class ShopAvailabilityCommand extends Command
 
     private function renderSummaryCounters(Product $product): void
     {
+        $physical = $product->getPhysicalStock();
         $available = $product->getAvailableStock();
         $currentClaims = $product->getCurrentlyClaimedStock();
         $futureClaims = $product->getFutureClaimedStock();
         $activeAndPlanned = $product->getActiveAndPlannedClaimedStock();
 
+        // "Physical" is the count of units the business still owns — sums
+        // available + currently claimed + active loans. For a tomato shop it
+        // matches available (sales are permanent); for a library it stays at
+        // the catalogue size regardless of how many copies are currently out.
         $this->line(sprintf(
-            '  <fg=green;options=bold>Available %s</>   <fg=yellow>Currently claimed %d</>   <fg=blue>Future claims %d</>   <fg=magenta>Active & planned %d</>',
+            '  <fg=cyan;options=bold>Physical %s</>   <fg=green;options=bold>Available %s</>   <fg=yellow>Currently claimed %d</>   <fg=blue>Future claims %d</>   <fg=magenta>Active & planned %d</>',
+            $this->infinityOr($physical),
             $this->infinityOr($available),
             $currentClaims,
             $futureClaims,
