@@ -84,6 +84,10 @@ class ProductPurchase extends Model
         'meta' => 'object',
     ];
 
+    protected $dispatchesEvents = [
+        'created' => \Blax\Shop\Events\PurchaseCreated::class,
+    ];
+
     public function __construct(array $attributes = [])
     {
         parent::__construct($attributes);

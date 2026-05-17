@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 class ShopListPurchasesCommand extends Command
 {
-    protected $signature = 'shop:list-purchases
+    protected $signature = 'shop:list:purchases
                             {product? : Product ID to filter by}
                             {--user= : Filter by user ID}
                             {--status= : Filter by status}

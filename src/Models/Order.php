@@ -88,6 +88,10 @@ class Order extends Model
         'is_fully_paid',
     ];
 
+    protected $dispatchesEvents = [
+        'created' => \Blax\Shop\Events\OrderCreated::class,
+    ];
+
     public function __construct(array $attributes = [])
     {
         parent::__construct($attributes);

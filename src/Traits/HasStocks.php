@@ -6,6 +6,12 @@ namespace Blax\Shop\Traits;
 
 use Blax\Shop\Enums\StockStatus;
 use Blax\Shop\Enums\StockType;
+use Blax\Shop\Events\StockBecameLow;
+use Blax\Shop\Events\StockClaimed;
+use Blax\Shop\Events\StockDecreased;
+use Blax\Shop\Events\StockDepleted;
+use Blax\Shop\Events\StockIncreased;
+use Blax\Shop\Events\StockReplenished;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Models\ProductStock;
 use Carbon\Carbon;
@@ -159,7 +165,7 @@ trait HasStocks
             return throw new NotEnoughStockException("Not enough stock available for product ID {$this->id}");
         }
 
-        $this->stocks()->create([
+        $entry = $this->stocks()->create([
             'quantity' => -$quantity,
             'type' => StockType::DECREASE,
             'status' => StockStatus::COMPLETED,
@@ -170,6 +176,10 @@ trait HasStocks
         $this->logStockChange(-$quantity, 'decrease', $available - $quantity);
 
         $this->save();
+
+        $availableAfter = $this->getAvailableStock();
+        event(new StockDecreased($this, $entry, $availableAfter));
+        $this->dispatchStockTransitions($available, $availableAfter);
 
         return true;
     }
@@ -189,7 +199,9 @@ trait HasStocks
             return false;
         }
 
-        $this->stocks()->create([
+        $availableBefore = $this->getAvailableStock();
+
+        $entry = $this->stocks()->create([
             'quantity' => $quantity,
             'type' => StockType::INCREASE,
             'status' => StockStatus::COMPLETED,
@@ -201,7 +213,41 @@ trait HasStocks
 
         $this->save();
 
+        $availableAfter = $this->getAvailableStock();
+        event(new StockIncreased($this, $entry, $availableAfter));
+        $this->dispatchStockTransitions($availableBefore, $availableAfter);
+
         return true;
+    }
+
+    /**
+     * Compare pre/post available counts and dispatch the boundary-crossing
+     * stock events (depleted, replenished, became-low, fully-available).
+     * Called from increase/decrease/claim paths to give listeners a single
+     * place to react to inventory thresholds without re-querying.
+     */
+    protected function dispatchStockTransitions(int $before, int $after): void
+    {
+        if ($before > 0 && $after === 0) {
+            event(new StockDepleted($this));
+        } elseif ($before === 0 && $after > 0) {
+            event(new StockReplenished($this, $after));
+        }
+
+        $threshold = (int) ($this->low_stock_threshold ?? 0);
+        if ($threshold > 0 && $before > $threshold && $after <= $threshold && $after > 0) {
+            event(new StockBecameLow($this, $after, $threshold));
+        }
+
+        // StockFullyAvailable is intentionally NOT auto-dispatched here:
+        // getMaxStocksAttribute() sums every INCREASE/RETURN entry over time,
+        // so it grows whenever new stock arrives or claims release — meaning
+        // `available === max` collapses to "did we just add inventory?" and
+        // overlaps with StockIncreased. Hosts that need a domain-meaningful
+        // "back at full capacity" signal should dispatch the event themselves
+        // against whatever ceiling they consider canonical (e.g. "physical
+        // copies on hand" for a library, "max concurrent bookings" for a
+        // venue).
     }
 
     /**
@@ -317,7 +363,9 @@ trait HasStocks
 
         $stockModel = config('shop.models.product_stock', ProductStock::class);
 
-        return $stockModel::claim(
+        $availableBefore = $this->getAvailableStock();
+
+        $claim = $stockModel::claim(
             $this,
             $quantity,
             $reference,
@@ -325,6 +373,13 @@ trait HasStocks
             $until,
             $note
         );
+
+        if ($claim) {
+            event(new StockClaimed($this, $claim));
+            $this->dispatchStockTransitions($availableBefore, $this->getAvailableStock());
+        }
+
+        return $claim;
     }
 
     /**

@@ -7,6 +7,9 @@ namespace Blax\Shop\Models;
 use Blax\Shop\Contracts\Cartable;
 use Blax\Workkit\Traits\HasMetaTranslation;
 use Blax\Shop\Events\ProductCreated;
+use Blax\Shop\Events\ProductDeleted;
+use Blax\Shop\Events\ProductPublished;
+use Blax\Shop\Events\ProductUnpublished;
 use Blax\Shop\Events\ProductUpdated;
 use Blax\Shop\Contracts\Purchasable;
 use Blax\Shop\Enums\ProductStatus;
@@ -138,6 +141,7 @@ class Product extends Model implements Purchasable, Cartable
     protected $dispatchesEvents = [
         'created' => ProductCreated::class,
         'updated' => ProductUpdated::class,
+        'deleted' => ProductDeleted::class,
     ];
 
     protected $hidden = [
@@ -188,6 +192,30 @@ class Product extends Model implements Purchasable, Cartable
         static::updated(function ($model) {
             if (config('shop.cache.enabled')) {
                 Cache::forget(config('shop.cache.prefix') . 'product:' . $model->id);
+            }
+
+            // ProductPublished / ProductUnpublished fire on the transition,
+            // not on every save. The PUBLISHED status is the public surface,
+            // so leaving it (to DRAFT, ARCHIVED, etc.) is the "unpublish" edge.
+            if ($model->wasChanged('status')) {
+                $before = $model->getOriginal('status');
+                $after = $model->status;
+                $publishedEnum = ProductStatus::PUBLISHED;
+                $wasPublished = $before === $publishedEnum || (is_string($before) && $before === $publishedEnum->value);
+                $isPublished = $after === $publishedEnum;
+                if (! $wasPublished && $isPublished) {
+                    event(new ProductPublished($model));
+                } elseif ($wasPublished && ! $isPublished) {
+                    event(new ProductUnpublished($model));
+                }
+            }
+        });
+
+        // Fire ProductPublished on initial creation when the row lands in the
+        // published state (the `updated` hook above only catches transitions).
+        static::created(function ($model) {
+            if ($model->status === ProductStatus::PUBLISHED) {
+                event(new ProductPublished($model));
             }
         });
 

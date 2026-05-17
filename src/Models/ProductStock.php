@@ -213,13 +213,13 @@ class ProductStock extends Model
      * 
      * @return bool True if released successfully, false if not pending
      */
-    public function release(): bool
+    public function release(bool $expired = false): bool
     {
         if ($this->status !== StockStatus::PENDING) {
             return false;
         }
 
-        return DB::transaction(function () {
+        return DB::transaction(function () use ($expired) {
             // Mark claim as completed (released)
             $this->status = StockStatus::COMPLETED;
             $this->save();
@@ -227,6 +227,12 @@ class ProductStock extends Model
             // Return the claimed stock to inventory
             // This creates a RETURN entry to offset the DECREASE that was created when claiming
             $this->product->increaseStock($this->quantity, StockType::RETURN);
+
+            if ($expired) {
+                event(new \Blax\Shop\Events\StockClaimExpired($this->product, $this));
+            } else {
+                event(new \Blax\Shop\Events\StockReleased($this->product, $this));
+            }
 
             return true;
         });
@@ -302,7 +308,7 @@ class ProductStock extends Model
         $count = 0;
 
         foreach ($expired as $stock) {
-            if ($stock->release()) {
+            if ($stock->release(expired: true)) {
                 $count++;
             }
         }

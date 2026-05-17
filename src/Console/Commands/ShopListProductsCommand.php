@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 class ShopListProductsCommand extends Command
 {
-    protected $signature = 'shop:list-products
+    protected $signature = 'shop:list:products
                             {--with-actions : Include action counts}
                             {--with-purchases : Include purchase counts}
                             {--enabled : Only show enabled products}

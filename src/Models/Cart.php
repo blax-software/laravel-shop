@@ -63,6 +63,10 @@ class Cart extends Model
         'is_ready_to_checkout',
     ];
 
+    protected $dispatchesEvents = [
+        'created' => \Blax\Shop\Events\CartCreated::class,
+    ];
+
     public function __construct(array $attributes = [])
     {
         parent::__construct($attributes);
