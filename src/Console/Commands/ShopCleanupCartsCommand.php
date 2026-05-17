@@ -100,7 +100,7 @@ class ShopCleanupCartsCommand extends Command
                         ['ID', 'Status', 'Customer', 'Items', 'Last Activity', 'Created'],
                         $cartsToDelete->map(fn($cart) => [
                             substr($cart->id, 0, 8) . '...',
-                            $cart->status->value,
+                            $cart->status?->value ?? '—',
                             $cart->customer_id ? substr($cart->customer_id, 0, 8) . '...' : 'Guest',
                             $cart->items()->count(),
                             $cart->last_activity_at?->diffForHumans() ?? $cart->updated_at->diffForHumans(),

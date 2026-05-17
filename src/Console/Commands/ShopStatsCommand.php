@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Blax\Shop\Console\Commands;
 
+use Blax\Shop\Enums\ProductStatus;
+use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Models\ProductAction;
 use Illuminate\Console\Command;
 
@@ -13,41 +15,59 @@ class ShopStatsCommand extends Command
 
     protected $description = 'Display shop statistics';
 
-    public function handle()
+    public function handle(): int
     {
         $productModel = config('shop.models.product');
         $purchaseModel = config('shop.models.product_purchase');
+        $cartModel = config('shop.models.cart');
+        $orderModel = config('shop.models.order');
 
+        $rows = [];
+
+        // Products
         $totalProducts = $productModel::count();
-        $enabledProducts = $productModel::where('enabled', true)->count();
-        $disabledProducts = $productModel::where('enabled', false)->count();
+        $publishedProducts = $productModel::where('status', ProductStatus::PUBLISHED->value)->count();
+        $visibleProducts = $productModel::where('is_visible', true)->count();
+        $rows[] = ['Products: total', $totalProducts];
+        $rows[] = ['Products: published', $publishedProducts];
+        $rows[] = ['Products: visible', $visibleProducts];
 
+        $rows[] = ['---', '---'];
+
+        // Actions
         $totalActions = ProductAction::count();
-        $enabledActions = ProductAction::where('enabled', true)->count();
-        $disabledActions = ProductAction::where('enabled', false)->count();
+        $activeActions = ProductAction::where('active', true)->count();
+        $rows[] = ['Actions: total', $totalActions];
+        $rows[] = ['Actions: active', $activeActions];
+        $rows[] = ['Actions: inactive', $totalActions - $activeActions];
 
+        $rows[] = ['---', '---'];
+
+        // Purchases (loans, bookings, sales)
         $totalPurchases = $purchaseModel::count();
-        $totalRevenue = $purchaseModel::sum('price');
+        $completedPurchases = $purchaseModel::where('status', PurchaseStatus::COMPLETED->value)->count();
+        $pendingPurchases = $purchaseModel::where('status', PurchaseStatus::PENDING->value)->count();
+        $revenueCents = (int) $purchaseModel::sum('amount_paid');
+        $rows[] = ['Purchases: total', $totalPurchases];
+        $rows[] = ['Purchases: completed', $completedPurchases];
+        $rows[] = ['Purchases: pending', $pendingPurchases];
+        $rows[] = ['Revenue (paid)', number_format($revenueCents / 100, 2)];
+
+        // Carts (model may be absent in minimal installs — guard accordingly)
+        if ($cartModel) {
+            $rows[] = ['---', '---'];
+            $rows[] = ['Carts: total', $cartModel::count()];
+        }
+
+        // Orders
+        if ($orderModel) {
+            $rows[] = ['Orders: total', $orderModel::count()];
+        }
 
         $this->info('=== Shop Statistics ===');
         $this->newLine();
+        $this->table(['Metric', 'Value'], $rows);
 
-        $this->table(
-            ['Metric', 'Count'],
-            [
-                ['Total Products', $totalProducts],
-                ['Enabled Products', $enabledProducts],
-                ['Disabled Products', $disabledProducts],
-                ['---', '---'],
-                ['Total Actions', $totalActions],
-                ['Enabled Actions', $enabledActions],
-                ['Disabled Actions', $disabledActions],
-                ['---', '---'],
-                ['Total Purchases', $totalPurchases],
-                ['Total Revenue', number_format($totalRevenue, 2)],
-            ]
-        );
-
-        return 0;
+        return self::SUCCESS;
     }
 }
