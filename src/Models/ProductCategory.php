@@ -107,7 +107,9 @@ class ProductCategory extends Model
     // Backward compatibility accessor
     public function getIsVisibleAttribute(): bool
     {
-        return $this->attributes['is_visible'] ?? true;
+        // Raw `$attributes['is_visible']` is a tinyint string under PDO mysql.
+        // Cast to bool to honor the declared return type (strict types).
+        return (bool) ($this->attributes['is_visible'] ?? true);
     }
 
     public function getProductCountAttribute(): int

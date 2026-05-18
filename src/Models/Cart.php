@@ -243,7 +243,9 @@ class Cart extends Model
 
     public function getTotal(): float
     {
-        return $this->items()->sum('subtotal');
+        // SQL SUM of an integer column comes back as a numeric string under
+        // mysql's PDO driver — cast to honor the declared float return type.
+        return (float) $this->items()->sum('subtotal');
     }
 
     public function getTotalItems(): int
