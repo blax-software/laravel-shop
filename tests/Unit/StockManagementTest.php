@@ -14,9 +14,8 @@ class StockManagementTest extends TestCase
     #[Test]
     public function it_detects_low_stock()
     {
-        $product = Product::factory()->create([
+        $product = Product::factory()->withStocks(5)->create([
             'manage_stock' => true,
-            'stock_quantity' => 5,
             'low_stock_threshold' => 10,
         ]);
 
@@ -36,15 +35,15 @@ class StockManagementTest extends TestCase
     #[Test]
     public function it_marks_product_as_out_of_stock()
     {
+        // manage_stock + no ledger entries IS the out-of-stock state under
+        // the ledger-only model — there are no `in_stock` / `stock_status`
+        // columns to fall back on anymore.
         $product = Product::factory()->create([
             'manage_stock' => true,
-            'stock_quantity' => 0,
-            'in_stock' => false,
-            'stock_status' => 'outofstock',
         ]);
 
-        $this->assertFalse($product->in_stock);
-        $this->assertEquals('outofstock', $product->stock_status);
+        $this->assertFalse($product->isInStock());
+        $this->assertSame(0, $product->getAvailableStock());
     }
 
     #[Test]
@@ -52,7 +51,6 @@ class StockManagementTest extends TestCase
     {
         $product = Product::factory()->create([
             'manage_stock' => false,
-            'stock_quantity' => 0,
         ]);
 
         // When stock management is disabled, product should be considered in stock

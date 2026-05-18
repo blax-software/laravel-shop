@@ -302,7 +302,10 @@ class ProductStock extends Model
         DB::table('product_stock_logs')->insert([
             'product_id' => $this->product_id,
             'quantity_change' => -$this->quantity,
-            'quantity_after' => $this->product->stock_quantity,
+            // After this ledger row has been persisted, getAvailableStock()
+            // returns the canonical post-change count (sums the ProductStock
+            // ledger directly — no denormalised column needed).
+            'quantity_after' => $this->product?->getAvailableStock() ?? 0,
             'type' => $this->type,
             'note' => $this->note,
             'reference_type' => $this->reference_type,

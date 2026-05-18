@@ -48,9 +48,8 @@ class ProductFactory extends Factory
             'is_visible' => true,
             'featured' => false,
             'manage_stock' => true,
-            'stock_quantity' => $this->faker->numberBetween(0, 100),
-            'in_stock' => true,
-            'stock_status' => 'instock',
+            // Stock counts live in the ProductStock ledger — use the
+            // ->withStocks(int) state to seed an initial INCREASE entry.
             'published_at' => now(),
             'meta' => json_encode(new \stdClass()),
         ];
@@ -58,11 +57,10 @@ class ProductFactory extends Factory
 
     public function outOfStock(): static
     {
-        return $this->state([
-            'stock_quantity' => 0,
-            'in_stock' => false,
-            'stock_status' => 'outofstock',
-        ]);
+        // manage_stock=true + no ledger entries → isInStock() returns false,
+        // getAvailableStock() returns 0. That IS the out-of-stock state under
+        // the ledger-only model — no extra columns required.
+        return $this->state(['manage_stock' => true]);
     }
 
     public function variable(): static

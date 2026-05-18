@@ -470,10 +470,16 @@ class CartDateManagementTest extends TestCase
     #[Test]
     public function validate_date_availability_marks_items_unavailable_when_product_not_available()
     {
-        $product = Product::factory()->create([
+        // Single-unit booking product. Stock is real (one INCREASE entry in
+        // the ledger via withStocks) so addToCart can succeed pre-dates;
+        // the conflict that the validation must catch is simulated by an
+        // existing CLAIMED entry on the ledger — i.e. "a prior checkout
+        // already locked this unit for days 1–3". Claims are created at
+        // checkout time in real life, not by setting cart dates, so we
+        // place one directly here to exercise the date-overlap path.
+        $product = Product::factory()->withStocks(1)->create([
             'type' => ProductType::BOOKING,
             'manage_stock' => true,
-            'stock_quantity' => 1,
         ]);
 
         $price = ProductPrice::factory()->create([
@@ -481,19 +487,28 @@ class CartDateManagementTest extends TestCase
             'purchasable_type' => Product::class,
             'type' => PriceType::RECURRING,
             'is_default' => true,
-
         ]);
 
+        // Pre-existing claim that locks the unit for days 1–3.
+        $product->claimStock(
+            quantity: 1,
+            reference: null,
+            from: Carbon::now()->addDays(1),
+            until: Carbon::now()->addDays(3),
+            note: 'Test: existing booking blocks the single unit',
+        );
+
+        // Customer cart tries to book the same product for overlapping dates.
+        // addToCart succeeds (pool capacity = 1, no items yet); setDates
+        // must NOT throw, but must mark the booking item unavailable.
         $cart = Cart::factory()->create();
         $item = $cart->addToCart($product, 1);
+        $cart->setDates(
+            Carbon::now()->addDays(2),
+            Carbon::now()->addDays(4),
+            validateAvailability: true,
+        );
 
-        // Set item dates that consume the stock
-        $item->updateDates(Carbon::now()->addDays(1), Carbon::now()->addDays(3));
-
-        // Try to set cart dates that overlap - should NOT throw, instead mark items unavailable
-        $cart->setDates(Carbon::now()->addDays(2), Carbon::now()->addDays(4), validateAvailability: true);
-
-        // Item should now be marked as unavailable (null price)
         $item->refresh();
         $this->assertNull($item->price, 'Unavailable item should have null price');
         $this->assertFalse($item->is_ready_to_checkout, 'Unavailable item should not be ready for checkout');
@@ -502,10 +517,9 @@ class CartDateManagementTest extends TestCase
     #[Test]
     public function apply_dates_to_items_marks_items_unavailable_when_product_not_available()
     {
-        $product = Product::factory()->create([
+        $product = Product::factory()->withStocks(1)->create([
             'type' => ProductType::BOOKING,
             'manage_stock' => true,
-            'stock_quantity' => 1,
         ]);
 
         $price = ProductPrice::factory()->create([
@@ -541,10 +555,12 @@ class CartDateManagementTest extends TestCase
     #[Test]
     public function can_skip_validation_when_setting_dates()
     {
+        // No `->withStocks(...)` — manage_stock=true with no ledger entries
+        // means getAvailableStock() returns 0. Same intent as the old
+        // 'stock_quantity' => 0.
         $product = Product::factory()->create([
             'type' => ProductType::BOOKING,
             'manage_stock' => true,
-            'stock_quantity' => 0, // No stock available
         ]);
 
         $price = ProductPrice::factory()->create([

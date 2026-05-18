@@ -34,10 +34,9 @@ class BookingPerMinutePricingTest extends TestCase
             'slug' => 'conference-room',
             'type' => ProductType::BOOKING,
             'manage_stock' => true,
-            'stock_quantity' => 0,
         ]);
 
-        // Initialize stock
+        // Seed stock via the ledger (the canonical source).
         $this->bookingProduct->increaseStock(10);
 
         // Create a price: $100.00 per day (24 hours)

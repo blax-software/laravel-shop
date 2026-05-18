@@ -127,7 +127,12 @@ trait MayBePoolProduct
     public function getPoolTotalCapacity(): int
     {
         if (!$this->isPool()) {
-            return $this->manage_stock ? ($this->stock_quantity ?? 0) : PHP_INT_MAX;
+            // "Total capacity" = the ceiling of physical stock, not the live
+            // remaining count. `max_stocks` sums INCREASE + RETURN ledger
+            // entries, ignoring DECREASE and CLAIMED — exactly the semantic
+            // this method documents. Replaces the old `stock_quantity`
+            // denormalised column.
+            return $this->manage_stock ? (int) $this->max_stocks : PHP_INT_MAX;
         }
 
         $singleItems = $this->singleProducts;

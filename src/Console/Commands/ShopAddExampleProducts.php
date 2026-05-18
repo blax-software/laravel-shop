@@ -228,8 +228,10 @@ class ShopAddExampleProducts extends Command
         } elseif ($type === ProductType::POOL->value) {
             $this->addPoolItemsForHotel($product, $productData);
         } elseif ($type === ProductType::BOOKING->value) {
-            // Bookings need stock to be bookable
-            if ($product->stock_quantity === 0) {
+            // Bookings need stock to be bookable. Read the canonical live
+            // count from the ledger (getAvailableStock) — no `stock_quantity`
+            // column to consult anymore.
+            if ($product->getAvailableStock() === 0) {
                 $product->increaseStock($productData['stock'] ?? 10);
             }
         }

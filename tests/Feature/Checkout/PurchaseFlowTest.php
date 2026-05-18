@@ -298,10 +298,9 @@ class PurchaseFlowTest extends TestCase
     public function user_cannot_add_out_of_stock_product_to_cart()
     {
         $user = User::factory()->create();
+        // No ledger entries seeded — getAvailableStock() returns 0.
         $product = Product::factory()->create([
             'manage_stock' => true,
-            'stock_quantity' => 0,
-            'in_stock' => false,
         ]);
 
         $this->expectException(\Exception::class);

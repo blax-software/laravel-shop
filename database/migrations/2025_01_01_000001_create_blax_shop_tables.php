@@ -25,10 +25,13 @@ return new class extends Migration
                 $table->timestamp('sale_start')->nullable();
                 $table->timestamp('sale_end')->nullable();
                 $table->boolean('manage_stock')->default(false);
-                $table->integer('stock_quantity')->default(0);
+                // Live stock counts live in the ProductStock ledger — there
+                // is intentionally no denormalised column on products. See
+                // HasStocks::getAvailableStock() for the canonical read.
                 $table->integer('low_stock_threshold')->nullable();
-                $table->boolean('in_stock')->default(true);
-                $table->string('stock_status')->default('instock'); // instock, outofstock, onbackorder
+                // Live stock state (in-stock?, status) is computed from the
+                // ProductStock ledger — see HasStocks::isInStock / scopeInStock.
+                // No denormalised columns on products.
                 $table->decimal('weight', 10, 2)->nullable();
                 $table->decimal('length', 10, 2)->nullable();
                 $table->decimal('width', 10, 2)->nullable();
@@ -65,7 +68,11 @@ return new class extends Migration
                     $table->longText('description')->nullable()->after('short_description');
                 }
                 if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'low_stock_threshold')) {
-                    $table->integer('low_stock_threshold')->nullable()->after('stock_quantity');
+                    // `manage_stock` is the stable anchor here — the legacy
+                    // `stock_quantity` column is being dropped in a later
+                    // migration, so anchoring against it would fail once that
+                    // runs.
+                    $table->integer('low_stock_threshold')->nullable()->after('manage_stock');
                 }
                 if (!Schema::hasColumn(config('shop.tables.products', 'products'), 'published_at')) {
                     $table->timestamp('published_at')->nullable()->after('status');

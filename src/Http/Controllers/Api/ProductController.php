@@ -13,10 +13,14 @@ class ProductController extends Controller
     {
         $productModel = config('shop.models.product');
 
-        $perPage = min(
-            request('per_page', config('shop.pagination.per_page')),
-            config('shop.pagination.max_per_page')
-        );
+        // Honour the request, fall back to the configured default, clamp to
+        // the configured max. Defaults are applied here too so a missing
+        // `shop.pagination.*` key can never collapse `min()` to 0 and
+        // silently trigger Laravel's built-in default of 15.
+        $defaultPerPage = (int) (config('shop.pagination.per_page') ?? 24);
+        $maxPerPage = (int) (config('shop.pagination.max_per_page') ?? 100);
+        $perPage = (int) request('per_page', $defaultPerPage);
+        $perPage = max(1, min($perPage, $maxPerPage));
 
         $query = $productModel::query()
             ->published()
@@ -59,7 +63,6 @@ class ProductController extends Controller
                 [
                     'current_price' => $product->getCurrentPrice(),
                     'on_sale' => $product->isOnSale(),
-                    'average_rating' => $product->getAverageRating(),
                 ]
             ),
         ]);

@@ -174,4 +174,21 @@ return [
         'max_extensions' => env('SHOP_LOAN_MAX_EXTENSIONS', 2),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | API pagination
+    |--------------------------------------------------------------------------
+    |
+    | Consumed by the public API controllers (Http/Controllers/Api/*).
+    | `per_page`     — default page size when the request doesn't specify one.
+    | `max_per_page` — upper bound the controller will honour regardless of
+    |                  what the client asks for, so a malicious or careless
+    |                  caller can't request all rows in one request.
+    |
+    */
+    'pagination' => [
+        'per_page' => env('SHOP_API_PER_PAGE', 24),
+        'max_per_page' => env('SHOP_API_MAX_PER_PAGE', 100),
+    ],
+
 ];
