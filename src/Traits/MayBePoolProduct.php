@@ -326,7 +326,7 @@ trait MayBePoolProduct
 
                     // Get available stock at the START of the booking period
                     // This ensures claims that will expire before the booking starts don't reduce availability
-                    $available = max(0, $item->getAvailableStock($from) - abs($overlappingClaims));
+                    $available = max(0, $item->getAvailableStock($from) - abs((int) $overlappingClaims));
                 }
             } elseif (!$item->isBooking()) {
                 $available = $item->getAvailableStock();

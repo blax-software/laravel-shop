@@ -503,7 +503,9 @@ trait HasStocks
      */
     public function getCurrentlyClaimedStock(): int
     {
-        return abs($this->stocks()
+        // SQL SUM comes back as a numeric string under PDO mysql; cast
+        // before abs() so strict types accept it.
+        return abs((int) $this->stocks()
             ->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->willExpire()
@@ -523,7 +525,7 @@ trait HasStocks
      */
     public function getActiveAndPlannedClaimedStock(): int
     {
-        return abs($this->stocks()
+        return abs((int) $this->stocks()
             ->whereIn('type', StockType::claimTypeValues())
             ->where('status', StockStatus::PENDING->value)
             ->willExpire()
@@ -552,7 +554,7 @@ trait HasStocks
             });
         }
 
-        return abs($query->sum('quantity'));
+        return abs((int) $query->sum('quantity'));
     }
 
 
