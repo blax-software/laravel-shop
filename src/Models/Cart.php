@@ -1653,6 +1653,194 @@ class Cart extends Model
     }
 
     /**
+     * Customer-facing checkout-calendar payload for the cart.
+     *
+     * Wraps {@see self::calendarAvailability()} and adds everything the
+     * order-overview / date-picker UIs need in a single shot, so the
+     * frontend doesn't have to re-derive it from raw per-day maps:
+     *
+     *  - `dates`: visible-window-only `iso => bool` bookable flag, which
+     *    drives the calendar's per-day dots.
+     *  - `items[]`: one entry per cart_item with duration-aware
+     *    suggestions and a visible-window-scoped `dates_unavailable` list:
+     *      - `available_for_selected` — every day of cart.from..cart.until
+     *        has enough stock for this item's required quantity.
+     *      - `closest_before` — END date of the latest duration-fitting
+     *        bookable window strictly before cart.from. Reads naturally
+     *        as "bookable UNTIL X".
+     *      - `closest_after` — START date of the earliest duration-fitting
+     *        bookable window strictly after cart.from. Walks from
+     *        cart.from+1 (not cart.until+1) so a selection that overlaps
+     *        a short outage still surfaces the FIRST recovery date,
+     *        not "the next free duration past your chosen end".
+     *      - `ever_available` — at least one day in the wide search window
+     *        has stock for this item. Distinguishes "temporary date
+     *        conflict" from "permanently sold out".
+     *      - `dates_unavailable[]` — ISO dates within the visible window
+     *        where this single item is blocked. The frontend unions these
+     *        across items to paint red dots / hover tooltips.
+     *
+     * Performance: `$searchDays` bounds the closest-date search to a few
+     * months each side of the visible window. The default of 90 keeps the
+     * underlying per-product stock scan cheap; raise it for sparse
+     * calendars where bookings cluster far from the customer's selection.
+     *
+     * @return array{
+     *     dates: array<string, bool>,
+     *     items: list<array{
+     *         cart_item_id: int|string,
+     *         product_id: int|string,
+     *         product_name: string,
+     *         required_quantity: int,
+     *         available_for_selected: bool,
+     *         closest_before: ?string,
+     *         closest_after: ?string,
+     *         ever_available: bool,
+     *         dates_unavailable: list<string>,
+     *     }>,
+     * }
+     */
+    public function calendarAvailabilityHints(
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null,
+        int $searchDays = 90,
+    ): array {
+        $visibleStart = Carbon::parse($from ?? now())->startOfDay();
+        $visibleEnd = Carbon::parse($until ?? $visibleStart->copy()->addDays(30))->endOfDay();
+        $searchStart = $visibleStart->copy()->subDays($searchDays)->startOfDay();
+        $searchEnd = $visibleEnd->copy()->addDays($searchDays)->endOfDay();
+
+        // One pass over the WIDE range — the inner calendarAvailability()
+        // already groups duplicate products and aggregates per-day, so we
+        // don't re-pay that cost per cart_item.
+        $availability = $this->calendarAvailability($searchStart, $searchEnd);
+
+        $visibleStartIso = $visibleStart->toDateString();
+        $visibleEndIso = $visibleEnd->toDateString();
+
+        $dates = [];
+        foreach (($availability['dates'] ?? []) as $iso => $row) {
+            if ($iso < $visibleStartIso || $iso > $visibleEndIso) continue;
+            $dates[$iso] = ($row['max'] ?? 0) >= 1;
+        }
+
+        $selectedFromIso = $this->from ? Carbon::parse($this->from)->toDateString() : null;
+        $selectedUntilIso = $this->until ? Carbon::parse($this->until)->toDateString() : null;
+        $durationDays = 1;
+        if ($selectedFromIso && $selectedUntilIso) {
+            $durationDays = max(
+                1,
+                Carbon::parse($selectedFromIso)->startOfDay()
+                    ->diffInDays(Carbon::parse($selectedUntilIso)->startOfDay()) + 1
+            );
+        }
+
+        // Items relation is guaranteed loaded by calendarAvailability().
+        $items = [];
+        foreach (($availability['items'] ?? []) as $itemBlock) {
+            $required = (int) ($itemBlock['required_quantity'] ?? 1);
+            $dayRows = $itemBlock['availability']['dates'] ?? [];
+
+            $cartItemIds = $this->items
+                ->where('purchasable_id', $itemBlock['product_id'])
+                ->pluck('id')
+                ->all();
+
+            $isAvailableOn = fn (string $iso): bool =>
+                isset($dayRows[$iso]) && ($dayRows[$iso]['max'] ?? 0) >= $required;
+
+            $availableForSelected = $selectedFromIso && $selectedUntilIso;
+            if ($availableForSelected) {
+                $cursor = Carbon::parse($selectedFromIso);
+                $end = Carbon::parse($selectedUntilIso);
+                while ($cursor->lte($end)) {
+                    if (! $isAvailableOn($cursor->toDateString())) {
+                        $availableForSelected = false;
+                        break;
+                    }
+                    $cursor->addDay();
+                }
+            }
+
+            $windowFitsAt = function (string $startIso) use (&$isAvailableOn, $durationDays, $searchEnd): bool {
+                $cursor = Carbon::parse($startIso);
+                for ($i = 0; $i < $durationDays; $i++) {
+                    if ($cursor->gt($searchEnd)) return false;
+                    if (! $isAvailableOn($cursor->toDateString())) return false;
+                    $cursor->addDay();
+                }
+                return true;
+            };
+
+            $closestBefore = null;
+            $closestAfter = null;
+            if ($selectedFromIso) {
+                // closest_before: latest END strictly before cart.from
+                // with a duration window ending on it ("bookable UNTIL X").
+                $candidateEnd = Carbon::parse($selectedFromIso)->subDay();
+                while ($candidateEnd->gte($searchStart)) {
+                    $start = $candidateEnd->copy()->subDays($durationDays - 1);
+                    if ($start->gte($searchStart) && $windowFitsAt($start->toDateString())) {
+                        $closestBefore = $candidateEnd->toDateString();
+                        break;
+                    }
+                    $candidateEnd->subDay();
+                }
+
+                // closest_after: earliest START strictly after cart.from
+                // — walking from cart.from+1 (NOT cart.until+1) so a
+                // selection overlapping a short outage surfaces the
+                // FIRST recovery date even when it sits inside the
+                // user's chosen range. windowFitsAt skips over blocked
+                // middle days for free.
+                $earliestStart = Carbon::parse($selectedFromIso)->addDay();
+                while ($earliestStart->lte($searchEnd)) {
+                    if ($windowFitsAt($earliestStart->toDateString())) {
+                        $closestAfter = $earliestStart->toDateString();
+                        break;
+                    }
+                    $earliestStart->addDay();
+                }
+            }
+
+            $everAvailable = false;
+            foreach ($dayRows as $row) {
+                if (($row['max'] ?? 0) >= $required) {
+                    $everAvailable = true;
+                    break;
+                }
+            }
+
+            $datesUnavailable = [];
+            foreach ($dayRows as $iso => $row) {
+                if ($iso < $visibleStartIso || $iso > $visibleEndIso) continue;
+                if (($row['max'] ?? 0) < $required) {
+                    $datesUnavailable[] = $iso;
+                }
+            }
+
+            foreach ($cartItemIds as $cartItemId) {
+                $items[] = [
+                    'cart_item_id' => $cartItemId,
+                    'product_id' => $itemBlock['product_id'],
+                    'product_name' => $itemBlock['product_name'],
+                    'required_quantity' => $required,
+                    'available_for_selected' => $availableForSelected,
+                    'closest_before' => $closestBefore,
+                    'closest_after' => $closestAfter,
+                    'ever_available' => $everAvailable,
+                    'dates_unavailable' => $datesUnavailable,
+                ];
+            }
+        }
+
+        return [
+            'dates' => empty($dates) ? [] : $dates,
+            'items' => $items,
+        ];
+    }
+
+    /**
      * Validate cart for checkout without converting it
      * 
      * Checks:
