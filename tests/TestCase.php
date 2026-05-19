@@ -67,5 +67,8 @@ abstract class TestCase extends Orchestra
 
         $migration = include __DIR__ . '/../database/migrations/2025_01_01_000002_create_product_price_tiers_table.php';
         $migration->up();
+
+        $migration = include __DIR__ . '/../database/migrations/2026_01_01_000002_add_max_per_cart_and_max_per_user_to_products.php';
+        $migration->up();
     }
 }

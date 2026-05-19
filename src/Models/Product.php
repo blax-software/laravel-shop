@@ -66,6 +66,8 @@ use Illuminate\Support\Facades\Cache;
  * @property \Illuminate\Support\Carbon|null $sale_end
  * @property bool $manage_stock
  * @property int|null $low_stock_threshold
+ * @property int|null $max_per_cart
+ * @property int|null $max_per_user
  * @property float|null $weight
  * @property float|null $length
  * @property float|null $width
@@ -103,6 +105,8 @@ class Product extends Model implements Purchasable, Cartable
         'sale_end',
         'manage_stock',
         'low_stock_threshold',
+        'max_per_cart',
+        'max_per_user',
         'weight',
         'length',
         'width',
@@ -135,6 +139,8 @@ class Product extends Model implements Purchasable, Cartable
         'featured' => 'boolean',
         'is_visible' => 'boolean',
         'low_stock_threshold' => 'integer',
+        'max_per_cart' => 'integer',
+        'max_per_user' => 'integer',
         'sort_order' => 'integer',
     ];
 
@@ -546,6 +552,8 @@ class Product extends Model implements Purchasable, Cartable
             'sale_price' => $this->sale_price,
             'is_on_sale' => $this->isOnSale(),
             'low_stock' => $this->isLowStock(),
+            'max_per_cart' => $this->max_per_cart,
+            'max_per_user' => $this->max_per_user,
             'featured' => $this->featured,
             'virtual' => $this->virtual,
             'downloadable' => $this->downloadable,

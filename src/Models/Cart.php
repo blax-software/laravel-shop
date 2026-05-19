@@ -13,6 +13,8 @@ use Blax\Shop\Exceptions\CartAlreadyConvertedException;
 use Blax\Shop\Exceptions\CartDatesRequiredException;
 use Blax\Shop\Exceptions\CartEmptyException;
 use Blax\Shop\Exceptions\CartItemMissingInformationException;
+use Blax\Shop\Exceptions\ExceedsMaxPerCartException;
+use Blax\Shop\Exceptions\ExceedsMaxPerUserException;
 use Blax\Shop\Exceptions\InvalidDateRangeException;
 use Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException;
 use Blax\Shop\Exceptions\NotEnoughStockException;
@@ -1030,6 +1032,12 @@ class Cart extends Model
             }
         }
 
+        // Enforce per-cart and per-user purchase caps before any pool
+        // recursion / stock validation kicks in. Cheaper to fail early, and
+        // the recursive pool path repeats one-unit calls — without an early
+        // bail the cap message would only surface once the recursion hit the
+        // (more expensive) stock check.
+        $this->enforcePurchaseLimits($cartable, $quantity);
 
         // For pool products with quantity > 1, add them one at a time to get progressive pricing
         if ($is_pool && $quantity > 1) {
@@ -1391,6 +1399,96 @@ class Cart extends Model
         return $cartItem;
     }
 
+    /**
+     * Enforce the `max_per_cart` and `max_per_user` caps declared on the
+     * product (if any) before the item is actually added.
+     *
+     * `max_per_cart` counts every quantity of this product already living in
+     * the cart, regardless of dates / parameters / which single-item a pool
+     * allocation picked. It's a flat "you can have at most N of this thing
+     * in your cart" rule — the simplest mental model for shop admins.
+     *
+     * `max_per_user` is summed across the customer's already-placed
+     * {@see ProductPurchase} rows (any status except CART/FAILED — pending
+     * and unpaid still count, otherwise a customer could spam an unpaid
+     * order to bypass the cap) PLUS what's currently in the cart. Guest
+     * carts (`customer_id = null`) are not subject to the per-user cap,
+     * because there is no identity to count against.
+     *
+     * Both caps are skipped silently when the cartable is not a Product
+     * instance — non-Product cartables (e.g. host-app models using
+     * IsSimplePurchasable) do not own these columns.
+     *
+     * @throws ExceedsMaxPerCartException
+     * @throws ExceedsMaxPerUserException
+     */
+    protected function enforcePurchaseLimits(Model $cartable, int $quantity): void
+    {
+        // Only Product owns these columns. ProductPrice etc. inherit caps
+        // from the underlying product, so resolve through .purchasable when
+        // a price was passed directly.
+        $product = match (true) {
+            $cartable instanceof Product => $cartable,
+            $cartable instanceof ProductPrice && $cartable->purchasable instanceof Product => $cartable->purchasable,
+            default => null,
+        };
+
+        if (!$product) {
+            return;
+        }
+
+        $maxPerCart = $product->max_per_cart;
+        $maxPerUser = $product->max_per_user;
+
+        if ($maxPerCart === null && $maxPerUser === null) {
+            return;
+        }
+
+        // Count what's already in this cart for the same product. Pool
+        // products may be split across multiple cart_items (different
+        // single-item allocations / price tiers), so we sum by
+        // purchasable_id + purchasable_type rather than by cart_item.id.
+        $alreadyInCart = (int) $this->items()
+            ->where('purchasable_id', $product->getKey())
+            ->where('purchasable_type', get_class($product))
+            ->sum('quantity');
+
+        if ($maxPerCart !== null && ($alreadyInCart + $quantity) > $maxPerCart) {
+            throw ExceedsMaxPerCartException::forProduct(
+                (string) $product->name,
+                $maxPerCart,
+                $alreadyInCart,
+                $quantity
+            );
+        }
+
+        if ($maxPerUser !== null && $this->customer_id && $this->customer_type) {
+            // PENDING / UNPAID still count — only carts (not yet committed)
+            // and explicitly failed payments are excluded. This prevents the
+            // common bypass of "place 10 unpaid orders to dodge the cap."
+            $alreadyPurchased = (int) ProductPurchase::query()
+                ->where('purchaser_id', $this->customer_id)
+                ->where('purchaser_type', $this->customer_type)
+                ->where('purchasable_id', $product->getKey())
+                ->where('purchasable_type', get_class($product))
+                ->whereNotIn('status', [
+                    PurchaseStatus::CART->value,
+                    PurchaseStatus::FAILED->value,
+                ])
+                ->sum('quantity');
+
+            if (($alreadyPurchased + $alreadyInCart + $quantity) > $maxPerUser) {
+                throw ExceedsMaxPerUserException::forProduct(
+                    (string) $product->name,
+                    $maxPerUser,
+                    $alreadyPurchased,
+                    $alreadyInCart,
+                    $quantity
+                );
+            }
+        }
+    }
+
     public function removeFromCart(
         Model $cartable,
         int $quantity = 1,
@@ -1679,6 +1777,17 @@ class Cart extends Model
      *      - `dates_unavailable[]` — ISO dates within the visible window
      *        where this single item is blocked. The frontend unions these
      *        across items to paint red dots / hover tooltips.
+     *      - `dates_partial[]` — ISO dates within the visible window where
+     *        the day STARTS or ENDS with enough stock for this item but
+     *        drops below the required quantity at some point inside the
+     *        day (e.g. someone booked from 16:00 → the morning is still
+     *        bookable). Drives the orange "partially available" dot on
+     *        the checkout calendar.
+     *      - `partial_windows[iso]` — list of `{from: 'HH:MM', until: 'HH:MM'}`
+     *        windows on each partial day during which stock is sufficient
+     *        for this item. Lets the cart line render copy like "Bookable
+     *        only from 06:00–16:00" so the customer understands which
+     *        slice of the day still works.
      *
      * Performance: `$searchDays` bounds the closest-date search to a few
      * months each side of the visible window. The default of 90 keeps the
@@ -1697,6 +1806,8 @@ class Cart extends Model
      *         closest_after: ?string,
      *         ever_available: bool,
      *         dates_unavailable: list<string>,
+     *         dates_partial: list<string>,
+     *         partial_windows: array<string, list<array{from: string, until: string}>>,
      *     }>,
      * }
      */
@@ -1740,6 +1851,10 @@ class Cart extends Model
         foreach (($availability['items'] ?? []) as $itemBlock) {
             $required = (int) ($itemBlock['required_quantity'] ?? 1);
             $dayRows = $itemBlock['availability']['dates'] ?? [];
+            // Parallel intraday-transitions map — present only for days
+            // where stock dips during the day (the underlying
+            // calendarAvailability() omits the key for uniform days).
+            $transitionsByDay = $itemBlock['availability']['transitions'] ?? [];
 
             $cartItemIds = $this->items
                 ->where('purchasable_id', $itemBlock['product_id'])
@@ -1812,10 +1927,49 @@ class Cart extends Model
             }
 
             $datesUnavailable = [];
+            $datesPartial = [];
+            $partialWindows = [];
             foreach ($dayRows as $iso => $row) {
                 if ($iso < $visibleStartIso || $iso > $visibleEndIso) continue;
-                if (($row['max'] ?? 0) < $required) {
+                $max = $row['max'] ?? 0;
+                $min = $row['min'] ?? 0;
+                if ($max < $required) {
+                    // Day NEVER reaches required stock — fully blocked.
                     $datesUnavailable[] = $iso;
+                } elseif ($min < $required) {
+                    // Day has at least one moment with enough stock and at
+                    // least one moment without — partial availability. We
+                    // derive bookable windows from the per-day transitions
+                    // when the underlying calendarAvailability exposed them
+                    // (only present on partial days, by design).
+                    $datesPartial[] = $iso;
+                    $transitions = $transitionsByDay[$iso] ?? [];
+                    if (!empty($transitions)) {
+                        $windows = [];
+                        $windowFrom = null;
+                        foreach ($transitions as $t) {
+                            $available = (int) ($t['available'] ?? 0);
+                            $time = (string) ($t['time'] ?? '00:00');
+                            $isOk = $available >= $required;
+                            if ($isOk && $windowFrom === null) {
+                                $windowFrom = $time;
+                            } elseif (!$isOk && $windowFrom !== null) {
+                                // Skip zero-length windows that show up when
+                                // two transitions land on the same minute.
+                                if ($windowFrom !== $time) {
+                                    $windows[] = ['from' => $windowFrom, 'until' => $time];
+                                }
+                                $windowFrom = null;
+                            }
+                        }
+                        if ($windowFrom !== null) {
+                            // Open window runs to end-of-day.
+                            $windows[] = ['from' => $windowFrom, 'until' => '23:59'];
+                        }
+                        if (!empty($windows)) {
+                            $partialWindows[$iso] = $windows;
+                        }
+                    }
                 }
             }
 
@@ -1830,6 +1984,8 @@ class Cart extends Model
                     'closest_after' => $closestAfter,
                     'ever_available' => $everAvailable,
                     'dates_unavailable' => $datesUnavailable,
+                    'dates_partial' => $datesPartial,
+                    'partial_windows' => $partialWindows,
                 ];
             }
         }

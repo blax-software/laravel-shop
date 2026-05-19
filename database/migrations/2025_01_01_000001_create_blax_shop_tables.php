@@ -29,6 +29,11 @@ return new class extends Migration
                 // is intentionally no denormalised column on products. See
                 // HasStocks::getAvailableStock() for the canonical read.
                 $table->integer('low_stock_threshold')->nullable();
+                // Per-product purchase caps. NULL = unlimited (the historical
+                // default). Enforced in Cart::addToCart() — see
+                // ExceedsMaxPerCartException / ExceedsMaxPerUserException.
+                $table->integer('max_per_cart')->nullable();
+                $table->integer('max_per_user')->nullable();
                 // Live stock state (in-stock?, status) is computed from the
                 // ProductStock ledger — see HasStocks::isInStock / scopeInStock.
                 // No denormalised columns on products.

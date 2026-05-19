@@ -814,6 +814,14 @@ trait HasStocks
             ->get();
 
         $dates = [];
+        // Per-day intraday transitions, keyed by `YYYY-MM-DD`. Kept as a
+        // SEPARATE top-level field — rather than nesting it inside each
+        // `$dates[$iso]` row — so that consumers asserting strict
+        // equality against the day row (`['min' => x, 'max' => y]`)
+        // keep passing. Only populated for days where availability
+        // varies within the day (min < max); fully uniform days don't
+        // need transitions and the absent key carries that semantic.
+        $transitionsByDay = [];
         $globalMax = PHP_INT_MIN;
         $globalMin = PHP_INT_MAX;
 
@@ -846,6 +854,12 @@ trait HasStocks
 
             $dayMin = PHP_INT_MAX;
             $dayMax = PHP_INT_MIN;
+            // Time-ordered series of (HH:MM => available units) for the
+            // events visited in this day. We surface it only when the day
+            // is non-uniform (min < max) so downstream consumers — the
+            // checkout calendar's partial-day hint, in particular — can
+            // describe WHEN the item is bookable inside the day.
+            $dayTransitions = [];
 
             // Check availability at each event timestamp to find min/max for the day
             $eventDayEnd = $dayEnd->copy();
@@ -888,12 +902,35 @@ trait HasStocks
                 $available = max(0, $available);
                 $dayMin = min($dayMin, $available);
                 $dayMax = max($dayMax, $available);
+                $dayTransitions[] = [
+                    'time' => $eventTime->format('H:i'),
+                    'available' => $available,
+                ];
             }
 
-            $dates[$currentDate->toDateString()] = [
+            $iso = $currentDate->toDateString();
+            $dates[$iso] = [
                 'min' => $dayMin,
                 'max' => $dayMax,
             ];
+            if ($dayMin < $dayMax && !empty($dayTransitions)) {
+                // Sort time-ascending and collapse same-minute duplicates
+                // by keeping the LAST sample (later transitions on the same
+                // minute reflect the post-event state — e.g. a booking
+                // that starts at 16:00 leaves "available@16:00" as the
+                // already-reduced count, which is what the customer needs
+                // to see).
+                usort($dayTransitions, fn ($a, $b) => strcmp($a['time'], $b['time']));
+                $deduped = [];
+                foreach ($dayTransitions as $t) {
+                    $deduped[$t['time']] = $t['available'];
+                }
+                $transitionsOut = [];
+                foreach ($deduped as $time => $available) {
+                    $transitionsOut[] = ['time' => $time, 'available' => $available];
+                }
+                $transitionsByDay[$iso] = $transitionsOut;
+            }
 
             $globalMin = min($globalMin, $dayMin);
             $globalMax = max($globalMax, $dayMax);
@@ -905,6 +942,7 @@ trait HasStocks
             'max_available' => $globalMax === PHP_INT_MIN ? 0 : $globalMax,
             'min_available' => $globalMin === PHP_INT_MAX ? 0 : $globalMin,
             'dates' => $dates,
+            'transitions' => $transitionsByDay,
         ];
     }
 
