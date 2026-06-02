@@ -375,6 +375,208 @@ class CartCheckoutSessionTest extends TestCase
         $this->assertSame('eur', $captured['line_items'][0]['price_data']['currency']);
     }
 
+    #[Test]
+    public function it_uses_subscription_mode_and_synced_price_for_recurring_lines()
+    {
+        config(['shop.stripe.enabled' => true]);
+        config(['services.stripe.secret' => 'sk_test_fake']);
+
+        $product = Product::factory()->create(['name' => 'Sub', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 1990,
+            'currency' => 'EUR',
+            'is_default' => true,
+            'type' => 'recurring',
+            'interval' => 'month',
+            'interval_count' => 1,
+            'stripe_price_id' => 'price_sub_123',
+        ]);
+        $this->cart->addToCart($product, 1);
+
+        $captured = null;
+        \Stripe\Checkout\Session::$createCallback = function ($params) use (&$captured) {
+            $captured = $params;
+            $s = new \stdClass();
+            $s->id = 'mock';
+            return $s;
+        };
+
+        $this->cart->checkoutSession([
+            'success_url' => 'https://example.com/s',
+            'cancel_url' => 'https://example.com/c',
+        ]);
+
+        $this->assertSame('subscription', $captured['mode']);
+        // Recurring line with a synced Stripe Price uses `price`, not price_data.
+        $this->assertSame('price_sub_123', $captured['line_items'][0]['price']);
+        $this->assertArrayNotHasKey('price_data', $captured['line_items'][0]);
+        // The cart id rides along on the subscription for webhook mapping.
+        $this->assertSame($this->cart->id, $captured['subscription_data']['metadata']['cart_id']);
+    }
+
+    #[Test]
+    public function it_builds_recurring_price_data_when_no_stripe_price_id()
+    {
+        config(['shop.stripe.enabled' => true]);
+        config(['services.stripe.secret' => 'sk_test_fake']);
+
+        $product = Product::factory()->create(['name' => 'Sub2', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 2500,
+            'currency' => 'EUR',
+            'is_default' => true,
+            'type' => 'recurring',
+            'interval' => 'year',
+            'interval_count' => 1,
+            'stripe_price_id' => null,
+        ]);
+        $this->cart->addToCart($product, 1);
+
+        $captured = null;
+        \Stripe\Checkout\Session::$createCallback = function ($params) use (&$captured) {
+            $captured = $params;
+            $s = new \stdClass();
+            $s->id = 'mock';
+            return $s;
+        };
+
+        $this->cart->checkoutSession([
+            'success_url' => 'https://example.com/s',
+            'cancel_url' => 'https://example.com/c',
+        ]);
+
+        $this->assertSame('subscription', $captured['mode']);
+        $recurring = $captured['line_items'][0]['price_data']['recurring'];
+        $this->assertSame('year', $recurring['interval']);
+        $this->assertSame(1, $recurring['interval_count']);
+        $this->assertSame(2500, $captured['line_items'][0]['price_data']['unit_amount']);
+    }
+
+    #[Test]
+    public function it_maps_quarter_interval_to_three_months()
+    {
+        config(['shop.stripe.enabled' => true]);
+        config(['services.stripe.secret' => 'sk_test_fake']);
+
+        $product = Product::factory()->create(['name' => 'Q', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 9000,
+            'currency' => 'EUR',
+            'is_default' => true,
+            'type' => 'recurring',
+            'interval' => 'quarter',
+            'interval_count' => 1,
+            'stripe_price_id' => null,
+        ]);
+        $this->cart->addToCart($product, 1);
+
+        $captured = null;
+        \Stripe\Checkout\Session::$createCallback = function ($params) use (&$captured) {
+            $captured = $params;
+            $s = new \stdClass();
+            $s->id = 'mock';
+            return $s;
+        };
+
+        $this->cart->checkoutSession([
+            'success_url' => 'https://example.com/s',
+            'cancel_url' => 'https://example.com/c',
+        ]);
+
+        $recurring = $captured['line_items'][0]['price_data']['recurring'];
+        $this->assertSame('month', $recurring['interval']);
+        $this->assertSame(3, $recurring['interval_count']);
+    }
+
+    #[Test]
+    public function it_uses_payment_mode_for_one_time_prices()
+    {
+        config(['shop.stripe.enabled' => true]);
+        config(['services.stripe.secret' => 'sk_test_fake']);
+
+        $product = Product::factory()->create(['name' => 'OT', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 500,
+            'currency' => 'EUR',
+            'is_default' => true,
+            'type' => 'one_time',
+            'interval' => null,
+            'interval_count' => null,
+        ]);
+        $this->cart->addToCart($product, 1);
+
+        $captured = null;
+        \Stripe\Checkout\Session::$createCallback = function ($params) use (&$captured) {
+            $captured = $params;
+            $s = new \stdClass();
+            $s->id = 'mock';
+            return $s;
+        };
+
+        $this->cart->checkoutSession([
+            'success_url' => 'https://example.com/s',
+            'cancel_url' => 'https://example.com/c',
+        ]);
+
+        $this->assertSame('payment', $captured['mode']);
+        $this->assertArrayNotHasKey('recurring', $captured['line_items'][0]['price_data']);
+        $this->assertArrayNotHasKey('subscription_data', $captured);
+    }
+
+    #[Test]
+    public function it_throws_when_mixing_recurring_and_one_time_prices()
+    {
+        config(['shop.stripe.enabled' => true]);
+        config(['services.stripe.secret' => 'sk_test_fake']);
+
+        $sub = Product::factory()->create(['name' => 'S', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $sub->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 1000,
+            'currency' => 'EUR',
+            'is_default' => true,
+            'type' => 'recurring',
+            'interval' => 'month',
+            'interval_count' => 1,
+        ]);
+
+        $one = Product::factory()->create(['name' => 'O', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $one->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 2000,
+            'currency' => 'EUR',
+            'is_default' => true,
+            'type' => 'one_time',
+            'interval' => null,
+            'interval_count' => null,
+        ]);
+
+        $this->cart->addToCart($sub, 1);
+        $this->cart->addToCart($one, 1);
+
+        \Stripe\Checkout\Session::$createCallback = function ($params) {
+            $s = new \stdClass();
+            $s->id = 'mock';
+            return $s;
+        };
+
+        $this->expectException(\Blax\Shop\Exceptions\MixedCheckoutModeException::class);
+        $this->cart->checkoutSession([
+            'success_url' => 'https://example.com/s',
+            'cancel_url' => 'https://example.com/c',
+        ]);
+    }
+
     /**
      * Mock Stripe Checkout Session creation to avoid actual API calls
      */

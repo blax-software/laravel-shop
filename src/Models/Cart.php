@@ -2306,18 +2306,67 @@ class Cart extends Model
     }
 
     /**
+     * Resolve the Stripe `recurring` descriptor for a price, or null when the
+     * price is one-time. Tolerates both the package's enum-cast model and a
+     * host-app price model that stores `type`/`interval` as plain strings, so
+     * it keeps working when `shop.models.product_price` is overridden.
+     *
+     * Stripe has no native "quarter" interval, so a quarterly cadence is
+     * expressed as a 3-month interval.
+     *
+     * @param  mixed  $price  A ProductPrice (package or host) or null.
+     * @return array{interval: string, interval_count: int}|null
+     */
+    protected function stripeRecurringFor($price): ?array
+    {
+        if (!$price) {
+            return null;
+        }
+
+        $type = $price->type instanceof \Blax\Shop\Enums\PriceType
+            ? $price->type->value
+            : (string) $price->type;
+
+        if ($type !== \Blax\Shop\Enums\PriceType::RECURRING->value) {
+            return null;
+        }
+
+        $interval = $price->interval instanceof \Blax\Shop\Enums\RecurringInterval
+            ? $price->interval->value
+            : (is_string($price->interval) ? $price->interval : null);
+
+        if ($interval === null || $interval === '') {
+            return null;
+        }
+
+        $count = (int) ($price->interval_count ?? 1);
+        if ($count < 1) {
+            $count = 1;
+        }
+
+        if ($interval === \Blax\Shop\Enums\RecurringInterval::QUARTER->value) {
+            return ['interval' => 'month', 'interval_count' => 3 * $count];
+        }
+
+        return ['interval' => $interval, 'interval_count' => $count];
+    }
+
+    /**
      * Create a Stripe Checkout Session for this cart
-     * 
+     *
      * This method:
      * - Validates the cart (doesn't convert it)
      * - Creates ProductPurchase records for each cart item (with PENDING status)
-     * - Uses dynamic price_data for each cart item (no pre-created Stripe prices needed)
+     * - Uses a synced Stripe Price for recurring lines (and dynamic price_data
+     *   otherwise), so subscription and one-off carts both check out
+     * - Picks `subscription` mode when the cart carries any recurring price,
+     *   `payment` mode otherwise; mixing the two throws MixedCheckoutModeException
      * - Creates line items with descriptions including booking dates
      * - Returns the Stripe checkout session
-     * 
+     *
      * @param array $options Optional session parameters (success_url, cancel_url, etc.)
      * @param string|null $url Optional fullPath URL for success and cancel URLs
-     * 
+     *
      * @return mixed Stripe\Checkout\Session instance
      * @throws \Exception
      */
@@ -2368,9 +2417,14 @@ class Cart extends Model
         });
 
         $lineItems = [];
+        // Track the kinds of pricing present so we can pick the session mode.
+        // Stripe sessions are single-mode, so a cart may not mix the two.
+        $hasRecurring = false;
+        $hasOneTime = false;
 
         foreach ($this->items as $item) {
             $product = $item->purchasable;
+            $priceModel = $item->price()->first();
 
             // Get product name (use short_description if available, otherwise name)
             $productName = $product->name ?? 'Product [' . $product->id . ']';
@@ -2391,10 +2445,47 @@ class Cart extends Model
             // the line being charged), then the cart's own currency column,
             // then the package default — never assume the cart row has one.
             $lineCurrency = strtolower(
-                $item->price()->first()?->currency
+                $priceModel?->currency
                     ?? $this->currency
                     ?? config('shop.currency', 'usd')
             );
+
+            // Recurring? Resolve the Stripe `recurring` descriptor for this line
+            // (null for one-time prices). Quarterly has no native Stripe interval,
+            // so it's expressed as a 3-month cadence.
+            $recurring = $this->stripeRecurringFor($priceModel);
+
+            if ($recurring !== null) {
+                $hasRecurring = true;
+
+                // Prefer a synced Stripe Price for recurring lines — it's the
+                // canonical record Stripe already knows (name, tax behaviour,
+                // metadata). Fall back to dynamic price_data + recurring block
+                // when no stripe_price_id is on file.
+                if (!empty($priceModel?->stripe_price_id)) {
+                    $lineItems[] = [
+                        'price' => $priceModel->stripe_price_id,
+                        'quantity' => $item->quantity,
+                    ];
+                    continue;
+                }
+
+                $lineItems[] = [
+                    'price_data' => [
+                        'currency' => $lineCurrency,
+                        'product_data' => [
+                            'name' => $productName,
+                            ...($description ? ['description' => $description] : []),
+                        ],
+                        'unit_amount' => $unitAmountCents,
+                        'recurring' => $recurring,
+                    ],
+                    'quantity' => $item->quantity,
+                ];
+                continue;
+            }
+
+            $hasOneTime = true;
 
             // Build line item using price_data for dynamic pricing
             $lineItem = [
@@ -2412,6 +2503,15 @@ class Cart extends Model
             $lineItems[] = $lineItem;
         }
 
+        // A cart can't be both a subscription and a one-off in one Stripe
+        // session — surface that explicitly rather than letting Stripe reject
+        // it with an opaque error.
+        if ($hasRecurring && $hasOneTime) {
+            throw new \Blax\Shop\Exceptions\MixedCheckoutModeException();
+        }
+
+        $mode = $hasRecurring ? 'subscription' : 'payment';
+
         $success_url = $url ?? $options['success_url'] ?? route('shop.stripe.success');
         $cancel_url = $url ?? $options['cancel_url'] ?? route('shop.stripe.cancel');
 
@@ -2428,7 +2528,7 @@ class Cart extends Model
             'payment_method_types' => ['card'],
             'currency' => strtolower($this->currency ?? config('shop.currency', 'usd')),
             'line_items' => $lineItems,
-            'mode' => 'payment',
+            'mode' => $mode,
             'success_url' => $success_url,
             'cancel_url' => $cancel_url,
             'client_reference_id' => $this->id,
@@ -2436,6 +2536,17 @@ class Cart extends Model
                 'cart_id' => $this->id,
             ], $options['metadata'] ?? []),
         ];
+
+        // Propagate the cart id onto the subscription itself so invoice/
+        // subscription webhooks can map back to this cart, not just the
+        // originating checkout session.
+        if ($mode === 'subscription') {
+            $sessionParams['subscription_data'] = [
+                'metadata' => array_merge([
+                    'cart_id' => $this->id,
+                ], $options['subscription_metadata'] ?? []),
+            ];
+        }
 
         // Add customer email if available
         if ($this->customer) {
