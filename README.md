@@ -3,8 +3,8 @@
 # Laravel Shop
 
 [![Tests](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml/badge.svg)](https://github.com/blax-software/laravel-shop/actions/workflows/tests.yml)
-[![Tests Count](https://img.shields.io/badge/tests-1376%20passing-success?style=flat-square)](#testing)
-[![Assertions](https://img.shields.io/badge/assertions-3718-blue?style=flat-square)](#testing)
+[![Tests Count](https://img.shields.io/badge/tests-1400%20passing-success?style=flat-square)](#testing)
+[![Assertions](https://img.shields.io/badge/assertions-3755-blue?style=flat-square)](#testing)
 [![Latest Version](https://img.shields.io/packagist/v/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
 [![License](https://img.shields.io/packagist/l/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
 [![PHP Version](https://img.shields.io/packagist/php-v/blax-software/laravel-shop.svg?style=flat-square)](https://packagist.org/packages/blax-software/laravel-shop)
@@ -192,7 +192,7 @@ booking, Stripe sync and the event surface — so host applications can lean
 on the behaviour with confidence.
 
 ```
-Tests: 1349, Assertions: 3641
+Tests: 1400, Assertions: 3755
 ```
 
 CI runs the full suite on every push (see the badge above). To run it

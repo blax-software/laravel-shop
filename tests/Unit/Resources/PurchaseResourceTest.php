@@ -45,6 +45,10 @@ class PurchaseResourceTest extends TestCase
     #[Test]
     public function it_translates_e_commerce_columns_into_loan_vocabulary(): void
     {
+        // Pin "now" inside the loan window so status resolves to active
+        // regardless of the wall clock (the fixture dates are fixed).
+        Carbon::setTestNow(Carbon::parse('2026-05-20 10:00:00'));
+
         $loan = $this->loan();
 
         $payload = PurchaseResource::make($loan)->toArray(Request::create('/'));
