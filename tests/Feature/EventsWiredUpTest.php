@@ -9,7 +9,9 @@ use Blax\Shop\Events\OrderCreated;
 use Blax\Shop\Events\ProductDeleted;
 use Blax\Shop\Events\ProductPublished;
 use Blax\Shop\Events\ProductUnpublished;
+use Blax\Shop\Events\PurchaseCompleted;
 use Blax\Shop\Events\PurchaseCreated;
+use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Events\StockBecameLow;
 use Blax\Shop\Events\StockClaimed;
 use Blax\Shop\Events\StockClaimExpired;
@@ -267,5 +269,101 @@ class EventsWiredUpTest extends TestCase
         ]);
 
         Event::assertDispatched(PurchaseCreated::class, fn (PurchaseCreated $e) => $e->purchase->is($purchase));
+    }
+
+    // ─── PurchaseCompleted (fulfillment seam) ─────────────────────────────
+
+    #[Test]
+    public function creating_a_completed_purchase_dispatches_purchase_completed(): void
+    {
+        $product = $this->newProduct();
+        $product->increaseStock(1);
+
+        Event::fake([PurchaseCompleted::class]);
+
+        $purchase = ProductPurchase::create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'purchaser_id' => 'user-x',
+            'purchaser_type' => 'App\\Models\\User',
+            'quantity' => 1,
+            'amount' => 0,
+            'amount_paid' => 0,
+            'status' => PurchaseStatus::COMPLETED,
+        ]);
+
+        Event::assertDispatched(PurchaseCompleted::class, fn (PurchaseCompleted $e) => $e->purchase->is($purchase));
+    }
+
+    #[Test]
+    public function pending_purchase_does_not_dispatch_purchase_completed(): void
+    {
+        $product = $this->newProduct();
+        $product->increaseStock(1);
+
+        Event::fake([PurchaseCompleted::class]);
+
+        ProductPurchase::create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'purchaser_id' => 'user-x',
+            'purchaser_type' => 'App\\Models\\User',
+            'quantity' => 1,
+            'amount' => 0,
+            'amount_paid' => 0,
+            'status' => PurchaseStatus::PENDING,
+        ]);
+
+        Event::assertNotDispatched(PurchaseCompleted::class);
+    }
+
+    #[Test]
+    public function transitioning_a_purchase_to_completed_dispatches_purchase_completed(): void
+    {
+        $product = $this->newProduct();
+        $product->increaseStock(1);
+
+        $purchase = ProductPurchase::create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'purchaser_id' => 'user-x',
+            'purchaser_type' => 'App\\Models\\User',
+            'quantity' => 1,
+            'amount' => 0,
+            'amount_paid' => 0,
+            'status' => PurchaseStatus::PENDING,
+        ]);
+
+        Event::fake([PurchaseCompleted::class]);
+
+        $purchase->update(['status' => PurchaseStatus::COMPLETED]);
+
+        Event::assertDispatched(PurchaseCompleted::class, fn (PurchaseCompleted $e) => $e->purchase->is($purchase));
+    }
+
+    #[Test]
+    public function re_saving_an_already_completed_purchase_does_not_redispatch(): void
+    {
+        $product = $this->newProduct();
+        $product->increaseStock(1);
+
+        $purchase = ProductPurchase::create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'purchaser_id' => 'user-x',
+            'purchaser_type' => 'App\\Models\\User',
+            'quantity' => 1,
+            'amount' => 0,
+            'amount_paid' => 0,
+            'status' => PurchaseStatus::COMPLETED,
+        ]);
+
+        // Now fake, and touch an unrelated column — status didn't change, so
+        // the completion event must not fire again.
+        Event::fake([PurchaseCompleted::class]);
+
+        $purchase->update(['meta' => ['note' => 'touched']]);
+
+        Event::assertNotDispatched(PurchaseCompleted::class);
     }
 }

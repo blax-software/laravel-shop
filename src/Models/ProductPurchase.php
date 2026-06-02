@@ -185,34 +185,74 @@ class ProductPurchase extends Model
     protected static function booted()
     {
         static::created(function ($productPurchase) {
-            $product = ($productPurchase->purchasable instanceof Product)
-                ? $productPurchase->purchasable
-                : null;
-
-            $product ??= ($productPurchase->purchasable instanceof ProductPrice)
-                ? $productPurchase->purchasable?->product
-                : $product;
-
-            if ($productPurchase->status === PurchaseStatus::COMPLETED && $product) {
-                $product->callActions('purchased', $productPurchase);
+            if ($productPurchase->status !== PurchaseStatus::COMPLETED) {
+                return;
             }
+
+            static::runCompletedFulfillment($productPurchase);
+
+            // Package-agnostic fulfillment seam: a row created already-completed
+            // is a completion. Host apps listen here to grant access etc.
+            \Blax\Shop\Events\PurchaseCompleted::dispatch($productPurchase);
         });
 
         // updated purchase from unpaid to paid
         static::updated(function ($productPurchase) {
-            $product = ($productPurchase->purchasable instanceof Product)
-                ? $productPurchase->purchasable
-                : null;
+            if ($productPurchase->status !== PurchaseStatus::COMPLETED) {
+                return;
+            }
 
-            $product ??= ($productPurchase->purchasable instanceof ProductPrice)
-                ? $productPurchase->purchasable?->product
-                : $product;
+            static::runCompletedFulfillment($productPurchase);
 
-
-            if ($productPurchase->status === PurchaseStatus::COMPLETED && $product) {
-                $product->callActions('purchased', $productPurchase);
+            // Only announce the transition into COMPLETED once — not on every
+            // later save of an already-completed purchase (e.g. a meta touch).
+            if ($productPurchase->wasChanged('status')) {
+                \Blax\Shop\Events\PurchaseCompleted::dispatch($productPurchase);
             }
         });
+    }
+
+    /**
+     * Run the built-in {@see ProductAction} fulfillment for a completed
+     * purchase. Resolves the actionable product via the configured product /
+     * price model (so host apps overriding `shop.models.*` are covered) and
+     * only invokes `callActions()` when the resolved product actually exposes
+     * it — host purchasables that opt out of the action table still complete
+     * cleanly and rely on the {@see \Blax\Shop\Events\PurchaseCompleted} event.
+     */
+    protected static function runCompletedFulfillment(self $productPurchase): void
+    {
+        $product = static::resolveActionableProduct($productPurchase);
+
+        if ($product && method_exists($product, 'callActions')) {
+            $product->callActions('purchased', $productPurchase);
+        }
+    }
+
+    /**
+     * Resolve the product whose ProductActions should run for this purchase.
+     * Accepts the configured product model (default {@see Product}) directly,
+     * or a {@see ProductPrice} (configured or base) whose parent product is
+     * used. Returns null for any other / missing purchasable.
+     */
+    protected static function resolveActionableProduct(self $productPurchase)
+    {
+        $purchasable = $productPurchase->purchasable;
+        if (! $purchasable) {
+            return null;
+        }
+
+        $productModel = config('shop.models.product', Product::class);
+        if ($purchasable instanceof Product || $purchasable instanceof $productModel) {
+            return $purchasable;
+        }
+
+        $priceModel = config('shop.models.product_price', ProductPrice::class);
+        if ($purchasable instanceof ProductPrice || $purchasable instanceof $priceModel) {
+            return $purchasable->product ?? null;
+        }
+
+        return null;
     }
 
     /**

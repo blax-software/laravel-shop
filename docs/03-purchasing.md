@@ -734,3 +734,39 @@ Route::get('/orders/{order}', function (Order $order) {
     return view('orders.show', compact('order'));
 });
 ```
+
+## Fulfillment via events
+
+A purchase becoming **COMPLETED** is the moment to grant access, send a
+receipt, provision a licence, etc. The package exposes that as a first-class,
+model-agnostic event so host apps don't have to couple to the `ProductAction`
+table or to a specific purchasable model:
+
+```php
+use Blax\Shop\Events\PurchaseCompleted;
+
+class GrantAccessOnPurchase
+{
+    public function handle(PurchaseCompleted $event): void
+    {
+        $purchase = $event->purchase;        // Blax\Shop\Models\ProductPurchase
+        $item     = $purchase->purchasable;  // the Product / ProductPrice / host model sold
+
+        // grant roles, unlock content, email a licence key, …
+    }
+}
+```
+
+`PurchaseCompleted` fires:
+
+- when a purchase row is **created already COMPLETED** (e.g. a paid checkout),
+- when an existing purchase **transitions into COMPLETED** (`PENDING → COMPLETED`),
+
+and **not** on later, unrelated saves of an already-completed purchase. For the
+broader stream of new rows regardless of status, listen to `PurchaseCreated`
+instead.
+
+In addition, any `ProductAction` configured on the product with the
+`purchased` event still runs automatically on completion — the product is
+resolved via `config('shop.models.product')` / `...product_price`, so apps
+overriding those models are covered too.
