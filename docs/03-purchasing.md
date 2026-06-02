@@ -770,3 +770,40 @@ In addition, any `ProductAction` configured on the product with the
 `purchased` event still runs automatically on completion — the product is
 resolved via `config('shop.models.product')` / `...product_price`, so apps
 overriding those models are covered too.
+
+## Subscriptions
+
+Subscriptions are **Cashier-backed**. The package ships
+`Blax\Shop\Models\Subscription` (extends `Laravel\Cashier\Subscription`) which
+adds the commerce link and lifecycle hooks Cashier doesn't have:
+
+- `product()` / `resolveProduct()` — the `Product` this subscription sells
+  (linked via `product_id`, or resolved from the first item's `stripe_product`).
+- `callProductActions($expiresAtOverride, $event)` — run the product's
+  `ProductAction`s for a lifecycle event, passing the subscription and an
+  optional access-expiry so grants can be scoped to the billing cycle.
+- `recordStarted()` / `recordRenewed()` / `recordCanceled()` — fire the
+  `SubscriptionStarted` / `SubscriptionRenewed` / `SubscriptionCanceled` events
+  (and, for started/renewed, run the product actions).
+
+The package points Cashier at these models automatically. If your app already
+subclasses Cashier's `Subscription`, set
+`shop.subscriptions.register_cashier_models = false` and register your own
+models; everything in the package resolves through `shop.models.*` /
+`shop.tables.*`, so your models slot in.
+
+```php
+use Blax\Shop\Events\SubscriptionRenewed;
+
+class ExtendAccessOnRenewal
+{
+    public function handle(SubscriptionRenewed $event): void
+    {
+        // $event->subscription->product, ->current_period_end, …
+    }
+}
+```
+
+The subscription tables use the package's UUID convention; the migration is
+`hasTable`-guarded, so point `shop.tables.subscriptions` elsewhere if your app
+already owns a `subscriptions` table (e.g. a bigint Cashier one).

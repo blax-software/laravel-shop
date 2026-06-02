@@ -38,6 +38,8 @@ return [
         'product_price_tiers' => 'product_price_tiers',
         'products' => 'products',
         'cart_discounts' => 'cart_discounts',
+        'subscriptions' => 'subscriptions',
+        'subscription_items' => 'subscription_items',
     ],
 
     // Model classes (allow overriding in main instance)
@@ -55,6 +57,23 @@ return [
         'order_note' => \Blax\Shop\Models\OrderNote::class,
         'payment_provider_identity' => \Blax\Shop\Models\PaymentProviderIdentity::class,
         'payment_method' => \Blax\Shop\Models\PaymentMethod::class,
+        'subscription' => \Blax\Shop\Models\Subscription::class,
+        'subscription_item' => \Blax\Shop\Models\SubscriptionItem::class,
+    ],
+
+    /*
+     * Subscriptions are Cashier-backed. The package binds its own
+     * Cashier-extending Subscription / SubscriptionItem models (above) so it
+     * can link a subscription to a product and run product actions on the
+     * billing lifecycle. Set `subscriptions.register_cashier_models` to false
+     * if the host app wants to point Cashier at its own models instead.
+     */
+    'subscriptions' => [
+        'register_cashier_models' => env('SHOP_REGISTER_CASHIER_MODELS', true),
+        // Stripe interval => the product-action event fired on a NEW subscription.
+        'started_event' => 'subscription.started',
+        'renewed_event' => 'subscription.renewed',
+        'canceled_event' => 'subscription.canceled',
     ],
 
     // API Routes configuration

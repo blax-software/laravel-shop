@@ -34,6 +34,8 @@ class ShopServiceProvider extends ServiceProvider
 
         $this->registerMigrations();
 
+        $this->registerSubscriptionModels();
+
         $this->registerRouteMacros();
 
         // Load routes if enabled (API only)
@@ -95,6 +97,32 @@ class ShopServiceProvider extends ServiceProvider
         }
 
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+    }
+
+    /**
+     * Point Laravel Cashier at the package's product-linked Subscription /
+     * SubscriptionItem models so subscriptions created by Cashier carry the
+     * commerce link + lifecycle hooks. Host apps that subclass Cashier
+     * themselves disable this via `shop.subscriptions.register_cashier_models`
+     * and register their own models (which boot after this provider, so they
+     * win). No-op if Cashier isn't installed.
+     */
+    protected function registerSubscriptionModels(): void
+    {
+        if (! config('shop.subscriptions.register_cashier_models', true)) {
+            return;
+        }
+
+        if (! class_exists(\Laravel\Cashier\Cashier::class)) {
+            return;
+        }
+
+        \Laravel\Cashier\Cashier::useSubscriptionModel(
+            config('shop.models.subscription', \Blax\Shop\Models\Subscription::class)
+        );
+        \Laravel\Cashier\Cashier::useSubscriptionItemModel(
+            config('shop.models.subscription_item', \Blax\Shop\Models\SubscriptionItem::class)
+        );
     }
 
     /**
