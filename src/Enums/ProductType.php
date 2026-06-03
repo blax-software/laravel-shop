@@ -26,6 +26,14 @@ enum ProductType: string
      * from services apart.
      */
     case SERVICE = 'service';
+    /**
+     * Subscription: a service sold on a recurring basis (the actual cadence
+     * lives on the {@see \Blax\Shop\Models\ProductPrice} as a recurring price).
+     * Like SERVICE it carries no physical stock; the distinct type lets hosts
+     * model "this product is fundamentally a subscription" for catalogue and
+     * reporting.
+     */
+    case SUBSCRIPTION = 'subscription';
 
     public function label(): string
     {
@@ -39,6 +47,7 @@ enum ProductType: string
             self::POOL => 'Pool',
             self::LOANABLE => 'Loanable',
             self::SERVICE => 'Service',
+            self::SUBSCRIPTION => 'Subscription',
         };
     }
 }
