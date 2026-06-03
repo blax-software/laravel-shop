@@ -234,6 +234,7 @@ class CartCheckoutSessionTest extends TestCase
             'unit_amount' => 1000,
             'currency' => 'USD',
             'is_default' => true,
+            'type' => 'one_time',
         ]);
 
         ProductPrice::factory()->create([
@@ -242,6 +243,7 @@ class CartCheckoutSessionTest extends TestCase
             'unit_amount' => 2000,
             'currency' => 'USD',
             'is_default' => true,
+            'type' => 'one_time',
         ]);
 
         $this->cart->addToCart($product1, 2);

@@ -19,6 +19,13 @@ enum ProductType: string
      * the borrow → extend → return flow.
      */
     case LOANABLE = 'loanable';
+    /**
+     * Service: an intangible/served product (subscriptions, access licences,
+     * consulting) with no physical stock. Behaves like SIMPLE for cart/stock
+     * purposes; the distinct type just lets hosts and reporting tell goods
+     * from services apart.
+     */
+    case SERVICE = 'service';
 
     public function label(): string
     {
@@ -31,6 +38,7 @@ enum ProductType: string
             self::VARIATION => 'Variation',
             self::POOL => 'Pool',
             self::LOANABLE => 'Loanable',
+            self::SERVICE => 'Service',
         };
     }
 }
