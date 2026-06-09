@@ -10,6 +10,7 @@ use Blax\Shop\Events\SubscriptionStarted;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductAction;
 use Blax\Shop\Models\Subscription;
+use Blax\Shop\Models\SubscriptionItem;
 use Blax\Shop\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
@@ -46,6 +47,29 @@ class SubscriptionLifecycleTest extends TestCase
             'method' => 'handle',
             'defer' => false,
             'active' => true,
+        ]);
+    }
+
+    private function productWithStripe(string $tag, string $stripeProductId): Product
+    {
+        return Product::create([
+            'name' => 'Bundle Product '.$tag,
+            'sku' => 'SUB-'.$tag.'-'.uniqid(),
+            'type' => ProductType::SIMPLE,
+            'status' => ProductStatus::PUBLISHED,
+            'manage_stock' => false,
+            'stripe_product_id' => $stripeProductId,
+        ]);
+    }
+
+    private function addItem(Subscription $sub, string $stripeProduct, string $stripePrice): void
+    {
+        SubscriptionItem::create([
+            'subscription_id' => $sub->id,
+            'stripe_id' => 'si_'.uniqid(),
+            'stripe_product' => $stripeProduct,
+            'stripe_price' => $stripePrice,
+            'quantity' => 1,
         ]);
     }
 
@@ -89,6 +113,39 @@ class SubscriptionLifecycleTest extends TestCase
         $this->assertInstanceOf(Subscription::class, $args['subscription']);
         $this->assertTrue($args['subscription']->is($sub));
         $this->assertArrayHasKey('expiresAtOverride', $args);
+    }
+
+    #[Test]
+    public function call_product_actions_grants_every_product_in_a_bundle_subscription(): void
+    {
+        // A combined / multi-product subscription (e.g. a "configurator" bundle)
+        // has one line item per product. Every product's actions must fire — not
+        // just the first item's. This is the regression guard for bundle grants.
+        $user = User::factory()->create();
+        $a = $this->productWithStripe('A', 'prod_A');
+        $b = $this->productWithStripe('B', 'prod_B');
+        $this->actionFor($a, 'subscription.started');
+        $this->actionFor($b, 'subscription.started');
+
+        $sub = Subscription::create([
+            'user_id' => $user->id,
+            // intentionally NO product_id — resolution must come from the items
+            'type' => 'default',
+            'stripe_id' => 'sub_'.uniqid(),
+            'stripe_status' => 'active',
+            'quantity' => 1,
+        ]);
+        $this->addItem($sub, 'prod_A', 'price_a');
+        $this->addItem($sub, 'prod_B', 'price_b');
+        $sub->load('items');
+
+        $sub->callProductActions();
+
+        $this->assertCount(2, RecordingSubscriptionAction::$calls, 'Both bundle products should be fulfilled, not just the first item.');
+        $fulfilled = collect(RecordingSubscriptionAction::$calls)
+            ->map(fn ($c) => $c['subscriptionItem']?->stripe_product)
+            ->sort()->values()->all();
+        $this->assertSame(['prod_A', 'prod_B'], $fulfilled);
     }
 
     #[Test]

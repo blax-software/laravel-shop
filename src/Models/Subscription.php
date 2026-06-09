@@ -95,25 +95,77 @@ class Subscription extends CashierSubscription
     }
 
     /**
-     * Run the linked product's actions for a subscription lifecycle event,
-     * passing the subscription and an optional access-expiry override so
-     * grants can be scoped to the billing cycle.
+     * Resolve EVERY product this subscription sells — one entry per line item —
+     * so multi-product (bundle) subscriptions fulfill ALL of them, not just the
+     * first. Each entry is ['product' => Model, 'item' => SubscriptionItem].
+     * Products are de-duplicated by key. Falls back to the single linked
+     * `product_id` when no item maps to a product, and caches the first
+     * resolved product on `product_id` for single-product callers.
+     *
+     * @return \Illuminate\Support\Collection<int, array{product: Model, item: ?Model}>
+     */
+    public function resolveProducts(): \Illuminate\Support\Collection
+    {
+        $productModel = config('shop.models.product', Product::class);
+        $resolved = collect();
+        $seen = [];
+
+        foreach ($this->items as $item) {
+            $stripeProduct = $item->stripe_product ?? null;
+            if (! $stripeProduct) {
+                continue;
+            }
+            $product = $productModel::where('stripe_product_id', $stripeProduct)->first();
+            if (! $product) {
+                continue;
+            }
+            $key = (string) $product->getKey();
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $resolved->push(['product' => $product, 'item' => $item]);
+        }
+
+        if ($resolved->isEmpty() && $this->product_id) {
+            $product = $productModel::find($this->product_id);
+            if ($product) {
+                $resolved->push(['product' => $product, 'item' => $this->items->first()]);
+            }
+        }
+
+        // Back-compat: cache the first resolved product on product_id.
+        if (! $this->product_id && $resolved->isNotEmpty()) {
+            $this->forceFill(['product_id' => $resolved->first()['product']->getKey()])->saveQuietly();
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * Run EVERY sold product's actions for a subscription lifecycle event,
+     * passing the subscription, the originating line item, and an optional
+     * access-expiry override so grants can be scoped to the billing cycle.
+     * Multi-product (bundle) subscriptions now grant all line items.
      */
     public function callProductActions(
         ?\Carbon\Carbon $expiresAtOverride = null,
         ?string $event = null
     ): void {
-        $product = $this->resolveProduct();
-        if (! $product || ! method_exists($product, 'callActions')) {
-            return;
-        }
-
         $event ??= config('shop.subscriptions.started_event', 'subscription.started');
 
-        $product->callActions($event, null, [
-            'subscription' => $this,
-            'expiresAtOverride' => $expiresAtOverride,
-        ]);
+        foreach ($this->resolveProducts() as $entry) {
+            $product = $entry['product'] ?? null;
+            if (! $product || ! method_exists($product, 'callActions')) {
+                continue;
+            }
+
+            $product->callActions($event, null, [
+                'subscription' => $this,
+                'subscriptionItem' => $entry['item'] ?? null,
+                'expiresAtOverride' => $expiresAtOverride,
+            ]);
+        }
     }
 
     /**
