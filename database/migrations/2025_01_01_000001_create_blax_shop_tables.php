@@ -378,7 +378,10 @@ return new class extends Migration
         if (!Schema::hasTable(config('shop.tables.product_action_runs', 'product_action_runs'))) {
             Schema::create(config('shop.tables.product_action_runs', 'product_action_runs'), function (Blueprint $table) {
                 $table->id();
-                $table->morphs('action');
+                // ProductAction uses HasUuids, so action_id must be a uuid/char(36),
+                // not the bigint that morphs() creates — otherwise logging a run
+                // (callForProduct) dies with "Incorrect integer value: '<uuid>'".
+                $table->uuidMorphs('action');
                 $table->uuid('product_purchase_id')->nullable();
                 $table->boolean('success')->default(false);
                 $table->timestamps();
