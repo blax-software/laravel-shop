@@ -66,6 +66,21 @@ class Subscription extends CashierSubscription
     }
 
     /**
+     * Assignable license seats this (seat-based) subscription provisions —
+     * sized to the billed quantity and expiring at the period end. Empty for
+     * ordinary subscriptions.
+     *
+     * @return HasMany<LicenseSeat, $this>
+     */
+    public function seats(): HasMany
+    {
+        return $this->hasMany(
+            config('shop.models.license_seat', LicenseSeat::class),
+            'subscription_id'
+        );
+    }
+
+    /**
      * Resolve (and cache) the product this subscription sells: the linked
      * `product_id` first, else the first item's `stripe_product` mapped to a
      * Product via `stripe_product_id`.
@@ -169,12 +184,40 @@ class Subscription extends CashierSubscription
     }
 
     /**
+     * For each seat-based product on this subscription, ensure the seat pool
+     * matches the billed quantity and every held seat's grant is valid until
+     * `$expiresAt`. No-op for ordinary (non-seat) products, so this is safe to
+     * call from every lifecycle hook.
+     */
+    protected function provisionSeats(?\Carbon\Carbon $expiresAt = null): void
+    {
+        if (! config('shop.seats.enabled', true)) {
+            return;
+        }
+
+        $seatService = app(\Blax\Shop\Services\SeatService::class);
+
+        foreach ($this->resolveProducts() as $entry) {
+            $product = $entry['product'] ?? null;
+            $item = $entry['item'] ?? null;
+
+            if (! $product || ! method_exists($product, 'isSeatBased') || ! $product->isSeatBased()) {
+                continue;
+            }
+
+            $quantity = (int) ($item?->quantity ?? $this->quantity ?? 1);
+            $seatService->provisionForSubscription($this, $product, $quantity, $expiresAt);
+        }
+    }
+
+    /**
      * Mark a new subscription as started: fire {@see SubscriptionStarted} and
      * run the product's actions for the configured "started" event.
      */
     public function recordStarted(?\Carbon\Carbon $expiresAtOverride = null): void
     {
         $this->callProductActions($expiresAtOverride, config('shop.subscriptions.started_event', 'subscription.started'));
+        $this->provisionSeats($expiresAtOverride);
         SubscriptionStarted::dispatch($this);
     }
 
@@ -185,6 +228,7 @@ class Subscription extends CashierSubscription
     public function recordRenewed(?\Carbon\Carbon $expiresAtOverride = null): void
     {
         $this->callProductActions($expiresAtOverride, config('shop.subscriptions.renewed_event', 'subscription.renewed'));
+        $this->provisionSeats($expiresAtOverride);
         SubscriptionRenewed::dispatch($this);
     }
 

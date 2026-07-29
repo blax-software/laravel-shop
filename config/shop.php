@@ -40,6 +40,7 @@ return [
         'cart_discounts' => 'cart_discounts',
         'subscriptions' => 'subscriptions',
         'subscription_items' => 'subscription_items',
+        'license_seats' => 'license_seats',
     ],
 
     // Model classes (allow overriding in main instance)
@@ -59,6 +60,7 @@ return [
         'payment_method' => \Blax\Shop\Models\PaymentMethod::class,
         'subscription' => \Blax\Shop\Models\Subscription::class,
         'subscription_item' => \Blax\Shop\Models\SubscriptionItem::class,
+        'license_seat' => \Blax\Shop\Models\LicenseSeat::class,
     ],
 
     /*
@@ -74,6 +76,23 @@ return [
         'started_event' => 'subscription.started',
         'renewed_event' => 'subscription.renewed',
         'canceled_event' => 'subscription.canceled',
+    ],
+
+    /*
+     * Assignable license seats.
+     *
+     * When a product is seat-based (Product::isSeatBased() — driven by
+     * `meta.seat_based = true`), a purchase/subscription of `quantity = N`
+     * provisions N assignable LicenseSeat rows instead of granting the buyer.
+     * Assigning a seat fires the product's actions for `assigned_event` with an
+     * explicit `grantee`; reclaiming/reassigning fires `revoked_event`. Host
+     * action jobs should honor `grantee` (falling back to the buyer) so the
+     * same jobs serve both personal purchases and seat assignments.
+     */
+    'seats' => [
+        'enabled' => env('SHOP_SEATS_ENABLED', true),
+        'assigned_event' => 'seat.assigned',
+        'revoked_event' => 'seat.revoked',
     ],
 
     // API Routes configuration

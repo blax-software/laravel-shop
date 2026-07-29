@@ -73,5 +73,8 @@ abstract class TestCase extends Orchestra
 
         $migration = include __DIR__ . '/../database/migrations/2025_01_01_000004_create_blax_shop_subscriptions.php';
         $migration->up();
+
+        $migration = include __DIR__ . '/../database/migrations/2026_01_01_000003_create_license_seats_table.php';
+        $migration->up();
     }
 }

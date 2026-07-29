@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
@@ -140,6 +141,20 @@ class ProductPurchase extends Model
     }
 
     /**
+     * The assignable license seats this (seat-based) purchase provisioned —
+     * one row per unit of `quantity`. Empty for ordinary products.
+     *
+     * @return HasMany<LicenseSeat, $this>
+     */
+    public function seats(): HasMany
+    {
+        return $this->hasMany(
+            config('shop.models.license_seat', LicenseSeat::class),
+            'product_purchase_id'
+        );
+    }
+
+    /**
      * Resolve the purchaser as a User relation when the polymorphic type
      * matches the configured auth model; returns null otherwise so callers
      * can branch without an instanceof check on the resolved object.
@@ -225,6 +240,18 @@ class ProductPurchase extends Model
         $product = static::resolveActionableProduct($productPurchase);
 
         if ($product && method_exists($product, 'callActions')) {
+            // Seat-based products hand the buyer a pool of assignable seats
+            // instead of granting the buyer directly. Provisioning is
+            // idempotent, so duplicate completions (e.g. re-fired webhooks)
+            // don't over-provision.
+            if (
+                config('shop.seats.enabled', true)
+                && method_exists($product, 'isSeatBased')
+                && $product->isSeatBased()
+            ) {
+                app(\Blax\Shop\Services\SeatService::class)->provisionForPurchase($productPurchase);
+            }
+
             $product->callActions('purchased', $productPurchase);
         }
     }

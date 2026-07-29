@@ -492,6 +492,26 @@ class Product extends Model implements Purchasable, Cartable
     }
 
     /**
+     * Whether this product is sold as assignable license seats: a purchase or
+     * subscription of `quantity = N` provisions N {@see LicenseSeat} rows the
+     * buyer hands out, rather than granting the buyer directly. Opt in per
+     * product via `meta.seat_based = true`; globally gated by
+     * `config('shop.seats.enabled')`.
+     */
+    public function isSeatBased(): bool
+    {
+        if (! config('shop.seats.enabled', true)) {
+            return false;
+        }
+
+        $meta = $this->meta;
+
+        return (bool) (is_object($meta)
+            ? ($meta->seat_based ?? false)
+            : ($meta['seat_based'] ?? false));
+    }
+
+    /**
      * Visible to customers right now: `is_visible = true`, status PUBLISHED,
      * and `published_at` either null or in the past.
      *
