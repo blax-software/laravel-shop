@@ -95,6 +95,27 @@ return [
         'revoked_event' => 'seat.revoked',
     ],
 
+    /*
+     * Tax rates applied to taxable charges and subscriptions.
+     *
+     * TaxService::rates() is the single source of truth for the applied VAT
+     * rate on every checkout path. Point `rates` at your Stripe tax-rate id(s)
+     * (e.g. 'txr_...' for 19% German VAT) via SHOP_TAX_RATES, either one id or
+     * a comma-separated list. The host app decides tax-exemption (reverse-charge
+     * / zero-rated) and passes it to TaxService::rates($exempt); a repo may also
+     * hand rates() an explicit list instead of reading this config.
+     *
+     * Set SHOP_TAX_REQUIRE=true in production once a rate is configured: a
+     * non-exempt charge with no rate then throws instead of silently billing 0%.
+     */
+    'tax' => [
+        'rates' => array_values(array_filter(
+            array_map('trim', explode(',', (string) env('SHOP_TAX_RATES', ''))),
+            static fn ($id) => $id !== '',
+        )),
+        'require' => (bool) env('SHOP_TAX_REQUIRE', false),
+    ],
+
     // API Routes configuration
     'routes' => [
         'enabled' => true,
