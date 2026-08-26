@@ -195,6 +195,97 @@ class ProductPrice extends Model implements Cartable
     }
 
     /**
+     * The percentage discount this price applies (0 < pct <= 100) from
+     * `meta.percent_off`, or null when it is a fixed-amount price.
+     *
+     * A percentage price has no meaningful `unit_amount` of its own — its
+     * effective charge is computed against a base (the buyer's fallback
+     * standalone price) by {@see self::effectiveAmount()}.
+     */
+    public function percentOff(): ?float
+    {
+        $pct = $this->meta->percent_off ?? null;
+
+        if ($pct === null || ! is_numeric($pct)) {
+            return null;
+        }
+
+        $pct = (float) $pct;
+
+        return ($pct > 0 && $pct <= 100) ? $pct : null;
+    }
+
+    /**
+     * Whether this price is expressed as a percentage discount rather than a
+     * fixed amount.
+     */
+    public function isPercentage(): bool
+    {
+        return $this->percentOff() !== null;
+    }
+
+    /**
+     * The amount (in cents) this price effectively charges.
+     *
+     * Fixed price → its own `unit_amount`. Percentage price → `$base` reduced
+     * by the percent, where `$base` is the buyer's fallback (cheapest
+     * standalone) price for the same product, supplied by the caller
+     * ({@see \Blax\Shop\Traits\HasPrices::resolvePriceFor()}). Returns null when
+     * a percentage price has no base to discount — there is nothing to offer.
+     */
+    public function effectiveAmount(?float $base = null): ?float
+    {
+        $pct = $this->percentOff();
+
+        if ($pct !== null) {
+            return $base === null ? null : round($base * (100 - $pct) / 100);
+        }
+
+        return $this->unit_amount;
+    }
+
+    /**
+     * Author this price's conditional-pricing meta in one merge-safe call —
+     * the reusable seam host admin UIs should use instead of hand-poking meta.
+     *
+     * @param  array<string,mixed>|null  $requires  Prerequisite the buyer must
+     *         hold, e.g. `['product' => 'full-seat']` or `['role' => 'seat']`;
+     *         null/empty clears it (makes the price unconditional).
+     * @param  float|null  $percentOff  Percentage discount (0 < pct <= 100)
+     *         applied to the product's standalone price; null makes this a
+     *         fixed-amount price (the row's `unit_amount` is charged as-is).
+     * @param  string|null  $label  Display label ("8€ with Full Seat"); stored
+     *         inside the requires map so {@see self::requiresLabel()} finds it.
+     *
+     * Does not persist — call `->save()` after.
+     */
+    public function setConditionalPricing(?array $requires, ?float $percentOff = null, ?string $label = null): static
+    {
+        // Normalize meta (cast is `object`) to a plain array for editing.
+        $meta = json_decode(json_encode($this->meta ?? []), true);
+        $meta = is_array($meta) ? $meta : [];
+
+        if ($requires === null || $requires === []) {
+            unset($meta['requires']);
+        } else {
+            if ($label !== null && $label !== '') {
+                $requires['label'] = $label;
+            }
+            $meta['requires'] = $requires;
+        }
+
+        if ($percentOff === null) {
+            unset($meta['percent_off']);
+        } else {
+            $meta['percent_off'] = (float) $percentOff;
+        }
+
+        $this->meta = $meta;
+
+        return $this;
+    }
+
+    /**
      * Only conditional prices (carry a `meta.requires`). Uses a JSON-string
      * LIKE so it works whether `meta` is a JSON or TEXT column.
      *

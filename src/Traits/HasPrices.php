@@ -89,6 +89,12 @@ trait HasPrices
 
         $checker = app(\Blax\Shop\Contracts\EntitlementChecker::class);
 
+        // Base for percentage prices = the cheapest standalone (unconditional)
+        // price for this product. Null when the product has none.
+        $base = $active
+            ->reject(fn (ProductPrice $price) => $price->isConditional())
+            ->min(fn (ProductPrice $price) => $price->unit_amount);
+
         $eligible = $active->filter(function (ProductPrice $price) use ($buyer, $checker) {
             if (! $price->isConditional()) {
                 return true;
@@ -97,7 +103,13 @@ trait HasPrices
             return $checker->satisfies($buyer, $price->requires());
         });
 
-        return $eligible->sortBy(fn (ProductPrice $price) => $price->unit_amount)->first();
+        // Cheapest by EFFECTIVE amount (percentage prices resolve against $base).
+        // A percentage price with no base yields null and is dropped.
+        return $eligible
+            ->map(fn (ProductPrice $price) => ['price' => $price, 'amount' => $price->effectiveAmount($base)])
+            ->filter(fn (array $row) => $row['amount'] !== null)
+            ->sortBy('amount')
+            ->first()['price'] ?? null;
     }
 
     public function getPriceAttribute(): ?float
