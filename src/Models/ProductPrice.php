@@ -118,6 +118,108 @@ class ProductPrice extends Model implements Cartable
     }
 
     /**
+     * The conditional-pricing requirement carried in `meta.requires`, or null
+     * when this is an unconditional (standalone) price.
+     *
+     * Shape: a map of one prerequisite, e.g. `['role' => 'seat']` or
+     * `['product' => 'full-seat']`, optionally with a display-only `label`
+     * ("8€ with Full Seat"). `meta` is cast to `object`, so this normalizes the
+     * `stdClass` back to an array for callers ({@see EntitlementChecker}).
+     *
+     * @return array<string,mixed>|null
+     */
+    public function requires(): ?array
+    {
+        $requires = $this->meta->requires ?? null;
+
+        if ($requires === null) {
+            return null;
+        }
+
+        // Normalize stdClass|array -> array (meta cast is `object`).
+        $normalized = json_decode(json_encode($requires), true);
+
+        return is_array($normalized) && $normalized !== [] ? $normalized : null;
+    }
+
+    /**
+     * Whether this price only applies to buyers who satisfy a prerequisite
+     * (i.e. it carries `meta.requires`).
+     */
+    public function isConditional(): bool
+    {
+        return $this->requires() !== null;
+    }
+
+    /**
+     * Display label for the requirement ("8€ with Full Seat"), if authored.
+     */
+    public function requiresLabel(): ?string
+    {
+        $label = $this->requires()['label'] ?? null;
+
+        return is_string($label) && $label !== '' ? $label : null;
+    }
+
+    /**
+     * Structural satisfaction check against an already-resolved set of "owned"
+     * signal strings, e.g. `['role:seat', 'product:full-seat']`.
+     *
+     * Used for the hypothetical "if you owned product A" case (no runtime
+     * buyer) — the host resolves slugs/ids into signal strings and passes them
+     * here. A non-conditional price is always satisfied. A conditional price is
+     * satisfied when ANY of its (non-label) requirement entries matches a
+     * signal — a single `requires` map with one key is the common case.
+     *
+     * @param  array<int,string>  $ownedSignals
+     */
+    public function requiresSatisfiedBy(array $ownedSignals): bool
+    {
+        $requires = $this->requires();
+
+        if ($requires === null) {
+            return true;
+        }
+
+        foreach ($requires as $type => $value) {
+            if ($type === 'label') {
+                continue;
+            }
+
+            if (is_scalar($value) && in_array($type . ':' . $value, $ownedSignals, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Only conditional prices (carry a `meta.requires`). Uses a JSON-string
+     * LIKE so it works whether `meta` is a JSON or TEXT column.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeConditional(Builder $query): Builder
+    {
+        return $query->where('meta', 'like', '%"requires"%');
+    }
+
+    /**
+     * Only standalone (unconditional) prices.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeStandalone(Builder $query): Builder
+    {
+        return $query->where(function (Builder $q) {
+            $q->whereNull('meta')->orWhere('meta', 'not like', '%"requires"%');
+        });
+    }
+
+    /**
      * Tier ladder used when {@see $billing_scheme} is `tiered`. Each tier
      * applies up to its `up_to` mark; the last tier (up_to = null) extends
      * to infinity. See {@see calculateForUsage()} for the walker.

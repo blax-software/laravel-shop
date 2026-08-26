@@ -64,6 +64,23 @@ return [
     ],
 
     /*
+     * Conditional-price entitlement checker.
+     *
+     * A ProductPrice can carry `meta.requires` (e.g. {"role":"seat"}) so it is
+     * only offered to buyers who already hold something else — a subscription,
+     * role, or prior purchase (loyalty / bundle pricing). The package resolves
+     * the cheapest *eligible* price but delegates "does this buyer satisfy the
+     * requirement" to a host-provided \Blax\Shop\Contracts\EntitlementChecker,
+     * because entitlement semantics are app-specific (laravel-roles, Cashier,
+     * a custom table). Point this at your implementation's class-string.
+     *
+     * Left null, the package binds \Blax\Shop\Services\DenyAllEntitlementChecker
+     * — conditional prices are never offered until a real checker is wired up
+     * (fail-closed: a forgotten binding can't leak a discount to everyone).
+     */
+    'entitlement_checker' => null,
+
+    /*
      * Subscriptions are Cashier-backed. The package binds its own
      * Cashier-extending Subscription / SubscriptionItem models (above) so it
      * can link a subscription to a product and run product actions on the

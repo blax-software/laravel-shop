@@ -63,6 +63,43 @@ trait HasPrices
         return $this->prices()->where('is_default', true);
     }
 
+    /**
+     * Resolve the cheapest price this buyer may actually be charged, honouring
+     * conditional (`meta.requires`) pricing.
+     *
+     * The eligible set = every active standalone price PLUS every active
+     * conditional price the buyer satisfies (per the bound
+     * {@see \Blax\Shop\Contracts\EntitlementChecker}); the cheapest of those
+     * wins. So a buyer with the prerequisite gets the cheaper conditional price
+     * (e.g. 8€ with Full Seat), and a buyer without it never sees it.
+     *
+     * Returns null when nothing is eligible — e.g. a product sold ONLY at a
+     * conditional price to a buyer who doesn't qualify (there is genuinely no
+     * price for them). Callers must treat null as "not purchasable by you".
+     *
+     * @param  mixed  $buyer  Usually a User; null for a guest (satisfies nothing).
+     */
+    public function resolvePriceFor(mixed $buyer = null): ?ProductPrice
+    {
+        $active = $this->prices()->where('active', true)->get();
+
+        if ($active->isEmpty()) {
+            return null;
+        }
+
+        $checker = app(\Blax\Shop\Contracts\EntitlementChecker::class);
+
+        $eligible = $active->filter(function (ProductPrice $price) use ($buyer, $checker) {
+            if (! $price->isConditional()) {
+                return true;
+            }
+
+            return $checker->satisfies($buyer, $price->requires());
+        });
+
+        return $eligible->sortBy(fn (ProductPrice $price) => $price->unit_amount)->first();
+    }
+
     public function getPriceAttribute(): ?float
     {
         return $this->getCurrentPrice();

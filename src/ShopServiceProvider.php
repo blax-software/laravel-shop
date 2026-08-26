@@ -26,6 +26,17 @@ class ShopServiceProvider extends ServiceProvider
         $this->app->singleton('shop.cart', function ($app) {
             return new \Blax\Shop\Services\CartService();
         });
+
+        // Conditional-price entitlement checker. Resolve the host's binding
+        // from `shop.entitlement_checker`; fall back to a deny-all so an
+        // unconfigured host never offers a conditional price to everyone.
+        $this->app->bind(\Blax\Shop\Contracts\EntitlementChecker::class, function ($app) {
+            $configured = config('shop.entitlement_checker');
+
+            return $configured
+                ? $app->make($configured)
+                : $app->make(\Blax\Shop\Services\DenyAllEntitlementChecker::class);
+        });
     }
 
     public function boot()
