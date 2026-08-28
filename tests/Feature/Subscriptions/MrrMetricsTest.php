@@ -46,7 +46,7 @@ class MrrMetricsTest extends TestCase
         ]);
     }
 
-    private function price(Product $product, string $stripePrice, int $unitAmount, RecurringInterval|string|null $interval, int $intervalCount = 1, int $costAmount = 0): ProductPrice
+    private function price(Product $product, string $stripePrice, int $unitAmount, RecurringInterval|string|null $interval, int $intervalCount = 1, int $costAmount = 0, ?float $licensePercent = null, int $licenseMin = 0): ProductPrice
     {
         return ProductPrice::create([
             'purchasable_type' => Product::class,
@@ -56,6 +56,8 @@ class MrrMetricsTest extends TestCase
             'currency' => 'EUR',
             'unit_amount' => $unitAmount,
             'cost_amount' => $costAmount,
+            'license_percent' => $licensePercent,
+            'license_min_amount' => $licenseMin ?: null,
             'is_default' => true,
             'active' => true,
             'interval' => $interval,
@@ -162,6 +164,39 @@ class MrrMetricsTest extends TestCase
         $this->assertSame($expectedCogs, $m['cogs']);
         $this->assertSame($expectedMrr - $expectedCogs, $m['net_mrr']);
         $this->assertSame($expectedMrr - $expectedCogs, Shop::netMrr());
+    }
+
+    #[Test]
+    public function it_amortizes_the_licence_royalty_over_the_quarter_not_the_billing_cycle(): void
+    {
+        $seat = $this->product('Full Seat');
+        // €25.50/mo Full Seat, Aircademy-style rule: 35% of list, floored at €15.
+        // 35% × €25.50 = €8.93 < €15, so the €15 minimum applies — per QUARTER.
+        $this->price($seat, 'price_seat', 2550, RecurringInterval::MONTH, 1, 0, 35.0, 1500);
+        $this->subscription($seat, 'active', 'price_seat');
+
+        $m = Shop::subscriptionMetrics();
+
+        // €15 ÷ the 3-month bracket = €5/month → €15 across a quarter, i.e. a
+        // monthly subscriber billed 3× still costs ONE quarterly fee, not three.
+        $this->assertSame(500, $m['license_cost']);
+        $this->assertSame(2550, $m['mrr']);
+        $this->assertSame(2550 - 500, $m['net_mrr']);
+        $this->assertSame(2550 - 500, Shop::netMrr());
+    }
+
+    #[Test]
+    public function the_royalty_takes_the_percentage_when_it_beats_the_minimum(): void
+    {
+        $q = $this->product('Questions');
+        // €49 / 3 months: 35% × €49 = €17.15 > €15 min → percentage wins, per quarter.
+        $this->price($q, 'price_q', 4900, RecurringInterval::MONTH, 3, 0, 35.0, 1500);
+        $this->subscription($q, 'active', 'price_q');
+
+        $m = Shop::subscriptionMetrics();
+
+        $perQuarter = (int) round(0.35 * 4900); // 1715
+        $this->assertSame((int) round($perQuarter / 3), $m['license_cost']); // ÷ 3-month bracket
     }
 
     #[Test]

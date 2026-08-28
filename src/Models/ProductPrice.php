@@ -60,6 +60,8 @@ class ProductPrice extends Model implements Cartable
         'unit_amount',
         'sale_unit_amount',
         'cost_amount',
+        'license_percent',
+        'license_min_amount',
         'is_default',
         'active',
         'billing_scheme',
@@ -79,6 +81,8 @@ class ProductPrice extends Model implements Cartable
         'unit_amount' => 'float',
         'sale_unit_amount' => 'float',
         'cost_amount' => 'float',
+        'license_percent' => 'float',
+        'license_min_amount' => 'integer',
         'interval_count' => 'integer',
         'trial_period_days' => 'integer',
     ];
@@ -117,6 +121,31 @@ class ProductPrice extends Model implements Cartable
         }
 
         return $this->unit_amount;
+    }
+
+    /**
+     * The royalty / minimum licence fee owed for ONE unit sold at this price for
+     * ONE licence-term period (cents): `max(license_percent% of unit_amount,
+     * license_min_amount)`. Follows the Aircademy-style rule — a percentage of
+     * the net list price, floored at a term minimum. 0 when the price carries no
+     * licence rule. Amortized to a run-rate by the caller (see the shop's
+     * subscription metrics), so it is charged once per term, not per billing
+     * cycle.
+     */
+    public function licenseFeePerPeriod(): int
+    {
+        $percent = $this->license_percent;
+        $min = (int) ($this->license_min_amount ?? 0);
+
+        if ($percent === null && $min === 0) {
+            return 0;
+        }
+
+        $percentFee = $percent !== null
+            ? (int) round(((float) $percent / 100) * (float) $this->unit_amount)
+            : 0;
+
+        return max($percentFee, $min);
     }
 
     /**

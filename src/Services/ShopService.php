@@ -609,6 +609,7 @@ class ShopService
 
         $mrr = 0.0;
         $cogs = 0.0;
+        $license = 0.0;
         $byProduct = [];
         $unpricedItems = 0;
 
@@ -633,6 +634,7 @@ class ShopService
 
                 $mrr += $monthly;
                 $cogs += $this->priceMonthlyCost($price, $quantity) ?? 0;
+                $license += $this->priceMonthlyLicense($price, $quantity) ?? 0;
                 $slug = $this->priceProductSlug($price)
                     ?? $this->subscriptionProductSlug($subscription)
                     ?? 'unknown';
@@ -646,16 +648,18 @@ class ShopService
             'subscribers' => $subscriptions->count(),
             'mrr' => (int) round($mrr),
             'cogs' => (int) round($cogs),
-            'net_mrr' => (int) round($mrr - $cogs),
+            'license_cost' => (int) round($license),
+            'net_mrr' => (int) round($mrr - $cogs - $license),
             'by_product' => array_map(static fn ($cents) => (int) round($cents), $byProduct),
             'unpriced_items' => $unpricedItems,
         ];
     }
 
     /**
-     * Net Monthly Recurring Revenue in cents: {@see mrr()} minus the recurring
-     * cost of goods (each active price's `cost_amount`, interval-normalized).
-     * This is MRR after license/COGS — the recurring contribution margin.
+     * Net Monthly Recurring Revenue in cents: {@see mrr()} minus recurring cost
+     * of goods (`cost_amount`) minus the amortized royalty / minimum licence fee
+     * ({@see priceMonthlyLicense()}). The recurring contribution margin — MRR
+     * after everything it costs to deliver the subscription.
      */
     public function netMrr(): int
     {
@@ -712,6 +716,61 @@ class ShopService
         };
 
         return $monthly === null ? null : (int) round($monthly);
+    }
+
+    /**
+     * Monthly run-rate (cents) of the royalty / minimum licence fee for a
+     * recurring price. The fee ({@see ProductPrice::licenseFeePerPeriod()}) is
+     * owed once per licence-term bracket — 1–3 months, 6 months, or 12 months —
+     * so it is amortized over that bracket, NOT per billing cycle. That is why a
+     * monthly subscriber renewing three times in a quarter still costs one
+     * quarterly fee: a €25.50/mo Full Seat with a €15 minimum contributes €15 ÷
+     * 3 = €5/month. Null for a non-recurring price; 0 when there is no rule.
+     */
+    protected function priceMonthlyLicense(ProductPrice $price, int $quantity = 1): ?int
+    {
+        $interval = $price->interval instanceof RecurringInterval
+            ? $price->interval->value
+            : (is_string($price->interval) ? $price->interval : null);
+
+        if ($interval === null) {
+            return null; // one-time price — subscription licence run-rate N/A
+        }
+
+        $perPeriod = $price->licenseFeePerPeriod();
+
+        if ($perPeriod <= 0) {
+            return 0;
+        }
+
+        return (int) round($perPeriod * max(1, $quantity) / $this->licenseBracketMonths($price));
+    }
+
+    /**
+     * The licence-term bracket a price falls in, in months: its term (interval ×
+     * interval_count) snapped to 3 (the ≤ quarter accounting bracket), 6, or 12.
+     * The quarterly accounting period is the smallest bracket, so any
+     * sub-quarterly billing (monthly/weekly) amortizes over 3 months.
+     */
+    protected function licenseBracketMonths(ProductPrice $price): int
+    {
+        $interval = $price->interval instanceof RecurringInterval
+            ? $price->interval->value
+            : (is_string($price->interval) ? $price->interval : null);
+
+        $count = max(1, (int) ($price->interval_count ?: 1));
+        $daysPerMonth = 30.436875;
+
+        $termMonths = match ($interval) {
+            'year' => 12 * $count,
+            'quarter' => 3 * $count,
+            'month' => $count,
+            'week' => $count * 7 / $daysPerMonth,
+            'day' => $count / $daysPerMonth,
+            default => 1,
+        };
+
+        return $termMonths <= 3 ? 3 : ($termMonths <= 6 ? 6 : 12);
     }
 
     /**
