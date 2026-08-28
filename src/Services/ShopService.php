@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Blax\Shop\Services;
 
 use Blax\Shop\Enums\OrderStatus;
+use Blax\Shop\Enums\RecurringInterval;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\CartItem;
 use Blax\Shop\Models\Order;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
+use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Models\ProductPurchase;
+use Blax\Shop\Models\Subscription;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Carbon\Carbon;
@@ -507,6 +510,202 @@ class ShopService
             ->orderByDesc('purchases_count')
             ->limit($limit)
             ->get();
+    }
+
+    // =========================================================================
+    // SUBSCRIPTION REVENUE (MRR)
+    // =========================================================================
+
+    /**
+     * Subscription statuses that count as a live, revenue-bearing subscriber.
+     *
+     * Mirrors Stripe's "active subscribers" metric: a subscription still
+     * billing counts even when it is set to cancel at period end (status stays
+     * `active` with a future `ends_at`) or is retrying payment (`past_due`).
+     * Filtering on `ends_at IS NULL` — a common mistake — silently drops
+     * paying, cancel-at-period-end subscribers and under-reports MRR.
+     * Override via `config('shop.metrics.subscription_statuses')`.
+     *
+     * @return array<int, string>
+     */
+    public function subscriberStatuses(): array
+    {
+        return config('shop.metrics.subscription_statuses', ['active', 'past_due', 'trialing']);
+    }
+
+    /**
+     * Base query for the subscriptions counted in subscriber/MRR metrics.
+     *
+     * @return Builder<Subscription>
+     */
+    protected function metricSubscriptions(): Builder
+    {
+        $model = config('shop.models.subscription', Subscription::class);
+
+        return $model::query()->whereIn('stripe_status', $this->subscriberStatuses());
+    }
+
+    /**
+     * Number of live subscribers (see {@see subscriberStatuses()}).
+     */
+    public function activeSubscribers(): int
+    {
+        return $this->metricSubscriptions()->count();
+    }
+
+    /**
+     * Monthly Recurring Revenue in cents.
+     *
+     * Every live subscription's line items, each normalized to a monthly
+     * run-rate from its price interval (year ÷ 12, quarter ÷ 3, week/day by the
+     * average-days-per-month constant so weekly/daily match Stripe's own MRR
+     * normalization). Computed from the mirrored {@see ProductPrice} rows — no
+     * Stripe API call — so the total is only as accurate as the mirror:
+     * a `product_prices.unit_amount` that has drifted from the live Stripe
+     * price will skew it, and a line item whose price is not mirrored at all is
+     * excluded. Use {@see subscriptionMetrics()} to see that excluded count
+     * (`unpriced_items`) rather than trusting a silent number, and keep the
+     * mirror synced from Stripe for an exact figure.
+     */
+    public function mrr(): int
+    {
+        return $this->subscriptionMetrics()['mrr'];
+    }
+
+    /**
+     * MRR split by product slug, in cents, highest first.
+     *
+     * @return \Illuminate\Support\Collection<string, int>
+     */
+    public function mrrByProduct(): \Illuminate\Support\Collection
+    {
+        return collect($this->subscriptionMetrics()['by_product']);
+    }
+
+    /**
+     * Every subscription metric in a single pass over the live subscriptions:
+     * subscriber count, MRR (cents), MRR by product slug, and the number of
+     * line items whose price could not be resolved from the mirror — so an
+     * under-count is surfaced, never silent.
+     *
+     * @return array{subscribers: int, mrr: int, by_product: array<string, int>, unpriced_items: int}
+     */
+    public function subscriptionMetrics(): array
+    {
+        $subscriptions = $this->metricSubscriptions()->with(['items', 'product'])->get();
+
+        // Resolve every referenced price in one query, keyed by Stripe price id.
+        $priceModel = config('shop.models.product_price', ProductPrice::class);
+        $priceIds = $subscriptions
+            ->flatMap(fn ($sub) => $sub->items->pluck('stripe_price'))
+            ->filter()
+            ->unique()
+            ->values();
+        $prices = $priceModel::query()
+            ->whereIn('stripe_price_id', $priceIds->all())
+            ->with('purchasable')
+            ->get()
+            ->keyBy('stripe_price_id');
+
+        $mrr = 0.0;
+        $byProduct = [];
+        $unpricedItems = 0;
+
+        foreach ($subscriptions as $subscription) {
+            foreach ($subscription->items as $item) {
+                $price = $prices->get($item->stripe_price);
+
+                if ($price === null) {
+                    $unpricedItems++;
+
+                    continue;
+                }
+
+                $monthly = $this->priceMonthlyAmount($price, (int) ($item->quantity ?? 1));
+
+                if ($monthly === null) {
+                    // Price resolved but is not recurring (a one-time price on a
+                    // subscription line) — carries no MRR, and is not a data gap.
+                    continue;
+                }
+
+                $mrr += $monthly;
+                $slug = $this->priceProductSlug($price)
+                    ?? $this->subscriptionProductSlug($subscription)
+                    ?? 'unknown';
+                $byProduct[$slug] = ($byProduct[$slug] ?? 0) + $monthly;
+            }
+        }
+
+        arsort($byProduct);
+
+        return [
+            'subscribers' => $subscriptions->count(),
+            'mrr' => (int) round($mrr),
+            'by_product' => array_map(static fn ($cents) => (int) round($cents), $byProduct),
+            'unpriced_items' => $unpricedItems,
+        ];
+    }
+
+    /**
+     * Normalize a recurring price to a monthly amount in cents for `$quantity`
+     * units. Returns null for a non-recurring (one-time) price, which carries
+     * no MRR. Weekly and daily use the Gregorian average-days-per-month
+     * constant so they line up with Cashier/Stripe's MRR normalization.
+     */
+    protected function priceMonthlyAmount(ProductPrice $price, int $quantity = 1): ?int
+    {
+        $interval = $price->interval instanceof RecurringInterval
+            ? $price->interval->value
+            : (is_string($price->interval) ? $price->interval : null);
+
+        if ($interval === null) {
+            return null; // one-time price — not recurring revenue
+        }
+
+        $amount = (float) $price->unit_amount * max(1, $quantity);
+        $count = max(1, (int) ($price->interval_count ?: 1));
+        $daysPerMonth = 30.436875; // Gregorian average month length
+
+        $monthly = match ($interval) {
+            'year' => $amount / (12 * $count),
+            'quarter' => $amount / (3 * $count),
+            'month' => $amount / $count,
+            'week' => $amount / ($count * 7 / $daysPerMonth),
+            'day' => $amount / ($count / $daysPerMonth),
+            default => null,
+        };
+
+        return $monthly === null ? null : (int) round($monthly);
+    }
+
+    /**
+     * Product slug carried by a price's purchasable (usually a Product), or
+     * null when the purchasable is absent or has no slug/name.
+     */
+    protected function priceProductSlug(ProductPrice $price): ?string
+    {
+        $purchasable = $price->purchasable;
+
+        if (! is_object($purchasable)) {
+            return null;
+        }
+
+        return $purchasable->slug ?? $purchasable->name ?? null;
+    }
+
+    /**
+     * Product slug for the subscription's linked product, or null.
+     */
+    protected function subscriptionProductSlug(Subscription $subscription): ?string
+    {
+        $product = $subscription->product;
+
+        if (! is_object($product)) {
+            return null;
+        }
+
+        return $product->slug ?? $product->name ?? null;
     }
 
     // =========================================================================

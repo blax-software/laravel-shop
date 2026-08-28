@@ -53,7 +53,14 @@ use Illuminate\Support\Facades\Facade;
  * @method static array stats()
  * @method static \Illuminate\Support\Collection revenueByDay(\DateTimeInterface $from, \DateTimeInterface $until)
  * @method static \Illuminate\Support\Collection revenueByMonth(\DateTimeInterface $from, \DateTimeInterface $until)
- * 
+ *
+ * Subscription Revenue (MRR):
+ * @method static array subscriberStatuses()
+ * @method static int activeSubscribers()
+ * @method static int mrr()
+ * @method static \Illuminate\Support\Collection mrrByProduct()
+ * @method static array subscriptionMetrics()
+ *
  * Cart Queries:
  * @method static \Illuminate\Database\Eloquent\Builder carts()
  * @method static \Illuminate\Database\Eloquent\Builder activeCarts()
