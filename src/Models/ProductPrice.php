@@ -59,6 +59,7 @@ class ProductPrice extends Model implements Cartable
         'currency',
         'unit_amount',
         'sale_unit_amount',
+        'cost_amount',
         'is_default',
         'active',
         'billing_scheme',
@@ -77,6 +78,7 @@ class ProductPrice extends Model implements Cartable
         'meta' => 'object',
         'unit_amount' => 'float',
         'sale_unit_amount' => 'float',
+        'cost_amount' => 'float',
         'interval_count' => 'integer',
         'trial_period_days' => 'integer',
     ];

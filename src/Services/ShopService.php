@@ -608,6 +608,7 @@ class ShopService
             ->keyBy('stripe_price_id');
 
         $mrr = 0.0;
+        $cogs = 0.0;
         $byProduct = [];
         $unpricedItems = 0;
 
@@ -621,7 +622,8 @@ class ShopService
                     continue;
                 }
 
-                $monthly = $this->priceMonthlyAmount($price, (int) ($item->quantity ?? 1));
+                $quantity = (int) ($item->quantity ?? 1);
+                $monthly = $this->priceMonthlyAmount($price, $quantity);
 
                 if ($monthly === null) {
                     // Price resolved but is not recurring (a one-time price on a
@@ -630,6 +632,7 @@ class ShopService
                 }
 
                 $mrr += $monthly;
+                $cogs += $this->priceMonthlyCost($price, $quantity) ?? 0;
                 $slug = $this->priceProductSlug($price)
                     ?? $this->subscriptionProductSlug($subscription)
                     ?? 'unknown';
@@ -642,28 +645,60 @@ class ShopService
         return [
             'subscribers' => $subscriptions->count(),
             'mrr' => (int) round($mrr),
+            'cogs' => (int) round($cogs),
+            'net_mrr' => (int) round($mrr - $cogs),
             'by_product' => array_map(static fn ($cents) => (int) round($cents), $byProduct),
             'unpriced_items' => $unpricedItems,
         ];
     }
 
     /**
-     * Normalize a recurring price to a monthly amount in cents for `$quantity`
-     * units. Returns null for a non-recurring (one-time) price, which carries
-     * no MRR. Weekly and daily use the Gregorian average-days-per-month
-     * constant so they line up with Cashier/Stripe's MRR normalization.
+     * Net Monthly Recurring Revenue in cents: {@see mrr()} minus the recurring
+     * cost of goods (each active price's `cost_amount`, interval-normalized).
+     * This is MRR after license/COGS — the recurring contribution margin.
+     */
+    public function netMrr(): int
+    {
+        return $this->subscriptionMetrics()['net_mrr'];
+    }
+
+    /**
+     * Normalize a recurring price's `unit_amount` to a monthly run-rate in cents
+     * for `$quantity` units. Null for a non-recurring (one-time) price.
      */
     protected function priceMonthlyAmount(ProductPrice $price, int $quantity = 1): ?int
+    {
+        return $this->monthlyForPrice($price, (float) $price->unit_amount, $quantity);
+    }
+
+    /**
+     * Normalize a recurring price's `cost_amount` (COGS — license/shipping/etc.)
+     * to a monthly figure in cents for `$quantity` units. Null when the price is
+     * one-time; 0 when it carries no cost basis.
+     */
+    protected function priceMonthlyCost(ProductPrice $price, int $quantity = 1): ?int
+    {
+        return $this->monthlyForPrice($price, (float) ($price->cost_amount ?? 0), $quantity);
+    }
+
+    /**
+     * Shared interval normalization: turn `$amountCents` charged/incurred once
+     * per the price's billing period into a monthly run-rate for `$quantity`
+     * units. Weekly and daily use the Gregorian average-days-per-month constant
+     * so they line up with Cashier/Stripe's MRR normalization. Returns null for
+     * a non-recurring (one-time) price.
+     */
+    protected function monthlyForPrice(ProductPrice $price, float $amountCents, int $quantity = 1): ?int
     {
         $interval = $price->interval instanceof RecurringInterval
             ? $price->interval->value
             : (is_string($price->interval) ? $price->interval : null);
 
         if ($interval === null) {
-            return null; // one-time price — not recurring revenue
+            return null; // one-time price — not recurring
         }
 
-        $amount = (float) $price->unit_amount * max(1, $quantity);
+        $amount = $amountCents * max(1, $quantity);
         $count = max(1, (int) ($price->interval_count ?: 1));
         $daysPerMonth = 30.436875; // Gregorian average month length
 

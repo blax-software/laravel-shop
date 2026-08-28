@@ -46,7 +46,7 @@ class MrrMetricsTest extends TestCase
         ]);
     }
 
-    private function price(Product $product, string $stripePrice, int $unitAmount, RecurringInterval|string|null $interval, int $intervalCount = 1): ProductPrice
+    private function price(Product $product, string $stripePrice, int $unitAmount, RecurringInterval|string|null $interval, int $intervalCount = 1, int $costAmount = 0): ProductPrice
     {
         return ProductPrice::create([
             'purchasable_type' => Product::class,
@@ -55,6 +55,7 @@ class MrrMetricsTest extends TestCase
             'type' => $interval === null ? PriceType::ONE_TIME : PriceType::RECURRING,
             'currency' => 'EUR',
             'unit_amount' => $unitAmount,
+            'cost_amount' => $costAmount,
             'is_default' => true,
             'active' => true,
             'interval' => $interval,
@@ -138,6 +139,29 @@ class MrrMetricsTest extends TestCase
         $this->assertSame(2550, $metrics['mrr']);         // unmirrored item excluded, never guessed
         $this->assertSame(1, $metrics['unpriced_items']); // but surfaced, not silent
         $this->assertSame(2, $metrics['subscribers']);
+    }
+
+    #[Test]
+    public function it_computes_net_mrr_after_cost_of_goods(): void
+    {
+        $seat = $this->product('Full Seat');
+        // €25.50/mo, with a €15.00/mo license cost basis (COGS).
+        $this->price($seat, 'price_seat', 2550, RecurringInterval::MONTH, 1, 1500);
+        // €135/yr, with a €12/yr cost (→ €1/mo after ÷12).
+        $this->price($seat, 'price_year', 13500, RecurringInterval::YEAR, 1, 1200);
+
+        $this->subscription($seat, 'active', 'price_seat');
+        $this->subscription($seat, 'active', 'price_seat');
+        $this->subscription($seat, 'active', 'price_year');
+
+        $m = Shop::subscriptionMetrics();
+
+        $expectedMrr = 2 * 2550 + (int) round(13500 / 12);
+        $expectedCogs = 2 * 1500 + (int) round(1200 / 12);
+        $this->assertSame($expectedMrr, $m['mrr']);
+        $this->assertSame($expectedCogs, $m['cogs']);
+        $this->assertSame($expectedMrr - $expectedCogs, $m['net_mrr']);
+        $this->assertSame($expectedMrr - $expectedCogs, Shop::netMrr());
     }
 
     #[Test]

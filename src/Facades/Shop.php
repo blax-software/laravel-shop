@@ -58,6 +58,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static array subscriberStatuses()
  * @method static int activeSubscribers()
  * @method static int mrr()
+ * @method static int netMrr()
  * @method static \Illuminate\Support\Collection mrrByProduct()
  * @method static array subscriptionMetrics()
  *
