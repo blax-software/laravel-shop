@@ -74,6 +74,7 @@ class ShopServiceProvider extends ServiceProvider
                 \Blax\Shop\Console\Commands\ShopStocksClaimsCommand::class,
                 \Blax\Shop\Console\Commands\ShopAddExampleProducts::class,
                 \Blax\Shop\Console\Commands\ShopSetupStripeWebhooksCommand::class,
+                \Blax\Shop\Console\Commands\ShopImportStripeLedgerCommand::class,
             ]);
         }
 

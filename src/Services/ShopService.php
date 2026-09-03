@@ -13,6 +13,7 @@ use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
 use Blax\Shop\Models\ProductPrice;
 use Blax\Shop\Models\ProductPurchase;
+use Blax\Shop\Models\StripeTransaction;
 use Blax\Shop\Models\Subscription;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -939,5 +940,99 @@ class ShopService
         $amount = $cents / 100;
 
         return number_format($amount, 2) . ' ' . strtoupper($currency);
+    }
+
+    // =========================================================================
+    // STRIPE LEDGER (net-of-fees, user-independent)
+    // =========================================================================
+
+    /**
+     * The configured {@see StripeTransaction} model class.
+     *
+     * @return class-string<\Illuminate\Database\Eloquent\Model>
+     */
+    protected function ledgerModel(): string
+    {
+        return config('shop.models.stripe_transaction', StripeTransaction::class);
+    }
+
+    /**
+     * BalanceTransaction `type`s that count as revenue (net of fees/refunds).
+     *
+     * @return array<int, string>
+     */
+    public function ledgerRevenueTypes(): array
+    {
+        return config('shop.ledger.revenue_types', [
+            'charge', 'payment', 'refund', 'payment_refund', 'adjustment', 'dispute', 'dispute_reversal',
+        ]);
+    }
+
+    /**
+     * The earliest ledger row's Stripe `created` timestamp — the "start" of the
+     * business's money history, for an all-time cumulative view. Null when empty.
+     */
+    public function ledgerEarliest(): ?Carbon
+    {
+        $min = $this->ledgerModel()::query()->min('created');
+
+        return $min ? Carbon::parse($min) : null;
+    }
+
+    /**
+     * Revenue-bearing ledger movements grouped by Stripe day, in cents.
+     *
+     * One row per day with signed `gross` (SUM amount), `fee` (SUM fee) and
+     * `net` (SUM net = the money kept after fees and refunds) plus the row
+     * `count`. Refund/dispute days push `gross`/`net` down. Feed the `net`
+     * column into a cumulative sum for a break-even balance line.
+     *
+     * @return \Illuminate\Support\Collection<int, object{date: string, gross: int, fee: int, net: int, count: int}>
+     */
+    public function revenueLedgerByDay(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
+    {
+        return $this->ledgerModel()::query()
+            ->whereBetween('created', [$from, $until])
+            ->whereIn('source_type', $this->ledgerRevenueTypes())
+            ->selectRaw('DATE(created) as date, SUM(amount) as gross, SUM(fee) as fee, SUM(net) as net, COUNT(*) as count')
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get()
+            ->map(fn ($r) => (object) [
+                'date' => (string) $r->date,
+                'gross' => (int) $r->gross,
+                'fee' => (int) $r->fee,
+                'net' => (int) $r->net,
+                'count' => (int) $r->count,
+            ]);
+    }
+
+    /**
+     * Window totals over the revenue-bearing ledger, in cents: gross sales
+     * (positive charge lines), the negative refund total, Stripe fees, and the
+     * resulting net collected. `count` is the number of ledger rows in range.
+     *
+     * @return array{gross: int, refunds: int, fees: int, net: int, count: int}
+     */
+    public function ledgerTotals(\DateTimeInterface $from, \DateTimeInterface $until): array
+    {
+        // CASE WHEN (not GREATEST/LEAST) so the split is portable to SQLite tests.
+        $row = $this->ledgerModel()::query()
+            ->whereBetween('created', [$from, $until])
+            ->whereIn('source_type', $this->ledgerRevenueTypes())
+            ->selectRaw('SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as gross')
+            ->selectRaw('SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END) as refunds')
+            ->selectRaw('SUM(fee) as fees')
+            ->selectRaw('SUM(net) as net')
+            ->selectRaw('COUNT(*) as count')
+            ->first();
+
+        return [
+            'gross' => (int) ($row->gross ?? 0),
+            'refunds' => (int) ($row->refunds ?? 0),
+            'fees' => (int) ($row->fees ?? 0),
+            'net' => (int) ($row->net ?? 0),
+            'count' => (int) ($row->count ?? 0),
+        ];
     }
 }

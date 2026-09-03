@@ -41,6 +41,7 @@ return [
         'subscriptions' => 'subscriptions',
         'subscription_items' => 'subscription_items',
         'license_seats' => 'license_seats',
+        'stripe_transactions' => 'stripe_transactions',
     ],
 
     // Model classes (allow overriding in main instance)
@@ -61,6 +62,28 @@ return [
         'subscription' => \Blax\Shop\Models\Subscription::class,
         'subscription_item' => \Blax\Shop\Models\SubscriptionItem::class,
         'license_seat' => \Blax\Shop\Models\LicenseSeat::class,
+        'stripe_transaction' => \Blax\Shop\Models\StripeTransaction::class,
+    ],
+
+    /*
+     * Stripe BalanceTransaction ledger.
+     *
+     * `revenue_types` are the BalanceTransaction `type`s that count toward
+     * "money the business earned, net of fees and refunds". Charges add, refunds
+     * and disputes subtract; per-charge Stripe fees are already inside each row's
+     * `net`. Bank movements (`payout`, `transfer`) are excluded — they move money
+     * that was already counted, they are not revenue or cost.
+     */
+    'ledger' => [
+        'revenue_types' => [
+            'charge',
+            'payment',
+            'refund',
+            'payment_refund',
+            'adjustment',
+            'dispute',
+            'dispute_reversal',
+        ],
     ],
 
     /*

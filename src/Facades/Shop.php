@@ -62,6 +62,12 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Illuminate\Support\Collection mrrByProduct()
  * @method static array subscriptionMetrics()
  *
+ * Stripe Ledger (net-of-fees, user-independent):
+ * @method static array ledgerRevenueTypes()
+ * @method static \Illuminate\Support\Carbon|null ledgerEarliest()
+ * @method static \Illuminate\Support\Collection revenueLedgerByDay(\DateTimeInterface $from, \DateTimeInterface $until)
+ * @method static array ledgerTotals(\DateTimeInterface $from, \DateTimeInterface $until)
+ *
  * Cart Queries:
  * @method static \Illuminate\Database\Eloquent\Builder carts()
  * @method static \Illuminate\Database\Eloquent\Builder activeCarts()
