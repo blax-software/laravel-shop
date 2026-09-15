@@ -79,6 +79,51 @@ class LedgerMetricsTest extends TestCase
     }
 
     #[Test]
+    public function customer_totals_attribute_by_id_or_email(): void
+    {
+        // Two charges + a refund under one customer.
+        $this->txn(['amount' => 2000, 'fee' => 69, 'net' => 1931, 'customer_id' => 'cus_A', 'customer_email' => 'a@x.io']);
+        $this->txn(['amount' => 5000, 'fee' => 172, 'net' => 4828, 'customer_id' => 'cus_A', 'customer_email' => 'a@x.io']);
+        $this->txn(['source_type' => 'refund', 'amount' => -2000, 'fee' => 0, 'net' => -2000, 'customer_id' => 'cus_A']);
+        // A guest charge that carries only the email (no customer id yet).
+        $this->txn(['amount' => 1500, 'fee' => 55, 'net' => 1445, 'customer_id' => null, 'customer_email' => 'a@x.io']);
+        // Another customer's money must never leak in.
+        $this->txn(['amount' => 9900, 'net' => 9560, 'customer_id' => 'cus_B', 'customer_email' => 'b@x.io']);
+
+        // By customer id alone: the two cus_A charges minus the refund.
+        $byId = Shop::customerLedgerTotals('cus_A');
+        $this->assertSame(2000 + 5000 - 2000, $byId['amount']);
+        $this->assertSame(2000 + 5000, $byId['gross']);
+        $this->assertSame(-2000, $byId['refunds']);
+        $this->assertSame(69 + 172, $byId['fees']);
+        $this->assertSame(3, $byId['count']);
+
+        // By id OR email: also pulls in the email-only guest charge.
+        $byBoth = Shop::customerLedgerTotals('cus_A', 'a@x.io');
+        $this->assertSame(2000 + 5000 - 2000 + 1500, $byBoth['amount']);
+        $this->assertSame(4, $byBoth['count']);
+
+        // No identity → zero, never a match-everything.
+        $this->assertSame(0, Shop::customerLedgerTotals([], [])['amount']);
+        $this->assertSame(0, Shop::customerLedgerTotals('', '')['count']);
+    }
+
+    #[Test]
+    public function amount_by_customer_groups_and_omits_null_customer(): void
+    {
+        $this->txn(['amount' => 2000, 'net' => 1931, 'customer_id' => 'cus_A']);
+        $this->txn(['amount' => 5000, 'net' => 4828, 'customer_id' => 'cus_A']);
+        $this->txn(['amount' => 9900, 'net' => 9560, 'customer_id' => 'cus_B']);
+        $this->txn(['amount' => 1500, 'net' => 1445, 'customer_id' => null]); // guest — omitted
+
+        $map = Shop::ledgerAmountByCustomer();
+
+        $this->assertSame(7000, $map['cus_A']);
+        $this->assertSame(9900, $map['cus_B']);
+        $this->assertSame(2, $map->count());
+    }
+
+    #[Test]
     public function earliest_returns_the_first_created_timestamp(): void
     {
         $this->assertNull(Shop::ledgerEarliest());

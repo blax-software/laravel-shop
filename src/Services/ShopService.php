@@ -1035,4 +1035,91 @@ class ShopService
             'count' => (int) ($row->count ?? 0),
         ];
     }
+
+    /**
+     * Money one buyer actually paid us, attributed from the user-independent
+     * ledger by ANY of their Stripe customer id(s) OR buyer email(s) — so a
+     * customer whose local user was deleted, or who paid as a guest before
+     * signing up, is still attributed. Returns the signed split in cents.
+     *
+     * `amount` = SUM(amount) over revenue-type rows = gross charges minus
+     * refunds: the euros we kept, before Stripe's per-charge fee. This is the
+     * figure that catches subscription payments the per-user product_purchases
+     * sum misses (they are stored there as amount=0).
+     *
+     * @param  string|array<int,string>  $customerIds  Stripe customer id(s) (cus_…)
+     * @param  string|array<int,string>  $emails       buyer email(s)
+     * @return array{amount: int, gross: int, refunds: int, fees: int, net: int, count: int}
+     */
+    public function customerLedgerTotals(
+        string|array $customerIds = [],
+        string|array $emails = [],
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null,
+    ): array {
+        $customerIds = array_values(array_filter((array) $customerIds, static fn ($v) => is_string($v) && $v !== ''));
+        $emails = array_values(array_filter((array) $emails, static fn ($v) => is_string($v) && $v !== ''));
+
+        $zero = ['amount' => 0, 'gross' => 0, 'refunds' => 0, 'fees' => 0, 'net' => 0, 'count' => 0];
+
+        // No identity to match on → nothing attributable. Guard so an empty
+        // whereIn can never degrade into a match-everything.
+        if (! $customerIds && ! $emails) {
+            return $zero;
+        }
+
+        $row = $this->ledgerModel()::query()
+            ->whereIn('source_type', $this->ledgerRevenueTypes())
+            ->where(function ($q) use ($customerIds, $emails) {
+                if ($customerIds) {
+                    $q->orWhereIn('customer_id', $customerIds);
+                }
+                if ($emails) {
+                    $q->orWhereIn('customer_email', $emails);
+                }
+            })
+            ->when($from, fn ($q) => $q->where('created', '>=', $from))
+            ->when($until, fn ($q) => $q->where('created', '<=', $until))
+            ->selectRaw('SUM(amount) as amount')
+            ->selectRaw('SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as gross')
+            ->selectRaw('SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END) as refunds')
+            ->selectRaw('SUM(fee) as fees')
+            ->selectRaw('SUM(net) as net')
+            ->selectRaw('COUNT(*) as count')
+            ->first();
+
+        return [
+            'amount' => (int) ($row->amount ?? 0),
+            'gross' => (int) ($row->gross ?? 0),
+            'refunds' => (int) ($row->refunds ?? 0),
+            'fees' => (int) ($row->fees ?? 0),
+            'net' => (int) ($row->net ?? 0),
+            'count' => (int) ($row->count ?? 0),
+        ];
+    }
+
+    /**
+     * Money received (net of refunds) grouped by Stripe customer id, in cents:
+     * `[customer_id => amount]` over the revenue-bearing ledger. The caller maps
+     * customer ids to local users (e.g. users.stripe_id) to attribute revenue
+     * per user in one pass. Rows with no customer id (a guest charge carrying
+     * only an email) are omitted here — attribute those by email via
+     * {@see customerLedgerTotals}.
+     *
+     * @return \Illuminate\Support\Collection<string, int>
+     */
+    public function ledgerAmountByCustomer(
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null,
+    ): \Illuminate\Support\Collection {
+        return $this->ledgerModel()::query()
+            ->whereIn('source_type', $this->ledgerRevenueTypes())
+            ->whereNotNull('customer_id')
+            ->when($from, fn ($q) => $q->where('created', '>=', $from))
+            ->when($until, fn ($q) => $q->where('created', '<=', $until))
+            ->groupBy('customer_id')
+            ->selectRaw('customer_id, SUM(amount) as amount')
+            ->pluck('amount', 'customer_id')
+            ->map(fn ($v) => (int) $v);
+    }
 }
