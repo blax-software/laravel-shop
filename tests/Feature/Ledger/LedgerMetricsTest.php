@@ -123,6 +123,60 @@ class LedgerMetricsTest extends TestCase
         $this->assertSame(2, $map->count());
     }
 
+    // Fixtures mirror what stripe-php hands us at runtime — the code reads
+    // properties off the objects, so plain objects exercise it exactly. (Real
+    // Stripe objects are avoided here: their constructFrom touches the global
+    // object-type map, which is fragile under the full suite's autoload state.)
+    #[Test]
+    public function records_and_upserts_a_balance_transaction(): void
+    {
+        $txn = (object) [
+            'id' => 'txn_rec1', 'type' => 'charge', 'amount' => 2000, 'fee' => 69, 'net' => 1931,
+            'currency' => 'eur', 'created' => 1730000000,
+            'source' => (object) ['id' => 'ch_rec1', 'customer' => 'cus_A', 'billing_details' => (object) ['email' => 'a@x.io']],
+        ];
+
+        $this->assertSame('created', Shop::recordBalanceTransaction($txn));
+        $row = StripeTransaction::where('stripe_id', 'txn_rec1')->firstOrFail();
+        $this->assertSame(2000, $row->amount);
+        $this->assertSame('cus_A', $row->customer_id);
+        $this->assertSame('a@x.io', $row->customer_email);
+        $this->assertSame('ch_rec1', $row->source_id);
+
+        // Re-recording the same txn upserts in place (no duplicate) and updates.
+        $txn->net = 1900;
+        $this->assertSame('updated', Shop::recordBalanceTransaction($txn));
+        $this->assertSame(1, StripeTransaction::where('stripe_id', 'txn_rec1')->count());
+        $this->assertSame(1900, StripeTransaction::where('stripe_id', 'txn_rec1')->value('net'));
+    }
+
+    #[Test]
+    public function never_downgrades_a_known_customer_to_null(): void
+    {
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_ref1', 'type' => 'refund', 'amount' => -2000, 'net' => -2000, 'currency' => 'eur', 'created' => 1730000000,
+            'source' => (object) ['id' => 'ch_ref1', 'customer' => 'cus_B', 'receipt_email' => 'b@x.io'],
+        ]);
+        $this->assertSame('cus_B', StripeTransaction::where('stripe_id', 'txn_ref1')->value('customer_id'));
+
+        // A later importer pass that can't resolve the buyer must NOT null it out.
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_ref1', 'type' => 'refund', 'amount' => -2000, 'net' => -2000, 'currency' => 'eur', 'created' => 1730000000,
+            'source' => 're_orphan',
+        ]);
+        $this->assertSame('cus_B', StripeTransaction::where('stripe_id', 'txn_ref1')->value('customer_id'));
+        $this->assertSame('b@x.io', StripeTransaction::where('stripe_id', 'txn_ref1')->value('customer_email'));
+    }
+
+    #[Test]
+    public function sync_ledger_for_charge_ignores_non_charge_ids(): void
+    {
+        // Guard returns before any Stripe call for null / empty / non-ch_ ids.
+        $this->assertSame(0, Shop::syncLedgerForCharge(null));
+        $this->assertSame(0, Shop::syncLedgerForCharge(''));
+        $this->assertSame(0, Shop::syncLedgerForCharge('pi_123'));
+    }
+
     #[Test]
     public function earliest_returns_the_first_created_timestamp(): void
     {

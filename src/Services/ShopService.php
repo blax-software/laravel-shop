@@ -1122,4 +1122,131 @@ class ShopService
             ->pluck('amount', 'customer_id')
             ->map(fn ($v) => (int) $v);
     }
+
+    /**
+     * Flatten a Stripe BalanceTransaction into a ledger row. Pass an explicit
+     * `$source` (the Charge/Refund already retrieved for a webhook) to attribute
+     * the buyer; otherwise the transaction's own expanded `source` is used (the
+     * importer path). A refund's buyer is read from its underlying charge so
+     * refunds net against the right customer.
+     *
+     * @return array<string, mixed>
+     */
+    public function ledgerRowFromBalanceTransaction($txn, $source = null): array
+    {
+        $source = is_object($source) ? $source : (is_object($txn->source ?? null) ? $txn->source : null);
+        $sourceId = $source?->id ?? (is_string($txn->source ?? null) ? $txn->source : null);
+
+        $chargeSource = is_object($source->charge ?? null) ? $source->charge : null;
+
+        $customerId = null;
+        $customerEmail = null;
+        foreach ([$source, $chargeSource] as $s) {
+            if (! is_object($s)) {
+                continue;
+            }
+            $customerId = $customerId ?? ($s->customer ?? null);
+            $customerEmail = $customerEmail
+                ?? ($s->billing_details->email ?? null)
+                ?? ($s->receipt_email ?? null)
+                ?? ($s->customer_email ?? null);
+        }
+
+        return [
+            'stripe_id' => $txn->id,
+            'source_type' => $txn->type ?? null,
+            'reporting_category' => $txn->reporting_category ?? null,
+            'source_id' => $sourceId,
+            'amount' => (int) ($txn->amount ?? 0),
+            'fee' => (int) ($txn->fee ?? 0),
+            'net' => (int) ($txn->net ?? 0),
+            'currency' => $txn->currency ?? null,
+            'customer_id' => is_string($customerId) ? $customerId : null,
+            'customer_email' => is_string($customerEmail) ? $customerEmail : null,
+            'description' => $txn->description ?? null,
+            'created' => isset($txn->created) ? Carbon::createFromTimestamp($txn->created) : null,
+            'available_on' => isset($txn->available_on) ? Carbon::createFromTimestamp($txn->available_on) : null,
+            'meta' => [
+                'status' => $txn->status ?? null,
+                'fee_details' => isset($txn->fee_details) ? json_decode(json_encode($txn->fee_details), true) : null,
+            ],
+        ];
+    }
+
+    /**
+     * Idempotently upsert one BalanceTransaction into the ledger (key = `txn_`
+     * id). Never downgrades a known customer_id/email back to null — so the
+     * real-time webhook, which resolves the buyer, is not clobbered by a later
+     * importer pass that couldn't. Returns 'created' or 'updated'.
+     */
+    public function recordBalanceTransaction($txn, $source = null): string
+    {
+        $row = $this->ledgerRowFromBalanceTransaction($txn, $source);
+        $existing = $this->ledgerModel()::query()->where('stripe_id', $row['stripe_id'])->first();
+
+        if ($existing) {
+            if ($row['customer_id'] === null && $existing->customer_id !== null) {
+                $row['customer_id'] = $existing->customer_id;
+            }
+            if ($row['customer_email'] === null && $existing->customer_email !== null) {
+                $row['customer_email'] = $existing->customer_email;
+            }
+            $existing->fill($row)->save();
+
+            return 'updated';
+        }
+
+        $this->ledgerModel()::query()->create($row);
+
+        return 'created';
+    }
+
+    /**
+     * Real-time ledger sync for a single charge — the webhook's main path.
+     * Retrieves the charge with its balance transaction and any refunds' balance
+     * transactions and upserts each, user-independent (a deleted customer's money
+     * is still recorded). Returns the number of rows touched. Never throws: on
+     * any Stripe/DB error it logs and returns 0, so it can't break the webhook.
+     */
+    public function syncLedgerForCharge(?string $chargeId): int
+    {
+        if (! is_string($chargeId) || $chargeId === '' || ! str_starts_with($chargeId, 'ch_')) {
+            return 0;
+        }
+
+        $secret = config('services.stripe.secret') ?: config('cashier.secret') ?: env('STRIPE_SECRET');
+        if (! $secret) {
+            return 0;
+        }
+
+        try {
+            \Stripe\Stripe::setApiKey($secret);
+            $charge = \Stripe\Charge::retrieve([
+                'id' => $chargeId,
+                'expand' => ['balance_transaction', 'refunds.data.balance_transaction'],
+            ]);
+
+            $count = 0;
+            if (is_object($charge->balance_transaction ?? null)) {
+                $this->recordBalanceTransaction($charge->balance_transaction, $charge);
+                $count++;
+            }
+            foreach (($charge->refunds->data ?? []) as $refund) {
+                if (is_object($refund->balance_transaction ?? null)) {
+                    // Attribute the refund to the charge's buyer.
+                    $this->recordBalanceTransaction($refund->balance_transaction, $charge);
+                    $count++;
+                }
+            }
+
+            return $count;
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[shop:ledger] syncLedgerForCharge failed', [
+                'charge' => $chargeId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
+    }
 }

@@ -86,9 +86,8 @@ class ShopImportStripeLedgerCommand extends Command
                 continue;
             }
 
-            $existingId = $model::query()->where('stripe_id', $row['stripe_id'])->value('id');
-            $model::query()->updateOrCreate(['stripe_id' => $row['stripe_id']], $row);
-            $existingId ? $updated++ : $created++;
+            $status = \Blax\Shop\Facades\Shop::recordBalanceTransaction($txn);
+            $status === 'updated' ? $updated++ : $created++;
         }
 
         $this->newLine();
@@ -105,43 +104,14 @@ class ShopImportStripeLedgerCommand extends Command
     }
 
     /**
-     * Flatten a Stripe BalanceTransaction (with `source` expanded) into a ledger row.
+     * Flatten a Stripe BalanceTransaction (with `source` expanded) into a ledger
+     * row. Delegates to the shared builder so the import and the real-time
+     * webhook produce identical rows.
      *
      * @return array<string, mixed>
      */
     protected function rowFromTransaction($txn): array
     {
-        $source = is_object($txn->source ?? null) ? $txn->source : null;
-        $sourceId = $source?->id ?? (is_string($txn->source ?? null) ? $txn->source : null);
-
-        // Customer snapshot — best effort from the expanded source object.
-        $customerId = null;
-        $customerEmail = null;
-        if ($source) {
-            $customerId = $source->customer ?? null;
-            $customerEmail = ($source->billing_details->email ?? null)
-                ?? ($source->receipt_email ?? null)
-                ?? ($source->customer_email ?? null);
-        }
-
-        return [
-            'stripe_id' => $txn->id,
-            'source_type' => $txn->type ?? null,
-            'reporting_category' => $txn->reporting_category ?? null,
-            'source_id' => $sourceId,
-            'amount' => (int) ($txn->amount ?? 0),
-            'fee' => (int) ($txn->fee ?? 0),
-            'net' => (int) ($txn->net ?? 0),
-            'currency' => $txn->currency ?? null,
-            'customer_id' => is_string($customerId) ? $customerId : null,
-            'customer_email' => is_string($customerEmail) ? $customerEmail : null,
-            'description' => $txn->description ?? null,
-            'created' => isset($txn->created) ? Carbon::createFromTimestamp($txn->created) : null,
-            'available_on' => isset($txn->available_on) ? Carbon::createFromTimestamp($txn->available_on) : null,
-            'meta' => [
-                'status' => $txn->status ?? null,
-                'fee_details' => isset($txn->fee_details) ? json_decode(json_encode($txn->fee_details), true) : null,
-            ],
-        ];
+        return \Blax\Shop\Facades\Shop::ledgerRowFromBalanceTransaction($txn);
     }
 }

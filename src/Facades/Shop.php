@@ -69,6 +69,9 @@ use Illuminate\Support\Facades\Facade;
  * @method static array ledgerTotals(\DateTimeInterface $from, \DateTimeInterface $until)
  * @method static array customerLedgerTotals(string|array $customerIds = [], string|array $emails = [], ?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null)
  * @method static \Illuminate\Support\Collection ledgerAmountByCustomer(?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null)
+ * @method static array ledgerRowFromBalanceTransaction($txn, $source = null)
+ * @method static string recordBalanceTransaction($txn, $source = null)
+ * @method static int syncLedgerForCharge(?string $chargeId)
  *
  * Cart Queries:
  * @method static \Illuminate\Database\Eloquent\Builder carts()
