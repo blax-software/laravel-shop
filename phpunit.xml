@@ -22,6 +22,11 @@
         </include>
         <exclude>
             <directory>./src/database</directory>
+            <!-- WebSocket controllers extend blax-software/laravel-websockets, a
+                 soft (suggest) dependency absent from the package's own test env.
+                 Their logic lives in the covered CartService; exclude the thin
+                 glue so coverage runs don't try to reflect the missing base class. -->
+            <directory>./src/Websocket</directory>
         </exclude>
     </source>
     <coverage includeUncoveredFiles="true" />

@@ -43,6 +43,8 @@ class ShopServiceProvider extends ServiceProvider
     {
         $this->offerPublishing();
 
+        $this->loadTranslationsFrom(__DIR__ . '/../lang', 'shop');
+
         $this->registerMigrations();
 
         $this->registerSubscriptionModels();

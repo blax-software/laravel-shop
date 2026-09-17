@@ -113,6 +113,51 @@ class CartService
     }
 
     /**
+     * Merge a guest cart into a user's current cart at login.
+     *
+     * laravel-shop had `shop.cart.merge_on_login` in config but no code ever
+     * honoured it: `current()` merely *forgets* a guest session cart when a user
+     * authenticates, it never moves the items over. This closes that gap.
+     *
+     * Items are RE-PARENTED (their cart_id is repointed) rather than re-added,
+     * which preserves each line's already-claimed stock, resolved price and
+     * booking dates instead of re-running add-to-cart side effects (and the
+     * stock claim) a second time. The emptied guest cart is detached from its
+     * session so it can't be re-adopted.
+     *
+     * Guarded: a cart that is the user's own cart, already owned by a customer,
+     * or already converted, is returned untouched.
+     *
+     * @param Cart            $guestCart Guest cart to drain.
+     * @param Authenticatable $user      User to receive the items (needs HasCart).
+     * @return Cart The user's current cart.
+     */
+    public function mergeGuestIntoUser(Cart $guestCart, Authenticatable $user): Cart
+    {
+        if (!method_exists($user, 'currentCart')) {
+            throw new \InvalidArgumentException('User model must have shopping capabilities (use the HasCart / HasShoppingCapabilities trait).');
+        }
+
+        $userCart = $user->currentCart();
+
+        // Nothing to do: same cart, or the source isn't a drainable guest cart.
+        if ($guestCart->is($userCart) || $guestCart->customer_id || $guestCart->isConverted()) {
+            return $userCart;
+        }
+
+        $moved = $guestCart->items()->update(['cart_id' => $userCart->getKey()]);
+
+        if ($moved > 0) {
+            $userCart->touchActivity();
+        }
+
+        // Detach the emptied guest cart so adopt()/guest() can't resurrect it.
+        $guestCart->update(['session_id' => 'merged_' . $guestCart->getKey()]);
+
+        return $userCart->fresh();
+    }
+
+    /**
      * Find cart by ID
      *
      * @param string $cartId
@@ -121,6 +166,55 @@ class CartService
     public function find(string $cartId): ?Cart
     {
         return Cart::find($cartId);
+    }
+
+    /**
+     * Resolve the guest cart for a connection, optionally adopting a cart the
+     * client already holds an id for, and re-bind it to this connection so the
+     * cart "follows" the socket across reconnects.
+     *
+     * This is the server-side counterpart to a stateless client (e.g. a
+     * WebSocket connection) that persists its cart id locally and re-sends it
+     * on every message: pass that id as $cartId and the connection's stable id
+     * (socket id / session id) as $sessionId.
+     *
+     *  - Unknown / missing id, or a cart already converted to an order → a fresh
+     *    guest cart bound to $sessionId.
+     *  - A guest cart bound to a different session → re-bound to $sessionId
+     *    (and any stale guest cart already on $sessionId is removed first, so a
+     *    connection never accumulates orphan guest carts).
+     *  - A cart already owned by a customer is never stolen — it is returned as-is.
+     *
+     * @param string|null $cartId    Cart id the client claims to hold, if any.
+     * @param string      $sessionId Stable connection identifier to bind to.
+     * @return Cart
+     */
+    public function adopt(?string $cartId, string $sessionId): Cart
+    {
+        /** @var class-string<Cart> $cartModel */
+        $cartModel = config('shop.models.cart', Cart::class);
+
+        $cart = ($cartId !== null && $cartId !== '')
+            ? $cartModel::find($cartId)
+            : null;
+
+        // Unknown id, or a cart that's already an order: start fresh.
+        if (! $cart || $cart->isConverted()) {
+            return $this->guest($sessionId);
+        }
+
+        // Re-bind a guest cart to this connection. Never steal a customer's cart.
+        if (! $cart->customer_id && $cart->session_id !== $sessionId) {
+            $cartModel::query()
+                ->where('session_id', $sessionId)
+                ->whereNull('customer_id')
+                ->whereKeyNot($cart->getKey())
+                ->delete();
+
+            $cart->update(['session_id' => $sessionId]);
+        }
+
+        return $cart;
     }
 
     /**
@@ -228,6 +322,27 @@ class CartService
         }
 
         return $cart->checkout();
+    }
+
+    /**
+     * Create (or reuse) a Stripe Checkout Session for a cart and return its
+     * hosted-payment URL. Facade passthrough to Cart::checkoutSessionLink() so
+     * callers can drive Stripe checkout straight off the facade without reaching
+     * into the model — the shape a WS/HTTP controller wants (`{ redirect: url }`).
+     *
+     * Unlike checkout(), this works for GUEST carts (Stripe collects the buyer),
+     * so no authenticated user is required.
+     *
+     * @param Cart|null   $cart    Cart to check out; defaults to current().
+     * @param array       $options Extra Stripe Checkout Session options.
+     * @param string|null $url     Return/success base URL.
+     * @return string|null|false URL string, null if Stripe disabled / no session, false on error.
+     */
+    public function checkoutSessionLink(?Cart $cart = null, array $options = [], ?string $url = null): string|null|false
+    {
+        $cart = $cart ?? $this->current();
+
+        return $cart->checkoutSessionLink($options, $url);
     }
 
     /**
