@@ -10,6 +10,7 @@ use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Order;
 use Blax\Shop\Models\OrderNote;
+use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPurchase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -31,7 +32,7 @@ class StripeWebhookController
      */
     public function handleWebhook(Request $request)
     {
-        if (!config('shop.stripe.enabled')) {
+        if (! config('shop.stripe.enabled')) {
             return response()->json(['error' => 'Stripe is not enabled'], 400);
         }
 
@@ -50,9 +51,11 @@ class StripeWebhookController
             }
         } catch (\UnexpectedValueException $e) {
             Log::error('Stripe webhook invalid payload', ['error' => $e->getMessage()]);
+
             return response()->json(['error' => 'Invalid payload'], 400);
         } catch (SignatureVerificationException $e) {
             Log::error('Stripe webhook signature verification failed', ['error' => $e->getMessage()]);
+
             return response()->json(['error' => 'Invalid signature'], 400);
         }
 
@@ -106,6 +109,7 @@ class StripeWebhookController
     protected function handleUnknownEvent(string $type): bool
     {
         Log::info('Stripe webhook unhandled event type', ['type' => $type]);
+
         return false;
     }
 
@@ -116,14 +120,16 @@ class StripeWebhookController
     {
         $cartId = $session->metadata->cart_id ?? $session->client_reference_id;
 
-        if (!$cartId) {
+        if (! $cartId) {
             Log::warning('Stripe checkout session completed without cart ID', ['session_id' => $session->id]);
+
             return false;
         }
 
         $cart = Cart::find($cartId);
-        if (!$cart) {
+        if (! $cart) {
             Log::warning('Stripe checkout session for non-existent cart', ['cart_id' => $cartId]);
+
             return false;
         }
 
@@ -145,7 +151,7 @@ class StripeWebhookController
 
         // Get or create order from the cart
         $order = $cart->order;
-        if (!$order) {
+        if (! $order) {
             // Create order from the converted cart
             $order = Order::createFromCart($cart);
 
@@ -157,6 +163,10 @@ class StripeWebhookController
             ]);
         }
 
+        // Persist the addresses Stripe collected during checkout so the
+        // order carries a buyer snapshot (invoicing, shipping labels, ...).
+        $this->persistSessionAddresses($order, $session);
+
         // Record payment on the order
         // Stripe provides amounts in cents, which matches our storage format
         $amountPaid = (int) ($session->amount_total ?? 0);
@@ -167,7 +177,7 @@ class StripeWebhookController
 
         // Add a detailed note (customer-visible)
         $order->addNote(
-            "Payment of " . Order::formatMoney($amountPaid, $currency) . " received",
+            'Payment of '.Order::formatMoney($amountPaid, $currency).' received',
             OrderNote::TYPE_PAYMENT,
             true
         );
@@ -188,14 +198,120 @@ class StripeWebhookController
     }
 
     /**
+     * Copy the Checkout Session's customer_details / shipping_details onto the
+     * order as address snapshots. Only empty columns are filled so an address
+     * the host application set beforehand is never overwritten. Null-safe:
+     * a session without either block leaves the order untouched.
+     *
+     * Snapshot shape (both columns): name, email, phone, line1, line2,
+     * postal_code, city, state, country, uid.
+     */
+    protected function persistSessionAddresses(Order $order, $session): void
+    {
+        $customer = data_get($session, 'customer_details');
+        $shipping = data_get($session, 'shipping_details');
+
+        $billing = $this->addressSnapshotFromStripe($customer);
+        $shipped = $this->addressSnapshotFromStripe($shipping, $customer) ?? $billing;
+
+        $updates = [];
+
+        if ($billing && empty((array) $order->billing_address)) {
+            $updates['billing_address'] = $billing;
+        }
+
+        if ($shipped && empty((array) $order->shipping_address)) {
+            $updates['shipping_address'] = $shipped;
+        }
+
+        // Optional customer columns (not part of the shipped schema, but a host
+        // may add them): fill only when present and still empty.
+        $email = data_get($customer, 'email');
+        $name = data_get($customer, 'name');
+        foreach (['customer_email' => $email, 'customer_name' => $name] as $column => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+            if (! $this->orderHasColumn($order, $column)) {
+                continue;
+            }
+            if (empty($order->getAttribute($column))) {
+                $updates[$column] = $value;
+            }
+        }
+
+        if ($updates === []) {
+            return;
+        }
+
+        $order->forceFill($updates)->save();
+    }
+
+    /**
+     * Build the JSON address snapshot from a Stripe details block
+     * (customer_details or shipping_details). Contact fields missing on the
+     * block (shipping_details carries no email/phone) are taken from
+     * $contactFallback. Returns null when the block is empty.
+     */
+    protected function addressSnapshotFromStripe($details, $contactFallback = null): ?array
+    {
+        if (! $details) {
+            return null;
+        }
+
+        $address = data_get($details, 'address');
+        $taxIds = data_get($details, 'tax_ids');
+        $uid = null;
+        if (is_iterable($taxIds)) {
+            foreach ($taxIds as $taxId) {
+                $uid = data_get($taxId, 'value');
+                if ($uid) {
+                    break;
+                }
+            }
+        }
+
+        $snapshot = [
+            'name' => data_get($details, 'name'),
+            'email' => data_get($details, 'email') ?? data_get($contactFallback, 'email'),
+            'phone' => data_get($details, 'phone') ?? data_get($contactFallback, 'phone'),
+            'line1' => data_get($address, 'line1'),
+            'line2' => data_get($address, 'line2'),
+            'postal_code' => data_get($address, 'postal_code'),
+            'city' => data_get($address, 'city'),
+            'state' => data_get($address, 'state'),
+            'country' => data_get($address, 'country'),
+            'uid' => $uid,
+        ];
+
+        // A block with no usable data at all is treated as absent.
+        $hasData = array_filter($snapshot, fn ($v) => $v !== null && $v !== '');
+
+        return $hasData === [] ? null : $snapshot;
+    }
+
+    /**
+     * Whether the orders table has an (optional, host-added) column.
+     */
+    protected function orderHasColumn(Order $order, string $column): bool
+    {
+        try {
+            return $order->getConnection()->getSchemaBuilder()->hasColumn($order->getTable(), $column);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
      * Handle checkout.session failed event
      */
     protected function handleCheckoutSessionFailed($session): bool
     {
         $cartId = $session->metadata->cart_id ?? $session->client_reference_id;
 
-        if (!$cartId) {
+        if (! $cartId) {
             Log::warning('Stripe checkout session failed without cart ID', ['session_id' => $session->id]);
+
             return false;
         }
 
@@ -284,7 +400,7 @@ class StripeWebhookController
 
         // Try to find related order via payment_intent
         $order = $this->findOrderByPaymentIntent($charge->payment_intent);
-        if ($order && !$order->is_fully_paid) {
+        if ($order && ! $order->is_fully_paid) {
             $amountPaid = (int) ($charge->amount / 100);
             // recordPayment(int $amount, ?string $reference, ?string $method, ?string $provider)
             $order->recordPayment($amountPaid, $charge->id, 'stripe', 'stripe');
@@ -315,8 +431,8 @@ class StripeWebhookController
         $order = $this->findOrderByPaymentIntent($charge->payment_intent);
         if ($order) {
             $order->addNote(
-                'Stripe charge failed: ' . ($charge->failure_message ?? 'Unknown error') .
-                    ' (Charge: ' . $charge->id . ', Code: ' . ($charge->failure_code ?? 'none') . ')',
+                'Stripe charge failed: '.($charge->failure_message ?? 'Unknown error').
+                    ' (Charge: '.$charge->id.', Code: '.($charge->failure_code ?? 'none').')',
                 OrderNote::TYPE_PAYMENT
             );
         }
@@ -368,8 +484,8 @@ class StripeWebhookController
             $order->update(['status' => OrderStatus::ON_HOLD]);
             $disputeAmount = ($dispute->amount ?? 0) / 100;
             $order->addNote(
-                'Payment dispute opened: ' . ($dispute->reason ?? 'Unknown reason') .
-                    " (Dispute: {$dispute->id}, Amount: " . Order::formatMoney($disputeAmount, $order->currency) . ')',
+                'Payment dispute opened: '.($dispute->reason ?? 'Unknown reason').
+                    " (Dispute: {$dispute->id}, Amount: ".Order::formatMoney($disputeAmount, $order->currency).')',
                 OrderNote::TYPE_PAYMENT
             );
         }
@@ -494,7 +610,7 @@ class StripeWebhookController
         if ($order) {
             $refundAmount = (int) ($refund->amount / 100);
             // recordRefund(int $amount, ?string $reason)
-            $order->recordRefund($refundAmount, ($refund->reason ?? 'Refund created') . " (Refund: {$refund->id})");
+            $order->recordRefund($refundAmount, ($refund->reason ?? 'Refund created')." (Refund: {$refund->id})");
         }
 
         return true;
@@ -539,7 +655,7 @@ class StripeWebhookController
             if ($order) {
                 $amountPaid = ($invoice->amount_paid ?? 0) / 100;
                 $order->addNote(
-                    "Subscription invoice paid: " . Order::formatMoney($amountPaid, $order->currency) . " (Invoice: {$invoice->id})",
+                    'Subscription invoice paid: '.Order::formatMoney($amountPaid, $order->currency)." (Invoice: {$invoice->id})",
                     OrderNote::TYPE_PAYMENT
                 );
             }
@@ -576,7 +692,7 @@ class StripeWebhookController
      */
     protected function findOrderByPaymentIntent(?string $paymentIntentId): ?Order
     {
-        if (!$paymentIntentId) {
+        if (! $paymentIntentId) {
             return null;
         }
 
@@ -606,7 +722,7 @@ class StripeWebhookController
      */
     protected function findOrderByChargeId(?string $chargeId): ?Order
     {
-        if (!$chargeId) {
+        if (! $chargeId) {
             return null;
         }
 
@@ -634,7 +750,7 @@ class StripeWebhookController
         $purchases = ProductPurchase::where('cart_id', $cart->id)->get();
 
         foreach ($purchases as $purchase) {
-            if (!$purchase) {
+            if (! $purchase) {
                 continue;
             }
 
@@ -666,12 +782,12 @@ class StripeWebhookController
     protected function claimStockForPurchase(ProductPurchase $purchase)
     {
         $product = $purchase->purchasable;
-        if (!($product instanceof \Blax\Shop\Models\Product)) {
+        if (! ($product instanceof Product)) {
             return;
         }
 
         // Skip if product doesn't manage stock
-        if (!$product->manage_stock && !$product->isPool()) {
+        if (! $product->manage_stock && ! $product->isPool()) {
             return;
         }
 

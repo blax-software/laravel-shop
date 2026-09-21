@@ -184,6 +184,20 @@ $room = Product::create([
 $isAvailable = $room->availableOnDate(now(), now()->addHour());
 ```
 
+## Translations
+
+The package ships its user-facing messages under the `shop` translation
+namespace (`lang/{en,de,pl}/cart.php` and `auth.php`, registered by
+`ShopServiceProvider` via `loadTranslationsFrom(..., 'shop')`). Use them with
+`__('shop::cart.added')`; the active `app()->getLocale()` picks the language
+(`en`, `de`, `pl` shipped; other locales fall back to `en`).
+
+To override or extend a message, drop a file at
+`lang/vendor/shop/<locale>/<file>.php` in your application, e.g.
+`lang/vendor/shop/de/cart.php` returning only the keys you want to change.
+Laravel merges vendor overrides on top of the package defaults, so untouched
+keys keep their shipped text.
+
 ## Testing
 
 We test this package for many edge cases across every surface — products,
