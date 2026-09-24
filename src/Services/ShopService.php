@@ -148,11 +148,24 @@ class ShopService
     // =========================================================================
 
     /**
+     * The configured {@see Order} model class (`shop.models.order`).
+     *
+     * All order queries below resolve it instead of using `Order::` statically,
+     * so a host subclass is what every finder returns.
+     *
+     * @return class-string<Order>
+     */
+    protected function orderModel(): string
+    {
+        return config('shop.models.order', Order::class);
+    }
+
+    /**
      * Get all orders query builder.
      */
     public function orders(): Builder
     {
-        return Order::query();
+        return $this->orderModel()::query();
     }
 
     /**
@@ -160,7 +173,7 @@ class ShopService
      */
     public function order(string $id): ?Order
     {
-        return Order::find($id);
+        return $this->orderModel()::find($id);
     }
 
     /**
@@ -168,7 +181,7 @@ class ShopService
      */
     public function orderByNumber(string $orderNumber): ?Order
     {
-        return Order::where('order_number', $orderNumber)->first();
+        return $this->orderModel()::where('order_number', $orderNumber)->first();
     }
 
     /**
@@ -176,7 +189,7 @@ class ShopService
      */
     public function ordersToday(): Builder
     {
-        return Order::whereDate('created_at', Carbon::today());
+        return $this->orderModel()::whereDate('created_at', Carbon::today());
     }
 
     /**
@@ -184,7 +197,7 @@ class ShopService
      */
     public function ordersThisWeek(): Builder
     {
-        return Order::whereBetween('created_at', [
+        return $this->orderModel()::whereBetween('created_at', [
             Carbon::now()->startOfWeek(),
             Carbon::now()->endOfWeek(),
         ]);
@@ -195,7 +208,7 @@ class ShopService
      */
     public function ordersThisMonth(): Builder
     {
-        return Order::whereBetween('created_at', [
+        return $this->orderModel()::whereBetween('created_at', [
             Carbon::now()->startOfMonth(),
             Carbon::now()->endOfMonth(),
         ]);
@@ -206,7 +219,7 @@ class ShopService
      */
     public function ordersThisYear(): Builder
     {
-        return Order::whereBetween('created_at', [
+        return $this->orderModel()::whereBetween('created_at', [
             Carbon::now()->startOfYear(),
             Carbon::now()->endOfYear(),
         ]);
@@ -217,7 +230,7 @@ class ShopService
      */
     public function ordersBetween(\DateTimeInterface $from, \DateTimeInterface $until): Builder
     {
-        return Order::whereBetween('created_at', [$from, $until]);
+        return $this->orderModel()::whereBetween('created_at', [$from, $until]);
     }
 
     /**
@@ -225,7 +238,7 @@ class ShopService
      */
     public function ordersWithStatus(OrderStatus $status): Builder
     {
-        return Order::where('status', $status->value);
+        return $this->orderModel()::where('status', $status->value);
     }
 
     /**
@@ -265,7 +278,7 @@ class ShopService
      */
     public function activeOrders(): Builder
     {
-        return Order::active();
+        return $this->orderModel()::active();
     }
 
     /**
@@ -273,7 +286,7 @@ class ShopService
      */
     public function paidOrders(): Builder
     {
-        return Order::paid();
+        return $this->orderModel()::paid();
     }
 
     /**
@@ -281,7 +294,7 @@ class ShopService
      */
     public function unpaidOrders(): Builder
     {
-        return Order::unpaid();
+        return $this->orderModel()::unpaid();
     }
 
     // =========================================================================
@@ -294,7 +307,7 @@ class ShopService
      */
     public function totalRevenue(): int
     {
-        return (int) Order::sum('amount_paid');
+        return (int) $this->orderModel()::sum('amount_paid');
     }
 
     /**
@@ -348,7 +361,7 @@ class ShopService
      */
     public function totalRefunded(): int
     {
-        return (int) Order::sum('amount_refunded');
+        return (int) $this->orderModel()::sum('amount_refunded');
     }
 
     /**
@@ -366,7 +379,7 @@ class ShopService
      */
     public function averageOrderValue(): float
     {
-        return (float) Order::avg('amount_total') ?? 0;
+        return (float) $this->orderModel()::avg('amount_total') ?? 0;
     }
 
     /**
@@ -392,7 +405,7 @@ class ShopService
         $startOfYear = Carbon::now()->startOfYear();
         $endOfYear = Carbon::now()->endOfYear();
 
-        $orderStats = Order::selectRaw("
+        $orderStats = $this->orderModel()::selectRaw("
             COUNT(*) as total,
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as pending,
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as processing,
@@ -482,7 +495,7 @@ class ShopService
      */
     public function revenueByDay(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
     {
-        return Order::whereBetween('created_at', [$from, $until])
+        return $this->orderModel()::whereBetween('created_at', [$from, $until])
             ->selectRaw('DATE(created_at) as date, SUM(amount_paid) as revenue, COUNT(*) as orders')
             ->groupBy('date')
             ->orderBy('date')
@@ -494,7 +507,7 @@ class ShopService
      */
     public function revenueByMonth(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
     {
-        return Order::whereBetween('created_at', [$from, $until])
+        return $this->orderModel()::whereBetween('created_at', [$from, $until])
             ->selectRaw('YEAR(created_at) as year, MONTH(created_at) as month, SUM(amount_paid) as revenue, COUNT(*) as orders')
             ->groupBy('year', 'month')
             ->orderBy('year')

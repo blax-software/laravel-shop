@@ -153,7 +153,7 @@ class StripeWebhookController
         $order = $cart->order;
         if (! $order) {
             // Create order from the converted cart
-            $order = Order::createFromCart($cart);
+            $order = $this->orderModel()::createFromCart($cart);
 
             Log::info('Order created from Stripe checkout session', [
                 'order_id' => $order->id,
@@ -651,7 +651,7 @@ class StripeWebhookController
         // Invoice events are typically for subscriptions
         // Add order note if we can find the related order
         if ($invoice->metadata->order_id ?? null) {
-            $order = Order::find($invoice->metadata->order_id);
+            $order = $this->orderModel()::find($invoice->metadata->order_id);
             if ($order) {
                 $amountPaid = ($invoice->amount_paid ?? 0) / 100;
                 $order->addNote(
@@ -675,7 +675,7 @@ class StripeWebhookController
         ]);
 
         if ($invoice->metadata->order_id ?? null) {
-            $order = Order::find($invoice->metadata->order_id);
+            $order = $this->orderModel()::find($invoice->metadata->order_id);
             if ($order) {
                 $order->addNote(
                     "Subscription invoice payment failed (Invoice: {$invoice->id})",
@@ -688,6 +688,20 @@ class StripeWebhookController
     }
 
     /**
+     * The order model class configured by the host app (`shop.models.order`).
+     *
+     * Every lookup/creation in this controller goes through it — not through
+     * `Order::` statically — so a host subclass with its own boot hooks, casts
+     * or scopes is what the real webhook path builds and returns.
+     *
+     * @return class-string<Order>
+     */
+    protected function orderModel(): string
+    {
+        return config('shop.models.order', Order::class);
+    }
+
+    /**
      * Find an order by payment intent ID
      */
     protected function findOrderByPaymentIntent(?string $paymentIntentId): ?Order
@@ -697,7 +711,7 @@ class StripeWebhookController
         }
 
         // First try to find via order's payment_reference
-        $order = Order::where('payment_reference', $paymentIntentId)->first();
+        $order = $this->orderModel()::where('payment_reference', $paymentIntentId)->first();
         if ($order) {
             return $order;
         }
@@ -727,7 +741,7 @@ class StripeWebhookController
         }
 
         // Try to find order where payment_reference contains the charge
-        $order = Order::where('payment_reference', $chargeId)->first();
+        $order = $this->orderModel()::where('payment_reference', $chargeId)->first();
         if ($order) {
             return $order;
         }

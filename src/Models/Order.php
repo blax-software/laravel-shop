@@ -167,6 +167,17 @@ class Order extends Model
                 }
             }
         });
+
+        // Announce the transition into "paid" exactly once: when paid_at goes
+        // from null to a value in this save (recordPayment() reaching
+        // amount_total, or a direct update that sets paid_at). Later saves of
+        // an already-paid order (status moves, meta touches) must not re-fire,
+        // and a host subclass configured via shop.models.order gets it too.
+        static::updated(function (Order $order) {
+            if ($order->wasChanged('paid_at') && $order->paid_at && !$order->getOriginal('paid_at')) {
+                \Blax\Shop\Events\OrderPaid::dispatch($order);
+            }
+        });
     }
 
     /**

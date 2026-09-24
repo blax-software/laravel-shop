@@ -2298,8 +2298,10 @@ class Cart extends Model
                 'status' => CartStatus::CONVERTED,
             ]);
 
-            // Create an Order from this converted cart
-            $order = Order::createFromCart($this);
+            // Create an Order from this converted cart — via the configured
+            // class so a host subclass (shop.models.order) is what gets built.
+            $orderModel = config('shop.models.order', Order::class);
+            $order = $orderModel::createFromCart($this);
 
             return $this;
         });

@@ -417,6 +417,13 @@ if ($order->is_fully_paid) {
 $outstanding = $order->amount_outstanding; // In cents
 ```
 
+`Blax\Shop\Events\OrderPaid` is dispatched exactly once per order: on the save
+where `paid_at` goes from `null` to a value (`recordPayment()` reaching
+`amount_total`, the Stripe `checkout.session.completed` webhook, or a direct
+update that sets `paid_at`). Partial payments and later saves of an already-paid
+order do not re-fire it. Listen to it for fulfilment, invoicing or confirmation
+mail; the event carries the order as your configured `shop.models.order` class.
+
 ### Update Order Status
 
 ```php
