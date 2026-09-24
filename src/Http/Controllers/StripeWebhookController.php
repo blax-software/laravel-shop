@@ -167,6 +167,11 @@ class StripeWebhookController
         // order carries a buyer snapshot (invoicing, shipping labels, ...).
         $this->persistSessionAddresses($order, $session);
 
+        // Shipping, discounts and tax chosen/applied on the Checkout page are only
+        // known to Stripe; take the order's totals from the session so what was
+        // charged and what the order says agree (and the payment below settles it).
+        $this->applySessionTotals($order, $session);
+
         // Record payment on the order
         // Stripe provides amounts in cents, which matches our storage format
         $amountPaid = (int) ($session->amount_total ?? 0);
@@ -209,7 +214,8 @@ class StripeWebhookController
     protected function persistSessionAddresses(Order $order, $session): void
     {
         $customer = data_get($session, 'customer_details');
-        $shipping = data_get($session, 'shipping_details');
+        // Stripe API ≥ 2025-03-31 moved shipping_details under collected_information.
+        $shipping = data_get($session, 'shipping_details') ?? data_get($session, 'collected_information.shipping_details');
 
         $billing = $this->addressSnapshotFromStripe($customer);
         $shipped = $this->addressSnapshotFromStripe($shipping, $customer) ?? $billing;
@@ -722,6 +728,43 @@ class StripeWebhookController
     protected function orderModel(): string
     {
         return config('shop.models.order', Order::class);
+    }
+
+    /**
+     * Copy the Checkout Session's amounts onto a not-yet-paid order: subtotal,
+     * shipping (`total_details.amount_shipping`), discount, tax and total, all in
+     * cents. The chosen shipping rate id goes to `meta.stripe_shipping_rate`.
+     * An order that is already paid, or a session without amounts, is left alone.
+     */
+    protected function applySessionTotals(Order $order, $session): void
+    {
+        if ($order->paid_at || ! isset($session->amount_total)) {
+            return;
+        }
+
+        $details = data_get($session, 'total_details');
+        $updates = array_filter([
+            'amount_subtotal' => isset($session->amount_subtotal) ? (int) $session->amount_subtotal : null,
+            'amount_shipping' => data_get($details, 'amount_shipping') !== null ? (int) data_get($details, 'amount_shipping') : null,
+            'amount_discount' => data_get($details, 'amount_discount') !== null ? (int) data_get($details, 'amount_discount') : null,
+            'amount_tax' => data_get($details, 'amount_tax') !== null ? (int) data_get($details, 'amount_tax') : null,
+            'amount_total' => (int) $session->amount_total,
+        ], fn ($v) => $v !== null);
+
+        $rate = data_get($session, 'shipping_cost.shipping_rate');
+        if (is_object($rate)) {
+            $rate = $rate->id ?? null;
+        }
+
+        $order->fill($updates);
+        if ($rate) {
+            $meta = (array) ($order->meta ?? []);
+            $meta['stripe_shipping_rate'] = $rate;
+            $order->meta = (object) $meta;
+        }
+        if ($order->isDirty()) {
+            $order->save();
+        }
     }
 
     /**
