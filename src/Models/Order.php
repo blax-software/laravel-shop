@@ -481,6 +481,77 @@ class Order extends Model
         return $this;
     }
 
+    /**
+     * Apply one Stripe refund (its `re_…` id and amount in cents) to this order.
+     *
+     * Idempotent and order-independent together with {@see applyStripeRefundedTotal()}:
+     * Stripe announces one refund both as `refund.created` (this refund) and as
+     * `charge.refunded` (the charge's running total), in either order, and an admin
+     * refund made through {@see \Blax\Shop\Services\ShopService::refundOrder()} is
+     * recorded before either webhook arrives. Every path raises the order's Stripe
+     * refund total to what Stripe has confirmed so far, so nothing is counted twice.
+     *
+     * @return int the amount (cents) newly recorded, 0 when it was already known
+     */
+    public function applyStripeRefund(string $refundId, int $amount, ?string $reason = null): int
+    {
+        return $this->raiseStripeRefundedTotal(null, $refundId, $amount, $reason);
+    }
+
+    /**
+     * Apply a charge's cumulative `amount_refunded` (cents, from `charge.refunded`).
+     *
+     * @return int the amount (cents) newly recorded, 0 when it was already known
+     */
+    public function applyStripeRefundedTotal(int $total, ?string $reason = null): int
+    {
+        return $this->raiseStripeRefundedTotal($total, null, null, $reason);
+    }
+
+    /**
+     * Stripe refunds recorded on this order so far: `meta.stripe_refunded` (cents) and
+     * `meta.stripe_refunds` (`re_…` id → cents). Refunds recorded by hand
+     * ({@see recordRefund()}) are not part of it.
+     */
+    protected function raiseStripeRefundedTotal(?int $total, ?string $refundId, ?int $refundAmount, ?string $reason): int
+    {
+        return DB::transaction(function () use ($total, $refundId, $refundAmount, $reason) {
+            if ($this->exists) {
+                $locked = static::query()->whereKey($this->getKey())->lockForUpdate()->first();
+                if ($locked) {
+                    $this->setRawAttributes($locked->getAttributes(), true);
+                }
+            }
+
+            $meta = (array) ($this->meta ?? []);
+            $refunds = (array) ($meta['stripe_refunds'] ?? []);
+
+            if ($refundId !== null) {
+                if (array_key_exists($refundId, $refunds)) {
+                    return 0;
+                }
+                $refunds[$refundId] = max(0, (int) $refundAmount);
+            }
+
+            $recorded = (int) ($meta['stripe_refunded'] ?? 0);
+            $target = max($recorded, (int) array_sum($refunds), (int) ($total ?? 0));
+            $delta = $target - $recorded;
+
+            $meta['stripe_refunds'] = (object) $refunds;
+            $meta['stripe_refunded'] = $target;
+            $this->meta = (object) $meta;
+
+            if ($delta > 0) {
+                // recordRefund() saves the model, meta included.
+                $this->recordRefund($delta, $reason);
+            } else {
+                $this->save();
+            }
+
+            return $delta;
+        });
+    }
+
     // =========================================================================
     // NOTES MANAGEMENT
     // =========================================================================

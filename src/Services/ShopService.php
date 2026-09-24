@@ -1238,4 +1238,88 @@ class ShopService
             return 0;
         }
     }
+
+    // =========================================================================
+    // REFUNDS
+    // =========================================================================
+
+    /**
+     * Refund (part of) a Stripe-paid order through the Stripe API and record it on the order.
+     *
+     * `$amount` is in cents and may not exceed what is still refundable
+     * (`amount_paid - amount_refunded`). The refund is recorded with
+     * {@see Order::applyStripeRefund()}, so the `refund.created` / `charge.refunded`
+     * webhooks that follow do not count it again. `$reason` is stored on the order
+     * note and in the refund's metadata; Stripe's own `reason` enum can be passed in
+     * `$params` (e.g. `['reason' => 'requested_by_customer']`).
+     *
+     * @param  array<string, mixed>  $params  extra Stripe refund params
+     * @return object the Stripe Refund
+     *
+     * @throws \InvalidArgumentException when the amount is not refundable
+     * @throws \RuntimeException when the order has no Stripe payment or Stripe is not configured
+     */
+    public function refundOrder(Order $order, int $amount, ?string $reason = null, array $params = []): object
+    {
+        $reference = (string) ($order->payment_reference ?? '');
+        $isIntent = str_starts_with($reference, 'pi_');
+
+        if (! $isIntent && ! str_starts_with($reference, 'ch_')) {
+            throw new \RuntimeException('This order has no Stripe payment to refund.');
+        }
+
+        $refundable = $this->refundableAmount($order);
+        if ($amount < 1 || $amount > $refundable) {
+            throw new \InvalidArgumentException("Refund amount must be between 1 and {$refundable} cents.");
+        }
+
+        $metadata = array_filter([
+            'order_id' => (string) $order->getKey(),
+            'order_number' => (string) $order->order_number,
+            'reason' => $reason ? mb_substr($reason, 0, 500) : null,
+        ]);
+
+        $refund = $this->stripeClient()->refunds->create(
+            array_merge([
+                ($isIntent ? 'payment_intent' : 'charge') => $reference,
+                'amount' => $amount,
+                'metadata' => $metadata,
+            ], $params),
+            // Same order, same amount, same refund state → the same refund, so a
+            // double-click cannot refund twice.
+            ['idempotency_key' => 'shop-refund-'.$order->getKey().'-'.(int) $order->amount_refunded.'-'.$amount]
+        );
+
+        $order->applyStripeRefund(
+            (string) $refund->id,
+            (int) ($refund->amount ?? $amount),
+            $reason ?: "Refunded via Stripe (Refund: {$refund->id})"
+        );
+
+        return $refund;
+    }
+
+    /** Cents that can still be refunded on the order. */
+    public function refundableAmount(Order $order): int
+    {
+        return max(0, (int) $order->amount_paid - (int) $order->amount_refunded);
+    }
+
+    /**
+     * The Stripe API client. Bind `\Stripe\StripeClient` (or any object exposing
+     * `->refunds->create()`) in the container to override it, e.g. in tests.
+     */
+    protected function stripeClient(): object
+    {
+        if (app()->bound(\Stripe\StripeClient::class)) {
+            return app(\Stripe\StripeClient::class);
+        }
+
+        $secret = config('services.stripe.secret') ?: config('cashier.secret') ?: env('STRIPE_SECRET');
+        if (! $secret) {
+            throw new \RuntimeException('Stripe is not configured.');
+        }
+
+        return new \Stripe\StripeClient($secret);
+    }
 }

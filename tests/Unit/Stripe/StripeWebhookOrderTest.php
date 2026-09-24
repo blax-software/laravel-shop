@@ -237,7 +237,7 @@ class StripeWebhookOrderTest extends TestCase
         $this->invokeMethod('handleChargeRefunded', [$charge]);
 
         $order->refresh();
-        $this->assertEquals(50, $order->amount_refunded);
+        $this->assertEquals(5000, $order->amount_refunded);
     }
 
     #[Test]
@@ -376,7 +376,7 @@ class StripeWebhookOrderTest extends TestCase
         $this->invokeMethod('handleRefundCreated', [$refund]);
 
         $order->refresh();
-        $this->assertEquals(25, $order->amount_refunded);
+        $this->assertEquals(2500, $order->amount_refunded);
     }
 
     #[Test]

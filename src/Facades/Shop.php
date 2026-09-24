@@ -73,6 +73,10 @@ use Illuminate\Support\Facades\Facade;
  * @method static string recordBalanceTransaction($txn, $source = null)
  * @method static int syncLedgerForCharge(?string $chargeId)
  *
+ * Refunds:
+ * @method static object refundOrder(\Blax\Shop\Models\Order $order, int $amount, ?string $reason = null, array $params = [])
+ * @method static int refundableAmount(\Blax\Shop\Models\Order $order)
+ *
  * Cart Queries:
  * @method static \Illuminate\Database\Eloquent\Builder carts()
  * @method static \Illuminate\Database\Eloquent\Builder activeCarts()

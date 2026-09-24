@@ -75,6 +75,13 @@ return [
      * that was already counted, they are not revenue or cost.
      */
     'ledger' => [
+        /*
+         * Sync the charge's balance transactions into the ledger whenever a
+         * charge, refund or dispute webhook arrives (one Stripe API call each).
+         * Off by default: the ledger then only fills via shop:import-stripe-ledger.
+         */
+        'sync_on_webhook' => env('SHOP_LEDGER_SYNC_ON_WEBHOOK', false),
+
         'revenue_types' => [
             'charge',
             'payment',

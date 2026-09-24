@@ -388,7 +388,9 @@ class StripeWebhookController
                 ];
 
                 if (in_array('amount_paid', $purchase->getFillable())) {
-                    $updateData['amount_paid'] = $charge->amount / 100;
+                    // Cents, like `amount`. The charge covers the whole cart, so each
+                    // purchase is paid its own line amount.
+                    $updateData['amount_paid'] = $purchase->amount;
                 }
 
                 $purchase->update($updateData);
@@ -400,11 +402,19 @@ class StripeWebhookController
 
         // Try to find related order via payment_intent
         $order = $this->findOrderByPaymentIntent($charge->payment_intent);
-        if ($order && ! $order->is_fully_paid) {
-            $amountPaid = (int) ($charge->amount / 100);
-            // recordPayment(int $amount, ?string $reference, ?string $method, ?string $provider)
-            $order->recordPayment($amountPaid, $charge->id, 'stripe', 'stripe');
+        if ($order) {
+            // Remember the charge so ledger rows (source_id = ch_…) can be matched to the order.
+            if ($order->getMeta('stripe_charge_id') !== $charge->id) {
+                $order->updateMetaKey('stripe_charge_id', $charge->id);
+            }
+
+            if (! $order->is_fully_paid) {
+                // Stripe amounts are cents, like every amount_* column.
+                $order->recordPayment((int) $charge->amount, $charge->id, 'stripe', 'stripe');
+            }
         }
+
+        $this->syncLedger($charge->id);
 
         return true;
     }
@@ -450,18 +460,18 @@ class StripeWebhookController
             'amount_refunded' => $charge->amount_refunded,
         ]);
 
-        // Find order and record refund
-        $order = $this->findOrderByPaymentIntent($charge->payment_intent);
+        // Find order and record refund. `amount_refunded` is the charge's running total
+        // in cents; only the part the order doesn't know yet is recorded.
+        $order = $this->findOrderByPaymentIntent($charge->payment_intent)
+            ?? $this->findOrderByChargeId($charge->id);
         if ($order) {
-            $refundAmount = (int) ($charge->amount_refunded / 100);
-
-            // Only record refund if the amount changed
-            if ($refundAmount > 0 && $order->amount_refunded < $refundAmount) {
-                $newRefundAmount = $refundAmount - $order->amount_refunded;
-                // recordRefund(int $amount, ?string $reason)
-                $order->recordRefund($newRefundAmount, "Refund processed via Stripe (Charge: {$charge->id})");
-            }
+            $order->applyStripeRefundedTotal(
+                (int) ($charge->amount_refunded ?? 0),
+                "Refund processed via Stripe (Charge: {$charge->id})"
+            );
         }
+
+        $this->syncLedger($charge->id);
 
         return true;
     }
@@ -478,11 +488,13 @@ class StripeWebhookController
             'reason' => $dispute->reason,
         ]);
 
+        $this->syncLedger($dispute->charge ?? null);
+
         // Try to find order via the charge
         $order = $this->findOrderByChargeId($dispute->charge);
         if ($order) {
             $order->update(['status' => OrderStatus::ON_HOLD]);
-            $disputeAmount = ($dispute->amount ?? 0) / 100;
+            $disputeAmount = (int) ($dispute->amount ?? 0);
             $order->addNote(
                 'Payment dispute opened: '.($dispute->reason ?? 'Unknown reason').
                     " (Dispute: {$dispute->id}, Amount: ".Order::formatMoney($disputeAmount, $order->currency).')',
@@ -502,6 +514,8 @@ class StripeWebhookController
             'dispute_id' => $dispute->id,
             'status' => $dispute->status,
         ]);
+
+        $this->syncLedger($dispute->charge ?? null);
 
         $order = $this->findOrderByChargeId($dispute->charge);
         if ($order) {
@@ -542,7 +556,8 @@ class StripeWebhookController
                 ];
 
                 if (in_array('amount_paid', $purchase->getFillable())) {
-                    $updateData['amount_paid'] = $paymentIntent->amount / 100;
+                    // Cents, like `amount`: each purchase is paid its own line amount.
+                    $updateData['amount_paid'] = $purchase->amount;
                 }
 
                 $purchase->update($updateData);
@@ -606,12 +621,19 @@ class StripeWebhookController
             'amount' => $refund->amount,
         ]);
 
-        $order = $this->findOrderByChargeId($refund->charge);
+        // Checkout orders keep the payment intent as payment_reference, so try that first.
+        $order = $this->findOrderByPaymentIntent($refund->payment_intent ?? null)
+            ?? $this->findOrderByChargeId($refund->charge ?? null);
         if ($order) {
-            $refundAmount = (int) ($refund->amount / 100);
-            // recordRefund(int $amount, ?string $reason)
-            $order->recordRefund($refundAmount, ($refund->reason ?? 'Refund created')." (Refund: {$refund->id})");
+            // Cents; idempotent per refund id (see Order::applyStripeRefund()).
+            $order->applyStripeRefund(
+                (string) $refund->id,
+                (int) ($refund->amount ?? 0),
+                ($refund->reason ?? 'Refund created')." (Refund: {$refund->id})"
+            );
         }
+
+        $this->syncLedger($refund->charge ?? null);
 
         return true;
     }
@@ -626,7 +648,8 @@ class StripeWebhookController
             'status' => $refund->status,
         ]);
 
-        $order = $this->findOrderByChargeId($refund->charge);
+        $order = $this->findOrderByPaymentIntent($refund->payment_intent ?? null)
+            ?? $this->findOrderByChargeId($refund->charge ?? null);
         if ($order) {
             $order->addNote(
                 "Refund status updated to: {$refund->status} (Refund: {$refund->id})",
@@ -653,7 +676,7 @@ class StripeWebhookController
         if ($invoice->metadata->order_id ?? null) {
             $order = $this->orderModel()::find($invoice->metadata->order_id);
             if ($order) {
-                $amountPaid = ($invoice->amount_paid ?? 0) / 100;
+                $amountPaid = (int) ($invoice->amount_paid ?? 0);
                 $order->addNote(
                     'Subscription invoice paid: '.Order::formatMoney($amountPaid, $order->currency)." (Invoice: {$invoice->id})",
                     OrderNote::TYPE_PAYMENT
@@ -699,6 +722,23 @@ class StripeWebhookController
     protected function orderModel(): string
     {
         return config('shop.models.order', Order::class);
+    }
+
+    /**
+     * Upsert the charge's balance transactions into the ledger when
+     * `shop.ledger.sync_on_webhook` is on. Never throws (see ShopService::syncLedgerForCharge()).
+     */
+    protected function syncLedger(?string $chargeId): void
+    {
+        if (! config('shop.ledger.sync_on_webhook') || ! $chargeId) {
+            return;
+        }
+
+        try {
+            app(\Blax\Shop\Services\ShopService::class)->syncLedgerForCharge($chargeId);
+        } catch (\Throwable $e) {
+            Log::warning('[shop:ledger] webhook ledger sync failed', ['charge' => $chargeId, 'error' => $e->getMessage()]);
+        }
     }
 
     /**

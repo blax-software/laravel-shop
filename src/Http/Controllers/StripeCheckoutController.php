@@ -92,7 +92,8 @@ class StripeCheckoutController
                             $updateData['charge_id'] = $session->payment_intent;
                         }
                         if (in_array('amount_paid', $purchase->getFillable())) {
-                            $updateData['amount_paid'] = $session->amount_total / 100; // Convert from cents
+                            // Cents, like `amount`: each purchase is paid its own line amount.
+                            $updateData['amount_paid'] = $purchase->amount;
                         }
 
                         $purchase->update($updateData);
