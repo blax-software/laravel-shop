@@ -12,12 +12,15 @@ use Blax\Shop\Models\Order;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductCategory;
 use Blax\Shop\Models\ProductPrice;
-use Blax\Shop\Models\ProductPurchase;
 use Blax\Shop\Models\StripeTransaction;
 use Blax\Shop\Models\Subscription;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
+use Stripe\Charge;
+use Stripe\Stripe;
 
 class ShopService
 {
@@ -27,8 +30,6 @@ class ShopService
 
     /**
      * Get all products query builder
-     *
-     * @return Builder
      */
     public function products(): Builder
     {
@@ -38,8 +39,7 @@ class ShopService
     /**
      * Get a product by ID
      *
-     * @param mixed $id
-     * @return Product|null
+     * @param  mixed  $id
      */
     public function product($id): ?Product
     {
@@ -48,8 +48,6 @@ class ShopService
 
     /**
      * Get all categories query builder
-     *
-     * @return Builder
      */
     public function categories(): Builder
     {
@@ -58,8 +56,6 @@ class ShopService
 
     /**
      * Get in-stock products
-     *
-     * @return Builder
      */
     public function inStock(): Builder
     {
@@ -68,8 +64,6 @@ class ShopService
 
     /**
      * Get featured products
-     *
-     * @return Builder
      */
     public function featured(): Builder
     {
@@ -78,8 +72,6 @@ class ShopService
 
     /**
      * Get published and visible products
-     *
-     * @return Builder
      */
     public function published(): Builder
     {
@@ -88,9 +80,6 @@ class ShopService
 
     /**
      * Search products by query
-     *
-     * @param string $query
-     * @return Builder
      */
     public function search(string $query): Builder
     {
@@ -103,14 +92,10 @@ class ShopService
 
     /**
      * Check if product has available stock for quantity
-     *
-     * @param Product $product
-     * @param int $quantity
-     * @return bool
      */
     public function checkStock(Product $product, int $quantity): bool
     {
-        if (!$product->manage_stock) {
+        if (! $product->manage_stock) {
             return true;
         }
 
@@ -119,13 +104,10 @@ class ShopService
 
     /**
      * Get available stock for a product
-     *
-     * @param Product $product
-     * @return int
      */
     public function getAvailableStock(Product $product): int
     {
-        if (!$product->manage_stock) {
+        if (! $product->manage_stock) {
             return PHP_INT_MAX;
         }
 
@@ -134,9 +116,6 @@ class ShopService
 
     /**
      * Check if product is on sale
-     *
-     * @param Product $product
-     * @return bool
      */
     public function isOnSale(Product $product): bool
     {
@@ -405,7 +384,7 @@ class ShopService
         $startOfYear = Carbon::now()->startOfYear();
         $endOfYear = Carbon::now()->endOfYear();
 
-        $orderStats = $this->orderModel()::selectRaw("
+        $orderStats = $this->orderModel()::selectRaw('
             COUNT(*) as total,
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as pending,
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as processing,
@@ -421,7 +400,7 @@ class ShopService
             COALESCE(SUM(CASE WHEN created_at BETWEEN ? AND ? THEN amount_paid ELSE 0 END), 0) as revenue_this_year,
             COALESCE(SUM(amount_refunded), 0) as total_refunded,
             COALESCE(AVG(amount_total), 0) as average_order
-        ", [
+        ', [
             OrderStatus::PENDING->value,
             OrderStatus::PROCESSING->value,
             OrderStatus::COMPLETED->value,
@@ -925,8 +904,7 @@ class ShopService
     /**
      * Get shop configuration value
      *
-     * @param string $key
-     * @param mixed $default
+     * @param  mixed  $default
      * @return mixed
      */
     public function config(string $key, $default = null)
@@ -936,8 +914,6 @@ class ShopService
 
     /**
      * Get default shop currency
-     *
-     * @return string
      */
     public function currency(): string
     {
@@ -952,7 +928,7 @@ class ShopService
         $currency = $currency ?? $this->currency();
         $amount = $cents / 100;
 
-        return number_format($amount, 2) . ' ' . strtoupper($currency);
+        return number_format($amount, 2).' '.strtoupper($currency);
     }
 
     // =========================================================================
@@ -962,7 +938,7 @@ class ShopService
     /**
      * The configured {@see StripeTransaction} model class.
      *
-     * @return class-string<\Illuminate\Database\Eloquent\Model>
+     * @return class-string<Model>
      */
     protected function ledgerModel(): string
     {
@@ -1061,7 +1037,7 @@ class ShopService
      * sum misses (they are stored there as amount=0).
      *
      * @param  string|array<int,string>  $customerIds  Stripe customer id(s) (cus_…)
-     * @param  string|array<int,string>  $emails       buyer email(s)
+     * @param  string|array<int,string>  $emails  buyer email(s)
      * @return array{amount: int, gross: int, refunds: int, fees: int, net: int, count: int}
      */
     public function customerLedgerTotals(
@@ -1233,8 +1209,8 @@ class ShopService
         }
 
         try {
-            \Stripe\Stripe::setApiKey($secret);
-            $charge = \Stripe\Charge::retrieve([
+            Stripe::setApiKey($secret);
+            $charge = Charge::retrieve([
                 'id' => $chargeId,
                 'expand' => ['balance_transaction', 'refunds.data.balance_transaction'],
             ]);
@@ -1254,7 +1230,7 @@ class ShopService
 
             return $count;
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('[shop:ledger] syncLedgerForCharge failed', [
+            Log::warning('[shop:ledger] syncLedgerForCharge failed', [
                 'charge' => $chargeId,
                 'error' => $e->getMessage(),
             ]);

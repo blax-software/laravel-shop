@@ -6,8 +6,12 @@ namespace Blax\Shop\Models;
 
 use Blax\Shop\Contracts\Cartable;
 use Blax\Shop\Enums\CartStatus;
+use Blax\Shop\Enums\PriceType;
+use Blax\Shop\Enums\PricingStrategy;
 use Blax\Shop\Enums\ProductType;
 use Blax\Shop\Enums\PurchaseStatus;
+use Blax\Shop\Enums\RecurringInterval;
+use Blax\Shop\Events\CartCreated;
 use Blax\Shop\Exceptions\CartableInterfaceException;
 use Blax\Shop\Exceptions\CartAlreadyConvertedException;
 use Blax\Shop\Exceptions\CartDatesRequiredException;
@@ -15,7 +19,9 @@ use Blax\Shop\Exceptions\CartEmptyException;
 use Blax\Shop\Exceptions\CartItemMissingInformationException;
 use Blax\Shop\Exceptions\ExceedsMaxPerCartException;
 use Blax\Shop\Exceptions\ExceedsMaxPerUserException;
+use Blax\Shop\Exceptions\HasNoPriceException;
 use Blax\Shop\Exceptions\InvalidDateRangeException;
+use Blax\Shop\Exceptions\MixedCheckoutModeException;
 use Blax\Shop\Exceptions\NotEnoughAvailableInTimespanException;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Exceptions\PriceCalculationException;
@@ -30,11 +36,16 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Stripe\Checkout\Session;
+use Stripe\Stripe;
+use Workbench\App\Models\User;
 
 class Cart extends Model
 {
-    use HasUuids, HasExpiration, HasFactory, HasBookingPriceCalculation, ChecksIfBooking;
+    use ChecksIfBooking, HasBookingPriceCalculation, HasExpiration, HasFactory, HasUuids;
 
     protected $fillable = [
         'session_id',
@@ -66,7 +77,7 @@ class Cart extends Model
     ];
 
     protected $dispatchesEvents = [
-        'created' => \Blax\Shop\Events\CartCreated::class,
+        'created' => CartCreated::class,
     ];
 
     public function __construct(array $attributes = [])
@@ -97,6 +108,7 @@ class Cart extends Model
     {
         $this->last_activity_at = now();
         $this->saveQuietly(); // Don't trigger events
+
         return $this;
     }
 
@@ -158,6 +170,7 @@ class Cart extends Model
     {
         $this->status = CartStatus::EXPIRED;
         $this->save();
+
         return $this;
     }
 
@@ -168,6 +181,7 @@ class Cart extends Model
     {
         $this->status = CartStatus::ABANDONED;
         $this->save();
+
         return $this;
     }
 
@@ -232,7 +246,7 @@ class Cart extends Model
 
     public function purchases(): HasMany
     {
-        return $this->hasMany(config('shop.models.product_purchase', \Blax\Shop\Models\ProductPurchase::class), 'cart_id');
+        return $this->hasMany(config('shop.models.product_purchase', ProductPurchase::class), 'cart_id');
     }
 
     /**
@@ -240,7 +254,7 @@ class Cart extends Model
      */
     public function order()
     {
-        return $this->hasOne(config('shop.models.order', \Blax\Shop\Models\Order::class), 'cart_id');
+        return $this->hasOne(config('shop.models.order', Order::class), 'cart_id');
     }
 
     public function getTotal(): float
@@ -264,7 +278,7 @@ class Cart extends Model
             return false;
         }
 
-        return $this->items->every(fn($item) => $item->is_booking);
+        return $this->items->every(fn ($item) => $item->is_booking);
     }
 
     /**
@@ -276,7 +290,7 @@ class Cart extends Model
             return false;
         }
 
-        return $this->items->contains(fn($item) => $item->is_booking);
+        return $this->items->contains(fn ($item) => $item->is_booking);
     }
 
     /**
@@ -284,13 +298,13 @@ class Cart extends Model
      */
     public function bookingItems(): int
     {
-        return $this->items->filter(fn($item) => $item->is_booking)->count();
+        return $this->items->filter(fn ($item) => $item->is_booking)->count();
     }
 
     /**
      * Get array of stripe_price_id from each cart item's price.
      * Returns array with nulls for items without stripe_price_id.
-     * 
+     *
      * @return array<string|null>
      */
     public function stripePriceIds(): array
@@ -315,10 +329,8 @@ class Cart extends Model
 
     /**
      * Check if cart is ready for checkout.
-     * 
+     *
      * Returns true if all cart items are ready for checkout.
-     * 
-     * @return bool
      */
     public function getIsReadyToCheckoutAttribute(): bool
     {
@@ -326,19 +338,19 @@ class Cart extends Model
             return false;
         }
 
-        return $this->items->every(fn($item) => $item->is_ready_to_checkout);
+        return $this->items->every(fn ($item) => $item->is_ready_to_checkout);
     }
 
     /**
      * Get all cart items that require adjustments before checkout.
-     * 
+     *
      * This method checks all cart items and returns a collection of items
      * that need additional information (like booking dates) before checkout.
-     * 
+     *
      * Example usage:
      * ```php
      * $incompleteItems = $cart->getItemsRequiringAdjustments();
-     * 
+     *
      * if ($incompleteItems->isNotEmpty()) {
      *     foreach ($incompleteItems as $item) {
      *         $adjustments = $item->requiredAdjustments();
@@ -346,22 +358,22 @@ class Cart extends Model
      *     }
      * }
      * ```
-     * 
-     * @return \Illuminate\Support\Collection Collection of CartItem models requiring adjustments
+     *
+     * @return Collection Collection of CartItem models requiring adjustments
      */
     public function getItemsRequiringAdjustments()
     {
         return $this->items->filter(function ($item) {
-            return !empty($item->requiredAdjustments());
+            return ! empty($item->requiredAdjustments());
         });
     }
 
     /**
      * Check if cart is ready for checkout.
-     * 
+     *
      * Returns true if all cart items have all required information set.
      * For booking products and pools with booking items, this means dates must be set.
-     * 
+     *
      * @return bool True if ready for checkout, false if any items need adjustments
      */
     public function isReadyForCheckout(): bool
@@ -372,11 +384,12 @@ class Cart extends Model
     /**
      * Set the default date range for the cart.
      * Items without specific dates will use these as fallback.
-     * 
-     * @param \DateTimeInterface|string $from Start date (DateTimeInterface or parsable string)
-     * @param \DateTimeInterface|string $until End date (DateTimeInterface or parsable string)
-     * @param bool $validateAvailability Whether to validate product availability for the timespan
+     *
+     * @param  \DateTimeInterface|string  $from  Start date (DateTimeInterface or parsable string)
+     * @param  \DateTimeInterface|string  $until  End date (DateTimeInterface or parsable string)
+     * @param  bool  $validateAvailability  Whether to validate product availability for the timespan
      * @return $this
+     *
      * @throws InvalidDateRangeException
      * @throws NotEnoughAvailableInTimespanException
      */
@@ -403,7 +416,7 @@ class Cart extends Model
             $updateData['until'] = $until;
         }
 
-        if (!empty($updateData)) {
+        if (! empty($updateData)) {
             $this->update($updateData);
             $this->refresh();
         }
@@ -441,10 +454,11 @@ class Cart extends Model
 
     /**
      * Set the 'from' date for the cart.
-     * 
-     * @param \DateTimeInterface|string $from Start date (DateTimeInterface or parsable string)
-     * @param bool $validateAvailability Whether to validate product availability for the timespan
+     *
+     * @param  \DateTimeInterface|string  $from  Start date (DateTimeInterface or parsable string)
+     * @param  bool  $validateAvailability  Whether to validate product availability for the timespan
      * @return $this
+     *
      * @throws NotEnoughAvailableInTimespanException
      */
     public function setFromDate(
@@ -488,10 +502,11 @@ class Cart extends Model
 
     /**
      * Set the 'until' date for the cart.
-     * 
-     * @param \DateTimeInterface|string $until End date (DateTimeInterface or parsable string)
-     * @param bool $validateAvailability Whether to validate product availability for the timespan
+     *
+     * @param  \DateTimeInterface|string  $until  End date (DateTimeInterface or parsable string)
+     * @param  bool  $validateAvailability  Whether to validate product availability for the timespan
      * @return $this
+     *
      * @throws NotEnoughAvailableInTimespanException
      */
     public function setUntilDate(\DateTimeInterface|string|int|float $until, bool $validateAvailability = true): self
@@ -533,12 +548,13 @@ class Cart extends Model
 
     /**
      * Apply cart dates to all items that don't have their own dates set.
-     * 
-     * @param bool $validateAvailability Whether to validate product availability for the timespan
-     * @param bool $overwrite If true, overwrites existing item dates. If false, only sets null fields.
-     * @param \DateTimeInterface|null $from Optional from date (uses cart's from if not provided)
-     * @param \DateTimeInterface|null $until Optional until date (uses cart's until if not provided)
+     *
+     * @param  bool  $validateAvailability  Whether to validate product availability for the timespan
+     * @param  bool  $overwrite  If true, overwrites existing item dates. If false, only sets null fields.
+     * @param  \DateTimeInterface|null  $from  Optional from date (uses cart's from if not provided)
+     * @param  \DateTimeInterface|null  $until  Optional until date (uses cart's until if not provided)
      * @return $this
+     *
      * @throws NotEnoughAvailableInTimespanException
      */
     public function applyDatesToItems(
@@ -551,7 +567,7 @@ class Cart extends Model
         $fromDate = $from ?? $this->from;
         $untilDate = $until ?? $this->until;
 
-        if (!$fromDate || !$untilDate) {
+        if (! $fromDate || ! $untilDate) {
             return $this;
         }
 
@@ -568,10 +584,10 @@ class Cart extends Model
             // Only apply to booking items
             if ($item->is_booking) {
                 // Determine which dates to apply based on overwrite setting
-                $shouldApplyFrom = $overwrite || !$item->from;
-                $shouldApplyUntil = $overwrite || !$item->until;
+                $shouldApplyFrom = $overwrite || ! $item->from;
+                $shouldApplyUntil = $overwrite || ! $item->until;
 
-                if (!$shouldApplyFrom && !$shouldApplyUntil) {
+                if (! $shouldApplyFrom && ! $shouldApplyUntil) {
                     continue;
                 }
 
@@ -593,12 +609,13 @@ class Cart extends Model
                                 'from' => $itemFrom,
                                 'until' => $itemUntil,
                             ]);
+
                             continue;
                         }
 
-                        $poolKey = $product->id . '|' . $itemFrom->format('Y-m-d H:i:s') . '|' . $itemUntil->format('Y-m-d H:i:s');
+                        $poolKey = $product->id.'|'.$itemFrom->format('Y-m-d H:i:s').'|'.$itemUntil->format('Y-m-d H:i:s');
 
-                        if (!isset($poolValidation[$poolKey])) {
+                        if (! isset($poolValidation[$poolKey])) {
                             $poolValidation[$poolKey] = [
                                 'product' => $product,
                                 'from' => $itemFrom,
@@ -610,7 +627,7 @@ class Cart extends Model
 
                         $poolValidation[$poolKey]['requested'] += $item->quantity;
                         $poolValidation[$poolKey]['allocated'] += $item->quantity;
-                    } elseif ($product && !$product->isAvailableForBooking($itemFrom, $itemUntil, $item->quantity)) {
+                    } elseif ($product && ! $product->isAvailableForBooking($itemFrom, $itemUntil, $item->quantity)) {
                         // Non-pool booking item is not available - mark as unavailable
                         // Don't throw exception - let user adjust dates freely
                         $item->update([
@@ -620,6 +637,7 @@ class Cart extends Model
                             'subtotal' => null,
                             'unit_amount' => null,
                         ]);
+
                         // Skip updateDates() since we already set the dates with null price
                         continue;
                     }
@@ -639,14 +657,13 @@ class Cart extends Model
 
     /**
      * Reallocate pool items to optimize pricing when dates change.
-     * 
+     *
      * When dates change, check if better-priced single items become available
      * according to the pool's pricing strategy (LOWEST, HIGHEST, etc.)
-     * 
-     * @param \DateTimeInterface $from New start date
-     * @param \DateTimeInterface $until New end date
-     * @param bool $overwrite Whether to apply to all items or only those without dates
-     * @return void
+     *
+     * @param  \DateTimeInterface  $from  New start date
+     * @param  \DateTimeInterface  $until  New end date
+     * @param  bool  $overwrite  Whether to apply to all items or only those without dates
      */
     protected function reallocatePoolItems(\DateTimeInterface $from, \DateTimeInterface $until, bool $overwrite = true): void
     {
@@ -654,6 +671,7 @@ class Cart extends Model
         $poolItems = $this->items()->get()
             ->filter(function ($item) {
                 $product = $item->purchasable;
+
                 return $product instanceof Product && $product->isPool();
             })
             ->groupBy('purchasable_id');
@@ -661,7 +679,7 @@ class Cart extends Model
         foreach ($poolItems as $poolId => $items) {
             $poolProduct = $items->first()->purchasable;
 
-            if (!$poolProduct) {
+            if (! $poolProduct) {
                 continue;
             }
 
@@ -707,7 +725,7 @@ class Cart extends Model
                 // No singles available for this period - mark ALL pool items as unavailable
                 foreach ($items as $cartItem) {
                     // Only update if we should overwrite or item has no dates yet
-                    if (!$overwrite && $cartItem->from && $cartItem->until) {
+                    if (! $overwrite && $cartItem->from && $cartItem->until) {
                         continue;
                     }
 
@@ -719,15 +737,16 @@ class Cart extends Model
                         'unit_amount' => null,
                     ]);
                 }
+
                 continue;
             }
 
             // Sort by pricing strategy
             usort($singlesWithPrices, function ($a, $b) use ($strategy) {
                 return match ($strategy) {
-                    \Blax\Shop\Enums\PricingStrategy::LOWEST => $a['price'] <=> $b['price'],
-                    \Blax\Shop\Enums\PricingStrategy::HIGHEST => $b['price'] <=> $a['price'],
-                    \Blax\Shop\Enums\PricingStrategy::AVERAGE => 0,
+                    PricingStrategy::LOWEST => $a['price'] <=> $b['price'],
+                    PricingStrategy::HIGHEST => $b['price'] <=> $a['price'],
+                    PricingStrategy::AVERAGE => 0,
                 };
             });
 
@@ -741,7 +760,7 @@ class Cart extends Model
 
             foreach ($items as $cartItem) {
                 // Only reallocate if we should overwrite or item has no dates yet
-                if (!$overwrite && $cartItem->from && $cartItem->until) {
+                if (! $overwrite && $cartItem->from && $cartItem->until) {
                     continue;
                 }
 
@@ -773,7 +792,7 @@ class Cart extends Model
                     }
                 }
 
-                if (!$allocated) {
+                if (! $allocated) {
                     // No single can accommodate the full quantity
                     // Try to split: use as much as possible from the first available single,
                     // then create new cart items for the rest
@@ -781,13 +800,17 @@ class Cart extends Model
                     $firstAllocation = true;
 
                     foreach ($orderedSingles as $singleInfo) {
-                        if ($remainingQty <= 0) break;
+                        if ($remainingQty <= 0) {
+                            break;
+                        }
 
                         $single = $singleInfo['single'];
                         $usedFromSingle = $singleUsage[$single->id] ?? 0;
                         $availableFromSingle = $singleInfo['available'] - $usedFromSingle;
 
-                        if ($availableFromSingle <= 0) continue;
+                        if ($availableFromSingle <= 0) {
+                            continue;
+                        }
 
                         $qtyToAllocate = min($remainingQty, $availableFromSingle);
 
@@ -864,30 +887,29 @@ class Cart extends Model
 
     /**
      * Validate that all booking items in the cart are available for the given timespan.
-     * 
-     * @param \DateTimeInterface $from Start date
-     * @param \DateTimeInterface $until End date
-     * @return void
+     *
+     * @param  \DateTimeInterface  $from  Start date
+     * @param  \DateTimeInterface  $until  End date
+     *
      * @throws NotEnoughAvailableInTimespanException
      */
     /**
      * Mark booking items as unavailable if they cannot be booked for the given dates.
      * Instead of throwing exceptions, this marks items with null price.
      *
-     * @param \DateTimeInterface $from Start date
-     * @param \DateTimeInterface $until End date
-     * @param bool $useProvidedDates Whether to use provided dates or item's own dates
-     * @return void
+     * @param  \DateTimeInterface  $from  Start date
+     * @param  \DateTimeInterface  $until  End date
+     * @param  bool  $useProvidedDates  Whether to use provided dates or item's own dates
      */
     protected function validateDateAvailability(\DateTimeInterface $from, \DateTimeInterface $until, bool $useProvidedDates = false): void
     {
         foreach ($this->items as $item) {
-            if (!$item->is_booking) {
+            if (! $item->is_booking) {
                 continue;
             }
 
             $product = $item->purchasable;
-            if (!$product) {
+            if (! $product) {
                 continue;
             }
 
@@ -900,7 +922,7 @@ class Cart extends Model
             $checkFrom = $useProvidedDates ? $from : ($item->from ?? $from);
             $checkUntil = $useProvidedDates ? $until : ($item->until ?? $until);
 
-            if (!$product->isAvailableForBooking($checkFrom, $checkUntil, $item->quantity)) {
+            if (! $product->isAvailableForBooking($checkFrom, $checkUntil, $item->quantity)) {
                 // Mark item as unavailable instead of throwing exception
                 // This allows users to freely adjust dates
                 $item->update([
@@ -940,7 +962,7 @@ class Cart extends Model
 
     public function isConverted(): bool
     {
-        return !is_null($this->converted_at);
+        return ! is_null($this->converted_at);
     }
 
     public function scopeForUser($query, $userOrId)
@@ -951,7 +973,8 @@ class Cart extends Model
         }
 
         // If just an ID is passed, try to determine the user model class
-        $userModel = config('auth.providers.users.model', \Workbench\App\Models\User::class);
+        $userModel = config('auth.providers.users.model', User::class);
+
         return $query->where('customer_id', $userOrId)
             ->where('customer_type', $userModel);
     }
@@ -965,9 +988,6 @@ class Cart extends Model
 
     /**
      * Store the cart ID in the session for retrieval across requests
-     * 
-     * @param Cart $cart
-     * @return void
      */
     public static function setSession(Cart $cart): void
     {
@@ -977,24 +997,24 @@ class Cart extends Model
     /**
      * Add an item to the cart or increase quantity if it already exists.
      *
-     * @param Model&Cartable $cartable The item to add to cart
-     * @param int $quantity The quantity to add
-     * @param array<string, mixed> $parameters Additional parameters for the cart item
-     * @param \DateTimeInterface|null $from Optional start date for bookings
-     * @param \DateTimeInterface|null $until Optional end date for bookings
-     * @return CartItem
+     * @param  Model&Cartable  $cartable  The item to add to cart
+     * @param  int  $quantity  The quantity to add
+     * @param  array<string, mixed>  $parameters  Additional parameters for the cart item
+     * @param  \DateTimeInterface|null  $from  Optional start date for bookings
+     * @param  \DateTimeInterface|null  $until  Optional end date for bookings
+     *
      * @throws \Exception If the item doesn't implement Cartable interface
      */
     public function addToCart(
         Model $cartable,
         int $quantity = 1,
         array $parameters = [],
-        null|\DateTimeInterface $from = null,
-        null|\DateTimeInterface $until = null
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $until = null
     ): CartItem {
         // $cartable must implement Cartable
         if (! $cartable instanceof Cartable) {
-            throw new CartableInterfaceException();
+            throw new CartableInterfaceException;
         }
 
         // Defaults for cartables that aren't Product / ProductPrice (e.g. an app
@@ -1016,18 +1036,18 @@ class Cart extends Model
 
         if ($is_booking) {
             // Extract dates from parameters if not provided directly
-            if (!$from && isset($parameters['from'])) {
+            if (! $from && isset($parameters['from'])) {
                 $from = is_string($parameters['from']) ? Carbon::parse($parameters['from']) : $parameters['from'];
             }
-            if (!$until && isset($parameters['until'])) {
+            if (! $until && isset($parameters['until'])) {
                 $until = is_string($parameters['until']) ? Carbon::parse($parameters['until']) : $parameters['until'];
             }
 
             // Fallback to cart dates if no dates provided
-            if (!$from && $this->from) {
+            if (! $from && $this->from) {
                 $from = $this->from;
             }
-            if (!$until && $this->until) {
+            if (! $until && $this->until) {
                 $until = $this->until;
             }
         }
@@ -1052,11 +1072,12 @@ class Cart extends Model
                     ->get()
                     ->filter(function ($item) use ($from, $until) {
                         // Only count items with overlapping dates
-                        if (!$item->from || !$item->until) {
+                        if (! $item->from || ! $item->until) {
                             return false;
                         }
+
                         // Check for overlap: item overlaps if it doesn't end before period starts or start after period ends
-                        return !($item->until < $from || $item->from > $until);
+                        return ! ($item->until < $from || $item->from > $until);
                     })
                     ->sum('quantity');
 
@@ -1094,6 +1115,7 @@ class Cart extends Model
             for ($i = 0; $i < $quantity; $i++) {
                 $lastCartItem = $this->addToCart($cartable, 1, $parameters, $from, $until);
             }
+
             return $lastCartItem;
         }
 
@@ -1113,7 +1135,7 @@ class Cart extends Model
                 // Date-based validation will happen at checkout
                 if (
                     $is_booking
-                    && !$is_pool
+                    && ! $is_pool
                     && $cartable->manage_stock
                 ) {
                     $totalStock = $cartable->getAvailableStock();
@@ -1154,7 +1176,7 @@ class Cart extends Model
                 }
             } elseif ($from || $until) {
                 // If only one date is provided, it's an error
-                throw new CartDatesRequiredException();
+                throw new CartDatesRequiredException;
             } else {
                 // When adding pool items without dates, validate against total pool capacity
                 // This allows adding items even if currently claimed - date-based validation happens later
@@ -1280,7 +1302,7 @@ class Cart extends Model
 
                 // Still try to find a single item for allocation even with pool's direct price
                 // This ensures product_id is always set for pool items
-                if (!$poolSingleItem) {
+                if (! $poolSingleItem) {
                     $singleItems = $cartable->singleProducts;
                     foreach ($singleItems as $single) {
                         // Find first single with available capacity
@@ -1310,7 +1332,7 @@ class Cart extends Model
         if ($pricePerDay === null) {
             if ($is_pool) {
                 // For pool products, throw specific error when neither pool nor single items have prices
-                throw \Blax\Shop\Exceptions\HasNoPriceException::poolProductNoPriceAndNoSingleItemPrices($cartable->name);
+                throw HasNoPriceException::poolProductNoPriceAndNoSingleItemPrices($cartable->name);
             }
             throw new ProductHasNoPriceException($cartable->name);
         }
@@ -1370,7 +1392,7 @@ class Cart extends Model
                 $priceId = $defaultPrice?->id;
                 $currency = $defaultPrice?->currency;
             }
-        } elseif ($cartable instanceof \Blax\Shop\Models\ProductPrice) {
+        } elseif ($cartable instanceof ProductPrice) {
             // If adding a ProductPrice directly, use its ID and currency
             $priceId = $cartable->id;
             $currency = $cartable->currency;
@@ -1433,7 +1455,7 @@ class Cart extends Model
             default => null,
         };
 
-        if (!$product) {
+        if (! $product) {
             return;
         }
 
@@ -1524,6 +1546,7 @@ class Cart extends Model
                     : (array) $item->parameters;
                 ksort($existingParams);
                 ksort($parameters);
+
                 return $existingParams === $parameters;
             });
 
@@ -1557,23 +1580,23 @@ class Cart extends Model
 
     /**
      * Get calendar availability for all items in the cart.
-     * 
+     *
      * This method aggregates availability across all cart items and returns
      * the minimum availability for each date. This is useful for booking systems
      * where you need to know when ALL items in a cart can be booked together.
-     * 
+     *
      * For each date, it calculates the minimum number of complete cart "sets"
      * that could be fulfilled. A set is fulfilled when all items have at least
      * one unit available.
-     * 
+     *
      * Returns associative array with keys:
      *  - 'max_available' => Shows the peak available "sets" in the date range
      *  - 'min_available' => Shows the lowest available "sets" in the date range
      *  - 'dates' => An array of dates with their respective min/max availability
      *  - 'items' => Individual item availability data (for debugging)
-     * 
-     * @param \DateTimeInterface|null $from Start date of the range (optional, defaults to today)
-     * @param \DateTimeInterface|null $until End date of the range (optional, defaults to 30 days)
+     *
+     * @param  \DateTimeInterface|null  $from  Start date of the range (optional, defaults to today)
+     * @param  \DateTimeInterface|null  $until  End date of the range (optional, defaults to 30 days)
      * @return array Associative array with 'max_available', 'min_available', 'dates', and 'items'
      */
     public function calendarAvailability(
@@ -1584,7 +1607,7 @@ class Cart extends Model
         $untilDate = Carbon::parse($until ?? $fromDate->copy()->addDays(30))->endOfDay();
 
         // Load items with their purchasable products
-        if (!$this->relationLoaded('items')) {
+        if (! $this->relationLoaded('items')) {
             $this->load('items.purchasable');
         }
 
@@ -1607,12 +1630,12 @@ class Cart extends Model
         $productQuantities = [];
         foreach ($items as $item) {
             $product = $item->purchasable;
-            if (!$product) {
+            if (! $product) {
                 continue;
             }
 
-            $productKey = get_class($product) . '|' . $product->id;
-            if (!isset($productQuantities[$productKey])) {
+            $productKey = get_class($product).'|'.$product->id;
+            if (! isset($productQuantities[$productKey])) {
                 $productQuantities[$productKey] = [
                     'product' => $product,
                     'quantity' => 0,
@@ -1831,7 +1854,9 @@ class Cart extends Model
 
         $dates = [];
         foreach (($availability['dates'] ?? []) as $iso => $row) {
-            if ($iso < $visibleStartIso || $iso > $visibleEndIso) continue;
+            if ($iso < $visibleStartIso || $iso > $visibleEndIso) {
+                continue;
+            }
             $dates[$iso] = ($row['max'] ?? 0) >= 1;
         }
 
@@ -1861,8 +1886,7 @@ class Cart extends Model
                 ->pluck('id')
                 ->all();
 
-            $isAvailableOn = fn (string $iso): bool =>
-                isset($dayRows[$iso]) && ($dayRows[$iso]['max'] ?? 0) >= $required;
+            $isAvailableOn = fn (string $iso): bool => isset($dayRows[$iso]) && ($dayRows[$iso]['max'] ?? 0) >= $required;
 
             $availableForSelected = $selectedFromIso && $selectedUntilIso;
             if ($availableForSelected) {
@@ -1880,10 +1904,15 @@ class Cart extends Model
             $windowFitsAt = function (string $startIso) use (&$isAvailableOn, $durationDays, $searchEnd): bool {
                 $cursor = Carbon::parse($startIso);
                 for ($i = 0; $i < $durationDays; $i++) {
-                    if ($cursor->gt($searchEnd)) return false;
-                    if (! $isAvailableOn($cursor->toDateString())) return false;
+                    if ($cursor->gt($searchEnd)) {
+                        return false;
+                    }
+                    if (! $isAvailableOn($cursor->toDateString())) {
+                        return false;
+                    }
                     $cursor->addDay();
                 }
+
                 return true;
             };
 
@@ -1930,7 +1959,9 @@ class Cart extends Model
             $datesPartial = [];
             $partialWindows = [];
             foreach ($dayRows as $iso => $row) {
-                if ($iso < $visibleStartIso || $iso > $visibleEndIso) continue;
+                if ($iso < $visibleStartIso || $iso > $visibleEndIso) {
+                    continue;
+                }
                 $max = $row['max'] ?? 0;
                 $min = $row['min'] ?? 0;
                 if ($max < $required) {
@@ -1944,7 +1975,7 @@ class Cart extends Model
                     // (only present on partial days, by design).
                     $datesPartial[] = $iso;
                     $transitions = $transitionsByDay[$iso] ?? [];
-                    if (!empty($transitions)) {
+                    if (! empty($transitions)) {
                         $windows = [];
                         $windowFrom = null;
                         foreach ($transitions as $t) {
@@ -1953,7 +1984,7 @@ class Cart extends Model
                             $isOk = $available >= $required;
                             if ($isOk && $windowFrom === null) {
                                 $windowFrom = $time;
-                            } elseif (!$isOk && $windowFrom !== null) {
+                            } elseif (! $isOk && $windowFrom !== null) {
                                 // Skip zero-length windows that show up when
                                 // two transitions land on the same minute.
                                 if ($windowFrom !== $time) {
@@ -1966,7 +1997,7 @@ class Cart extends Model
                             // Open window runs to end-of-day.
                             $windows[] = ['from' => $windowFrom, 'until' => '23:59'];
                         }
-                        if (!empty($windows)) {
+                        if (! empty($windows)) {
                             $partialWindows[$iso] = $windows;
                         }
                     }
@@ -1998,13 +2029,13 @@ class Cart extends Model
 
     /**
      * Validate cart for checkout without converting it
-     * 
+     *
      * Checks:
      * 1. Cart is not already converted
      * 2. Cart is not empty
      * 3. All items have required information
      * 4. Stock is available for all items (for booking/pool products with dates)
-     * 
+     *
      * @throws \Exception
      */
     public function validateForCheckout(bool $throws = true): bool
@@ -2012,7 +2043,7 @@ class Cart extends Model
         // Check if cart is already converted
         if ($this->isConverted()) {
             if ($throws) {
-                throw new CartAlreadyConvertedException();
+                throw new CartAlreadyConvertedException;
             } else {
                 return false;
             }
@@ -2024,7 +2055,7 @@ class Cart extends Model
 
         if ($items->isEmpty()) {
             if ($throws) {
-                throw new CartEmptyException();
+                throw new CartEmptyException;
             } else {
                 return false;
             }
@@ -2033,7 +2064,7 @@ class Cart extends Model
         // Validate that all items have required information before checkout
         foreach ($items as $item) {
             $adjustments = $item->requiredAdjustments();
-            if (!empty($adjustments)) {
+            if (! empty($adjustments)) {
                 $product = $item->purchasable;
                 $productName = $product ? $product->name : 'Unknown Product';
                 $missingFields = implode(', ', array_keys($adjustments));
@@ -2050,7 +2081,7 @@ class Cart extends Model
         foreach ($items as $item) {
             $product = $item->purchasable;
 
-            if (!($product instanceof Product)) {
+            if (! ($product instanceof Product)) {
                 continue;
             }
 
@@ -2067,8 +2098,7 @@ class Cart extends Model
                     // Calculate how much of this cart's items are already counted
                     // We need to check if there's still enough stock for what's in this cart
                     $cartItemsForPool = $items->filter(
-                        fn($i) =>
-                        $i->purchasable_id === $product->id &&
+                        fn ($i) => $i->purchasable_id === $product->id &&
                             $i->purchasable_type === get_class($product)
                     );
                     $totalInCart = $cartItemsForPool->sum('quantity');
@@ -2076,7 +2106,7 @@ class Cart extends Model
                     if ($available !== PHP_INT_MAX && $totalInCart > $available) {
                         if ($throws) {
                             throw new NotEnoughStockException(
-                                "Pool product '{$product->name}' has only {$available} items available for the period " .
+                                "Pool product '{$product->name}' has only {$available} items available for the period ".
                                     "{$from->format('Y-m-d')} to {$until->format('Y-m-d')}. Cart has: {$totalInCart}"
                             );
                         } else {
@@ -2087,8 +2117,7 @@ class Cart extends Model
                     // Without dates, check general pool availability
                     $available = $product->getPoolMaxQuantity();
                     $totalInCart = $items->filter(
-                        fn($i) =>
-                        $i->purchasable_id === $product->id &&
+                        fn ($i) => $i->purchasable_id === $product->id &&
                             $i->purchasable_type === get_class($product)
                     )->sum('quantity');
 
@@ -2105,10 +2134,10 @@ class Cart extends Model
             } elseif ($product->isBooking() && $product->manage_stock) {
                 // For booking products with managed stock
                 if ($from && $until) {
-                    if (!$product->isAvailableForBooking($from, $until, $item->quantity)) {
+                    if (! $product->isAvailableForBooking($from, $until, $item->quantity)) {
                         if ($throws) {
                             throw new NotEnoughStockException(
-                                "Booking product '{$product->name}' is not available for the period " .
+                                "Booking product '{$product->name}' is not available for the period ".
                                     "{$from->format('Y-m-d')} to {$until->format('Y-m-d')}. Requested: {$item->quantity}"
                             );
                         } else {
@@ -2177,10 +2206,10 @@ class Cart extends Model
      *
      * @return static The converted cart (fresh state within the transaction scope).
      *
-     * @throws \Blax\Shop\Exceptions\CartAlreadyConvertedException
-     * @throws \Blax\Shop\Exceptions\CartEmptyException
-     * @throws \Blax\Shop\Exceptions\CartItemMissingInformationException
-     * @throws \Blax\Shop\Exceptions\NotEnoughStockException
+     * @throws CartAlreadyConvertedException
+     * @throws CartEmptyException
+     * @throws CartItemMissingInformationException
+     * @throws NotEnoughStockException
      * @throws \Throwable For any other unexpected failures during checkout/stock claiming.
      */
     public function checkout(): static
@@ -2211,7 +2240,7 @@ class Cart extends Model
                 $from = $item->from;
                 $until = $item->until;
 
-                if (!$from || !$until) {
+                if (! $from || ! $until) {
                     if (($product->type === ProductType::BOOKING || $product->type === ProductType::POOL) && $item->parameters) {
                         $params = is_array($item->parameters) ? $item->parameters : (array) $item->parameters;
                         $from = $params['from'] ?? null;
@@ -2230,7 +2259,7 @@ class Cart extends Model
                 // Handle pool products with booking single items
                 if ($product instanceof Product && $product->isPool()) {
                     // Check if pool with booking items requires timespan
-                    if ($product->hasBookingSingleItems() && (!$from || !$until)) {
+                    if ($product->hasBookingSingleItems() && (! $from || ! $until)) {
                         throw new \Exception("Pool product '{$product->name}' with booking items requires a timespan (from/until dates).");
                     }
 
@@ -2243,7 +2272,7 @@ class Cart extends Model
                             if ($allocatedSingleId) {
                                 // Use the pre-allocated single item from product_id
                                 $singleItem = $item->product;
-                                if (!$singleItem) {
+                                if (! $singleItem) {
                                     throw new \Exception("Allocated single item not found: {$allocatedSingleId}");
                                 }
 
@@ -2262,16 +2291,16 @@ class Cart extends Model
                             }
 
                             // Store claimed items info in purchase meta
-                            $item->updateMetaKey('claimed_single_items', array_map(fn($i) => $i->id, $claimedItems));
+                            $item->updateMetaKey('claimed_single_items', array_map(fn ($i) => $i->id, $claimedItems));
                             $item->save();
                         } catch (\Exception $e) {
-                            throw new \Exception("Failed to checkout pool product '{$product->name}': " . $e->getMessage());
+                            throw new \Exception("Failed to checkout pool product '{$product->name}': ".$e->getMessage());
                         }
                     }
                 }
 
                 // Validate booking products have required dates
-                if ($product instanceof Product && $product->isBooking() && !$product->isPool() && (!$from || !$until)) {
+                if ($product instanceof Product && $product->isBooking() && ! $product->isPool() && (! $from || ! $until)) {
                     throw new \Exception("Booking product '{$product->name}' requires a timespan (from/until dates).");
                 }
 
@@ -2321,19 +2350,19 @@ class Cart extends Model
      */
     protected function stripeRecurringFor($price): ?array
     {
-        if (!$price) {
+        if (! $price) {
             return null;
         }
 
-        $type = $price->type instanceof \Blax\Shop\Enums\PriceType
+        $type = $price->type instanceof PriceType
             ? $price->type->value
             : (string) $price->type;
 
-        if ($type !== \Blax\Shop\Enums\PriceType::RECURRING->value) {
+        if ($type !== PriceType::RECURRING->value) {
             return null;
         }
 
-        $interval = $price->interval instanceof \Blax\Shop\Enums\RecurringInterval
+        $interval = $price->interval instanceof RecurringInterval
             ? $price->interval->value
             : (is_string($price->interval) ? $price->interval : null);
 
@@ -2346,7 +2375,7 @@ class Cart extends Model
             $count = 1;
         }
 
-        if ($interval === \Blax\Shop\Enums\RecurringInterval::QUARTER->value) {
+        if ($interval === RecurringInterval::QUARTER->value) {
             return ['interval' => 'month', 'interval_count' => 3 * $count];
         }
 
@@ -2366,20 +2395,20 @@ class Cart extends Model
      * - Creates line items with descriptions including booking dates
      * - Returns the Stripe checkout session
      *
-     * @param array $options Optional session parameters (success_url, cancel_url, etc.)
-     * @param string|null $url Optional fullPath URL for success and cancel URLs
-     *
+     * @param  array  $options  Optional session parameters (success_url, cancel_url, etc.)
+     * @param  string|null  $url  Optional fullPath URL for success and cancel URLs
      * @return mixed Stripe\Checkout\Session instance
+     *
      * @throws \Exception
      */
     public function checkoutSession(array $options = [], ?string $url = null)
     {
-        if (!config('shop.stripe.enabled')) {
+        if (! config('shop.stripe.enabled')) {
             throw new \Exception('Stripe is not enabled');
         }
 
         // Ensure Stripe is initialized
-        \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+        Stripe::setApiKey(config('services.stripe.secret'));
 
         // Validate cart before proceeding (doesn't convert it)
         $this->validateForCheckout();
@@ -2429,7 +2458,7 @@ class Cart extends Model
             $priceModel = $item->price()->first();
 
             // Get product name (use short_description if available, otherwise name)
-            $productName = $product->name ?? 'Product [' . $product->id . ']';
+            $productName = $product->name ?? 'Product ['.$product->id.']';
             $description = $product->short_description ?? null;
 
             // Build description with booking dates if available
@@ -2464,11 +2493,12 @@ class Cart extends Model
                 // canonical record Stripe already knows (name, tax behaviour,
                 // metadata). Fall back to dynamic price_data + recurring block
                 // when no stripe_price_id is on file.
-                if (!empty($priceModel?->stripe_price_id)) {
+                if (! empty($priceModel?->stripe_price_id)) {
                     $lineItems[] = [
                         'price' => $priceModel->stripe_price_id,
                         'quantity' => $item->quantity,
                     ];
+
                     continue;
                 }
 
@@ -2484,6 +2514,7 @@ class Cart extends Model
                     ],
                     'quantity' => $item->quantity,
                 ];
+
                 continue;
             }
 
@@ -2509,7 +2540,7 @@ class Cart extends Model
         // session — surface that explicitly rather than letting Stripe reject
         // it with an opaque error.
         if ($hasRecurring && $hasOneTime) {
-            throw new \Blax\Shop\Exceptions\MixedCheckoutModeException();
+            throw new MixedCheckoutModeException;
         }
 
         $mode = $hasRecurring ? 'subscription' : 'payment';
@@ -2518,12 +2549,12 @@ class Cart extends Model
         $cancel_url = $url ?? $options['cancel_url'] ?? route('shop.stripe.cancel');
 
         $success_url = (strpos($success_url, '?'))
-            ? $success_url . '&session_id={CHECKOUT_SESSION_ID}&cart_id=' . $this->id
-            : $success_url . '?session_id={CHECKOUT_SESSION_ID}&cart_id=' . $this->id;
+            ? $success_url.'&session_id={CHECKOUT_SESSION_ID}&cart_id='.$this->id
+            : $success_url.'?session_id={CHECKOUT_SESSION_ID}&cart_id='.$this->id;
 
         $cancel_url = (strpos($cancel_url, '?'))
-            ? $cancel_url . '&cart_id=' . $this->id
-            : $cancel_url . '?cart_id=' . $this->id;
+            ? $cancel_url.'&cart_id='.$this->id
+            : $cancel_url.'?cart_id='.$this->id;
 
         // Prepare session parameters
         $sessionParams = [
@@ -2565,24 +2596,24 @@ class Cart extends Model
         }
 
         try {
-            $session = \Stripe\Checkout\Session::create($sessionParams);
+            $session = Session::create($sessionParams);
 
             // Store session ID in cart meta
-            $meta = $this->meta ?? (object)[];
+            $meta = $this->meta ?? (object) [];
             if (is_array($meta)) {
-                $meta = (object)$meta;
+                $meta = (object) $meta;
             }
             $meta->stripe_session_id = $session->id;
             $this->update(['meta' => $meta]);
 
-            \Illuminate\Support\Facades\Log::info('Stripe checkout session created', [
+            Log::info('Stripe checkout session created', [
                 'cart_id' => $this->id,
                 'session_id' => $session->id,
             ]);
 
             return $session;
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Stripe checkout session creation failed', [
+            Log::error('Stripe checkout session creation failed', [
                 'cart_id' => $this->id,
                 'error' => $e->getMessage(),
             ]);
@@ -2593,13 +2624,11 @@ class Cart extends Model
 
     /**
      * Get the checkout session link for this cart.
-     * 
+     *
      * This method returns:
      * - string: The checkout session URL if a session exists and is valid
      * - null: If no session exists or Stripe is not enabled
      * - false: If an error occurred while retrieving the session
-     * 
-     * @return string|null|false
      */
     public function checkoutSessionLink(array $option = [], ?string $url = null): string|null|false
     {
@@ -2612,7 +2641,7 @@ class Cart extends Model
         if ($checkoutSession) {
             if (
                 isset($checkoutSession->url)
-                && !empty($checkoutSession->url)
+                && ! empty($checkoutSession->url)
             ) {
                 return $checkoutSession->url;
             }

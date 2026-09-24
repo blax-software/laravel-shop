@@ -6,6 +6,8 @@ namespace Blax\Shop\Models;
 
 use Blax\Shop\Enums\OrderStatus;
 use Blax\Shop\Enums\PurchaseStatus;
+use Blax\Shop\Events\OrderCreated;
+use Blax\Shop\Events\OrderPaid;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,17 +16,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Order model representing a completed/paid cart.
- * 
+ *
  * Orders are created when a cart is converted (checked out) and represent
  * a customer's purchase transaction with full tracking capabilities.
  */
 class Order extends Model
 {
-    use HasUuids, HasFactory, SoftDeletes;
+    use HasFactory, HasUuids, SoftDeletes;
 
     protected $fillable = [
         'order_number',
@@ -89,7 +92,7 @@ class Order extends Model
     ];
 
     protected $dispatchesEvents = [
-        'created' => \Blax\Shop\Events\OrderCreated::class,
+        'created' => OrderCreated::class,
     ];
 
     public function __construct(array $attributes = [])
@@ -129,19 +132,19 @@ class Order extends Model
                 );
 
                 // Set timestamp fields based on status
-                if ($newStatus === OrderStatus::COMPLETED && !$order->completed_at) {
+                if ($newStatus === OrderStatus::COMPLETED && ! $order->completed_at) {
                     $order->completed_at = now();
                 }
-                if ($newStatus === OrderStatus::SHIPPED && !$order->shipped_at) {
+                if ($newStatus === OrderStatus::SHIPPED && ! $order->shipped_at) {
                     $order->shipped_at = now();
                 }
-                if ($newStatus === OrderStatus::DELIVERED && !$order->delivered_at) {
+                if ($newStatus === OrderStatus::DELIVERED && ! $order->delivered_at) {
                     $order->delivered_at = now();
                 }
-                if ($newStatus === OrderStatus::CANCELLED && !$order->cancelled_at) {
+                if ($newStatus === OrderStatus::CANCELLED && ! $order->cancelled_at) {
                     $order->cancelled_at = now();
                 }
-                if ($newStatus === OrderStatus::REFUNDED && !$order->refunded_at) {
+                if ($newStatus === OrderStatus::REFUNDED && ! $order->refunded_at) {
                     $order->refunded_at = now();
                 }
             }
@@ -155,13 +158,13 @@ class Order extends Model
                 if ($difference > 0) {
                     $currency = $order->currency ?? config('shop.currency', 'USD');
                     $order->addNote(
-                        "Payment received: " . static::formatMoney($difference, $currency),
+                        'Payment received: '.static::formatMoney($difference, $currency),
                         'payment',
                         true
                     );
 
                     // Mark as paid if fully paid
-                    if (!$order->paid_at && $newPaid >= $order->amount_total) {
+                    if (! $order->paid_at && $newPaid >= $order->amount_total) {
                         $order->paid_at = now();
                     }
                 }
@@ -174,8 +177,8 @@ class Order extends Model
         // an already-paid order (status moves, meta touches) must not re-fire,
         // and a host subclass configured via shop.models.order gets it too.
         static::updated(function (Order $order) {
-            if ($order->wasChanged('paid_at') && $order->paid_at && !$order->getOriginal('paid_at')) {
-                \Blax\Shop\Events\OrderPaid::dispatch($order);
+            if ($order->wasChanged('paid_at') && $order->paid_at && ! $order->getOriginal('paid_at')) {
+                OrderPaid::dispatch($order);
             }
         });
     }
@@ -211,7 +214,8 @@ class Order extends Model
     public static function formatMoney(int $amount, string $currency = 'USD'): string
     {
         $formatted = number_format($amount / 100, 2);
-        return strtoupper($currency) . ' ' . $formatted;
+
+        return strtoupper($currency).' '.$formatted;
     }
 
     // =========================================================================
@@ -304,12 +308,12 @@ class Order extends Model
 
     /**
      * Update the order status with validation.
-     * 
+     *
      * @throws \InvalidArgumentException if transition is not allowed
      */
     public function updateStatus(OrderStatus $newStatus, ?string $note = null): self
     {
-        if ($this->status && !$this->status->canTransitionTo($newStatus)) {
+        if ($this->status && ! $this->status->canTransitionTo($newStatus)) {
             throw new \InvalidArgumentException(
                 "Cannot transition order from '{$this->status->label()}' to '{$newStatus->label()}'"
             );
@@ -462,7 +466,7 @@ class Order extends Model
 
             $currency = $this->currency ?? config('shop.currency', 'USD');
             $this->addNote(
-                "Refund processed: " . static::formatMoney($amount, $currency) .
+                'Refund processed: '.static::formatMoney($amount, $currency).
                     ($reason ? " - Reason: {$reason}" : ''),
                 'refund',
                 true
@@ -487,7 +491,7 @@ class Order extends Model
      * @param  string  $content  The note content
      * @param  string  $type  The note type (note, status_change, payment, etc.)
      * @param  bool  $isCustomerNote  Whether the note is visible to the customer
-     * @param  \Illuminate\Database\Eloquent\Model|null  $author  The author model (User, Admin, etc.)
+     * @param  Model|null  $author  The author model (User, Admin, etc.)
      * @param  array|object|null  $meta  Additional metadata
      */
     public function addNote(
@@ -533,7 +537,7 @@ class Order extends Model
     public function getMeta(?string $key = null, $default = null)
     {
         if ($key === null) {
-            return $this->meta ?? new \stdClass();
+            return $this->meta ?? new \stdClass;
         }
 
         return $this->meta?->{$key} ?? $default;
@@ -544,7 +548,7 @@ class Order extends Model
      */
     public function updateMetaKey(string $key, $value): self
     {
-        $meta = (array) ($this->meta ?? new \stdClass());
+        $meta = (array) ($this->meta ?? new \stdClass);
         $meta[$key] = $value;
         $this->meta = (object) $meta;
         $this->save();
@@ -569,7 +573,7 @@ class Order extends Model
      */
     public function scopeWithStatuses($query, array $statuses)
     {
-        return $query->whereIn('status', array_map(fn($s) => $s->value, $statuses));
+        return $query->whereIn('status', array_map(fn ($s) => $s->value, $statuses));
     }
 
     /**
@@ -594,8 +598,8 @@ class Order extends Model
     public function scopeFinal($query)
     {
         $finalStatuses = array_map(
-            fn(OrderStatus $status) => $status->value,
-            array_filter(OrderStatus::cases(), fn(OrderStatus $status) => $status->isFinal())
+            fn (OrderStatus $status) => $status->value,
+            array_filter(OrderStatus::cases(), fn (OrderStatus $status) => $status->isFinal())
         );
 
         return $query->whereIn('status', $finalStatuses);
@@ -616,8 +620,8 @@ class Order extends Model
     public function scopeRequiresPayment($query)
     {
         $requiresPaymentStatuses = array_map(
-            fn(OrderStatus $status) => $status->value,
-            array_filter(OrderStatus::cases(), fn(OrderStatus $status) => $status->requiresPayment())
+            fn (OrderStatus $status) => $status->value,
+            array_filter(OrderStatus::cases(), fn (OrderStatus $status) => $status->requiresPayment())
         );
 
         return $query->whereIn('status', $requiresPaymentStatuses);
@@ -630,8 +634,8 @@ class Order extends Model
     public function scopeStatusPaid($query)
     {
         $paidStatuses = array_map(
-            fn(OrderStatus $status) => $status->value,
-            array_filter(OrderStatus::cases(), fn(OrderStatus $status) => $status->isPaid())
+            fn (OrderStatus $status) => $status->value,
+            array_filter(OrderStatus::cases(), fn (OrderStatus $status) => $status->isPaid())
         );
 
         return $query->whereIn('status', $paidStatuses);
@@ -789,6 +793,7 @@ class Order extends Model
     public static function getNetRevenue(): int
     {
         $result = static::selectRaw('COALESCE(SUM(amount_paid), 0) - COALESCE(SUM(amount_refunded), 0) as net')->first();
+
         return (int) $result->net;
     }
 
@@ -827,7 +832,7 @@ class Order extends Model
     public static function getRevenueSummary(\DateTimeInterface $from, \DateTimeInterface $until): array
     {
         $stats = static::createdBetween($from, $until)
-            ->selectRaw("
+            ->selectRaw('
                 COUNT(*) as total_orders,
                 SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as completed,
                 SUM(CASE WHEN amount_paid > 0 THEN 1 ELSE 0 END) as paid,
@@ -837,7 +842,7 @@ class Order extends Model
                 COALESCE(SUM(amount_refunded), 0) as refunded,
                 COALESCE(AVG(amount_total), 0) as avg_order_value,
                 COALESCE(AVG(amount_paid), 0) as avg_paid_amount
-            ", [OrderStatus::COMPLETED->value])
+            ', [OrderStatus::COMPLETED->value])
             ->first();
 
         return [
@@ -867,7 +872,7 @@ class Order extends Model
     /**
      * Get daily revenue breakdown for a date range.
      */
-    public static function getDailyRevenue(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
+    public static function getDailyRevenue(\DateTimeInterface $from, \DateTimeInterface $until): Collection
     {
         return static::createdBetween($from, $until)
             ->selectRaw('DATE(created_at) as date')
@@ -883,7 +888,7 @@ class Order extends Model
     /**
      * Get monthly revenue breakdown for a date range.
      */
-    public static function getMonthlyRevenue(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
+    public static function getMonthlyRevenue(\DateTimeInterface $from, \DateTimeInterface $until): Collection
     {
         return static::createdBetween($from, $until)
             ->selectRaw('YEAR(created_at) as year')
@@ -907,7 +912,7 @@ class Order extends Model
      */
     public static function createFromCart(Cart $cart): self
     {
-        if (!$cart->converted_at) {
+        if (! $cart->converted_at) {
             throw new \InvalidArgumentException('Cart must be converted before creating an order');
         }
 
