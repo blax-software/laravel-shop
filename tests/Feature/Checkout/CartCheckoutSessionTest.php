@@ -615,4 +615,37 @@ class Session
     {
         self::$createCallback = null;
     }
+
+    #[Test]
+    public function line_item_names_the_chosen_price_only_when_enabled()
+    {
+        config(['shop.stripe.enabled' => true, 'services.stripe.secret' => 'sk_test_fake']);
+
+        $product = Product::factory()->create(['name' => 'Flat Art', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $product->id, 'purchasable_type' => Product::class,
+            'unit_amount' => 5000, 'currency' => 'EUR', 'is_default' => true, 'name' => 'A5',
+        ]);
+        $a4 = ProductPrice::factory()->create([
+            'purchasable_id' => $product->id, 'purchasable_type' => Product::class,
+            'unit_amount' => 7000, 'currency' => 'EUR', 'is_default' => false, 'name' => 'A4',
+        ]);
+
+        $this->cart->addToCart($a4, 1);
+
+        $names = [];
+        \Stripe\Checkout\Session::$createCallback = function ($params) use (&$names) {
+            $names[] = $params['line_items'][0]['price_data']['product_data']['name'];
+            $mock = new \stdClass;
+            $mock->id = 'mock_session_id';
+
+            return $mock;
+        };
+
+        $this->cart->checkoutSession(['success_url' => 'https://example.com/s', 'cancel_url' => 'https://example.com/c']);
+        config(['shop.stripe.line_item_price_name' => true]);
+        $this->cart->checkoutSession(['success_url' => 'https://example.com/s', 'cancel_url' => 'https://example.com/c']);
+
+        $this->assertSame(['Flat Art', 'Flat Art – A4'], $names);
+    }
 }

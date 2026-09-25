@@ -2459,6 +2459,13 @@ class Cart extends Model
 
             // Get product name (use short_description if available, otherwise name)
             $productName = $product->name ?? 'Product ['.$product->id.']';
+
+            // Optionally name the chosen option ("Flat Art – A4"), so a product sold in
+            // several prices shows the buyer which one they pay for (shop.stripe.line_item_price_name).
+            $priceName = trim((string) ($priceModel?->name ?? ''));
+            if ($priceName !== '' && config('shop.stripe.line_item_price_name', false)) {
+                $productName .= ' – '.$priceName;
+            }
             $description = $product->short_description ?? null;
 
             // Build description with booking dates if available

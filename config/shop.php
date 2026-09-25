@@ -193,6 +193,10 @@ return [
         'sync_prices' => true,
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
 
+        // Append the price's name to the Checkout line item ("Flat Art – A4") when a
+        // product is sold in several named prices. Off by default.
+        'line_item_price_name' => env('SHOP_STRIPE_LINE_ITEM_PRICE_NAME', false),
+
         // Webhook events that the shop package listens for
         // You can customize this list to add/remove events as needed
         'webhook_events' => [
