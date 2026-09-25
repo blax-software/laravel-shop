@@ -1034,6 +1034,22 @@ class Cart extends Model
             $is_booking = $cartable->purchasable->isBooking();
         }
 
+        // Price options (shop.cart.prices_as_options): a ProductPrice of a plain Product is
+        // stored as that Product with the chosen price_id, so the cart, the checkout line and
+        // the invoice show the product (and the option), not just the price row.
+        $itemPurchasable = $cartable;
+        $optionPrice = null;
+        if (
+            config('shop.cart.prices_as_options', false)
+            && $cartable instanceof ProductPrice
+            && $cartable->purchasable instanceof Product
+            && ! $is_pool
+            && ! $is_booking
+        ) {
+            $optionPrice = $cartable;
+            $itemPurchasable = $cartable->purchasable;
+        }
+
         if ($is_booking) {
             // Extract dates from parameters if not provided directly
             if (! $from && isset($parameters['from'])) {
@@ -1225,8 +1241,9 @@ class Cart extends Model
 
         // Check if item already exists in cart with same parameters, dates, AND price
         $existingItem = $this->items()
-            ->where('purchasable_id', $cartable->getKey())
-            ->where('purchasable_type', get_class($cartable))
+            ->where('purchasable_id', $itemPurchasable->getKey())
+            ->where('purchasable_type', get_class($itemPurchasable))
+            ->when($optionPrice, fn ($q) => $q->where('price_id', $optionPrice->getKey()))
             ->get()
             ->first(function ($item) use ($parameters, $from, $until, $cartable, $poolPriceId, $is_pool) {
                 $existingParams = is_array($item->parameters)
@@ -1400,8 +1417,8 @@ class Cart extends Model
 
         // Create new cart item
         $cartItem = $this->items()->create([
-            'purchasable_id' => $cartable->getKey(),
-            'purchasable_type' => get_class($cartable),
+            'purchasable_id' => $itemPurchasable->getKey(),
+            'purchasable_type' => get_class($itemPurchasable),
             'product_id' => ($cartable instanceof Product && $cartable->isPool() && $poolSingleItem) ? $poolSingleItem->id : null,
             'price_id' => $priceId,
             'quantity' => $quantity,

@@ -240,6 +240,10 @@ return [
 
     // Cart configuration
     'cart' => [
+        // Adding a ProductPrice of a plain product stores the product with that price as the
+        // line (name, photo, checkout, invoice show the product and option). Off by default.
+        'prices_as_options' => env('SHOP_CART_PRICES_AS_OPTIONS', false),
+
         'expire_after_days' => 30,
         'auto_cleanup' => true,
         'merge_on_login' => true,

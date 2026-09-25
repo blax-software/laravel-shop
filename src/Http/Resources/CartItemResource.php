@@ -33,12 +33,18 @@ class CartItemResource extends JsonResource
             'regular_price' => $this->regular_price === null ? null : (int) $this->regular_price,
             'subtotal' => $this->subtotal === null ? null : (int) $this->subtotal,
             'currency' => $this->currency,
+            // The chosen price (a product sold in several options) and what the buyer
+            // attached to this line (e.g. a brief); both null/empty when unused.
+            'price_id' => $this->price_id,
+            'parameters' => (object) ((array) ($this->parameters ?? [])),
             'purchasable' => $purchasable ? [
                 'id' => $purchasable->getKey(),
                 'name' => $purchasable->name ?? null,
                 'slug' => $purchasable->slug ?? null,
                 'type' => $this->purchasableType($purchasable),
                 'image' => $this->resolveImage($purchasable),
+                // Virtual products (services, downloads) need no shipping.
+                'virtual' => (bool) ($purchasable->virtual ?? false),
             ] : null,
         ];
     }
