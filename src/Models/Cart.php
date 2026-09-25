@@ -2353,6 +2353,16 @@ class Cart extends Model
         });
     }
 
+    /** Whether the purchasable is sold in more than one price, i.e. the buyer picked an option. */
+    protected function sellsInOptions(mixed $purchasable): bool
+    {
+        if (! is_object($purchasable) || ! method_exists($purchasable, 'prices')) {
+            return false;
+        }
+
+        return $purchasable->prices()->count() > 1;
+    }
+
     /**
      * Resolve the Stripe `recurring` descriptor for a price, or null when the
      * price is one-time. Tolerates both the package's enum-cast model and a
@@ -2499,18 +2509,23 @@ class Cart extends Model
 
         foreach ($this->items as $item) {
             $product = $item->purchasable;
-            $priceModel = $item->price()->first();
+            $priceModel = $item->price()->first()
+                ?? ($product instanceof ProductPrice ? $product : null);
+
+            // A line added by price id holds the price itself: name it after its product.
+            $named = $product instanceof ProductPrice ? ($product->purchasable ?? $product) : $product;
 
             // Get product name (use short_description if available, otherwise name)
-            $productName = $product->name ?? 'Product ['.$product->id.']';
+            $productName = $named->name ?? 'Product ['.$named->id.']';
 
             // Optionally name the chosen option ("Flat Art – A4"), so a product sold in
             // several prices shows the buyer which one they pay for (shop.stripe.line_item_price_name).
+            // A product with a single price has no option to name ("… – Default").
             $priceName = trim((string) ($priceModel?->name ?? ''));
-            if ($priceName !== '' && config('shop.stripe.line_item_price_name', false)) {
+            if ($priceName !== '' && config('shop.stripe.line_item_price_name', false) && $this->sellsInOptions($named)) {
                 $productName .= ' – '.$priceName;
             }
-            $description = $product->short_description ?? null;
+            $description = $named->short_description ?? null;
 
             // Build description with booking dates if available
             if ($item->from && $item->until) {
