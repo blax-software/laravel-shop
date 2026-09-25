@@ -86,6 +86,18 @@ class CartService
             'customer_type' => null,
         ]);
 
+        // A cart that became an order keeps its row but lets go of the session
+        // (session_id is unique), so the guest shops on with an empty cart.
+        if ($cart->isConverted()) {
+            $cart->update(['session_id' => 'converted_'.$cart->getKey()]);
+
+            $cart = Cart::create([
+                'session_id' => $sessionId,
+                'customer_id' => null,
+                'customer_type' => null,
+            ]);
+        }
+
         // Store cart ID in session
         Cart::setSession($cart);
 

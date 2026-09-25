@@ -12,4 +12,5 @@ return [
     'checkout_failed' => 'Checkout could not be started.',
     'checkout_unavailable' => 'Checkout is currently unavailable.',
     'checkout_created' => 'Redirecting to payment.',
+    'confirm_failed' => 'We could not check your payment. Please try again in a moment.',
 ];

@@ -13,6 +13,7 @@ use Blax\Shop\Models\OrderNote;
 use Blax\Shop\Models\Product;
 use Blax\Shop\Models\ProductPurchase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Stripe;
@@ -114,7 +115,24 @@ class StripeWebhookController
     }
 
     /**
+     * Fulfil a completed Checkout Session outside the webhook, e.g. when the
+     * buyer lands on the success page before Stripe's event does. Same code
+     * path (and lock) as `checkout.session.completed`, so whichever comes
+     * first creates the order and the other finds it done.
+     */
+    public function completeCheckoutSession($session): bool
+    {
+        return $this->handleCheckoutSessionCompleted($session);
+    }
+
+    /**
      * Handle checkout.session.completed event
+     *
+     * Idempotent: Stripe delivers events at least once, and the success page
+     * may fulfil the same session (completeCheckoutSession). Runs under a lock
+     * per payment, records the payment once, and only when Stripe reports the
+     * session paid (async methods complete `unpaid` first and settle later via
+     * checkout.session.async_payment_succeeded).
      */
     protected function handleCheckoutSessionCompleted($session): bool
     {
@@ -126,13 +144,31 @@ class StripeWebhookController
             return false;
         }
 
-        $cart = Cart::find($cartId);
-        if (! $cart) {
+        if (! Cart::find($cartId)) {
             Log::warning('Stripe checkout session for non-existent cart', ['cart_id' => $cartId]);
 
             return false;
         }
 
+        return $this->withPaymentLock($session->payment_intent ?? "cart:{$cartId}", function () use ($cartId, $session) {
+            return $this->fulfilCheckoutSession(Cart::find($cartId), $session);
+        });
+    }
+
+    /**
+     * Run $callback while holding the lock for one payment, so concurrent
+     * deliveries (checkout.session.completed, charge.succeeded, the success
+     * page) never both create an order or record the same payment twice.
+     * A lock that can't be had in time throws, and Stripe retries the event.
+     */
+    protected function withPaymentLock(string $key, callable $callback): mixed
+    {
+        return Cache::lock("shop:stripe-payment:{$key}", 60)->block(20, $callback);
+    }
+
+    /** checkout.session.completed for a cart that exists; see handleCheckoutSessionCompleted(). */
+    protected function fulfilCheckoutSession(Cart $cart, $session): bool
+    {
         // Only update if not already converted
         if ($cart->status !== CartStatus::CONVERTED) {
             $cart->update([
@@ -176,6 +212,22 @@ class StripeWebhookController
         // Stripe provides amounts in cents, which matches our storage format
         $amountPaid = (int) ($session->amount_total ?? 0);
         $currency = strtoupper($session->currency ?? $order->currency ?? 'USD');
+
+        $order->refresh();
+        $settled = in_array($session->payment_status ?? 'paid', ['paid', 'no_payment_required'], true);
+        $recorded = $order->paid_at
+            || ($session->payment_intent && $order->payment_reference === $session->payment_intent && $order->amount_paid > 0);
+
+        if (! $settled || $recorded) {
+            Log::info('Stripe checkout session: no payment to record', [
+                'order_id' => $order->id,
+                'session_id' => $session->id,
+                'payment_status' => $session->payment_status ?? null,
+                'already_recorded' => (bool) $recorded,
+            ]);
+
+            return true;
+        }
 
         // recordPayment(int $amount, ?string $reference, ?string $method, ?string $provider)
         $order->recordPayment($amountPaid, $session->payment_intent, 'stripe', 'stripe');
@@ -406,9 +458,14 @@ class StripeWebhookController
             }
         }
 
-        // Try to find related order via payment_intent
-        $order = $this->findOrderByPaymentIntent($charge->payment_intent);
-        if ($order) {
+        // Try to find related order via payment_intent. Under the payment lock: a
+        // checkout.session.completed for the same payment may be recording it right now.
+        $this->withPaymentLock($charge->payment_intent ?? "charge:{$charge->id}", function () use ($charge) {
+            $order = $this->findOrderByPaymentIntent($charge->payment_intent);
+            if (! $order) {
+                return;
+            }
+
             // Remember the charge so ledger rows (source_id = ch_…) can be matched to the order.
             if ($order->getMeta('stripe_charge_id') !== $charge->id) {
                 $order->updateMetaKey('stripe_charge_id', $charge->id);
@@ -418,7 +475,7 @@ class StripeWebhookController
                 // Stripe amounts are cents, like every amount_* column.
                 $order->recordPayment((int) $charge->amount, $charge->id, 'stripe', 'stripe');
             }
-        }
+        });
 
         $this->syncLedger($charge->id);
 

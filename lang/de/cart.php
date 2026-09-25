@@ -12,4 +12,5 @@ return [
     'checkout_failed' => 'Der Checkout konnte nicht gestartet werden.',
     'checkout_unavailable' => 'Der Checkout ist derzeit nicht verfügbar.',
     'checkout_created' => 'Du wirst zur Zahlung weitergeleitet.',
+    'confirm_failed' => 'Wir konnten deine Zahlung gerade nicht prüfen. Bitte versuch es gleich noch einmal.',
 ];

@@ -8,6 +8,7 @@ use Blax\Shop\Enums\CartStatus;
 use Blax\Shop\Exceptions\NotEnoughStockException;
 use Blax\Shop\Facades\Cart as CartFacade;
 use Blax\Shop\Http\Resources\CartResource;
+use Blax\Shop\Services\StripeCheckoutConfirmation;
 
 /**
  * Reusable storefront cart controller over the Blax WebSocket bridge.
@@ -169,6 +170,49 @@ class CartController extends \BlaxSoftware\LaravelWebSockets\Websocket\Controlle
         return $this->success([
             'message' => __('shop::cart.checkout_created'),
             'redirect' => $url,
+        ]);
+    }
+
+    /**
+     * `cart.confirm {session_id}` → `{ status, order: {id, order_number, status}|null, cart }`
+     *
+     * The buyer is back from Stripe Checkout (the success URL carries
+     * `session_id`). Settles the session through the webhook's code path, see
+     * {@see StripeCheckoutConfirmation} for the statuses. `cart` is the cart
+     * this connection shops with now: a fresh one once the old cart became an
+     * order, so the client can swap its stored cart id right away.
+     */
+    public function confirm()
+    {
+        $data = request()->validate([
+            'session_id' => 'required|string|max:255',
+        ]);
+
+        try {
+            $result = app(StripeCheckoutConfirmation::class)->confirm($data['session_id']);
+        } catch (\Throwable $e) {
+            return $this->error([
+                'message' => __('shop::cart.confirm_failed'),
+                'detail' => $e->getMessage(),
+            ]);
+        }
+
+        $order = $result['order'];
+
+        // booted() adopted the client's cart before the payment was settled; a
+        // converted cart hands this connection a fresh one.
+        if ($this->cart->isConverted()) {
+            $this->cart = CartFacade::adopt(null, $this->connection->socketId);
+        }
+
+        return $this->success([
+            'status' => $result['status'],
+            'order' => $order ? [
+                'id' => $order->getKey(),
+                'order_number' => $order->order_number,
+                'status' => $order->status,
+            ] : null,
+            'cart' => CartResource::make($this->cart->fresh()),
         ]);
     }
 

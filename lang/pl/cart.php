@@ -12,4 +12,5 @@ return [
     'checkout_failed' => 'Nie udało się rozpocząć płatności.',
     'checkout_unavailable' => 'Płatność jest obecnie niedostępna.',
     'checkout_created' => 'Przekierowujemy do płatności.',
+    'confirm_failed' => 'Nie udało się sprawdzić płatności. Spróbuj ponownie za chwilę.',
 ];

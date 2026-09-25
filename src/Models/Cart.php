@@ -2430,11 +2430,38 @@ class Cart extends Model
         // Validate cart before proceeding (doesn't convert it)
         $this->validateForCheckout();
 
-        // Create ProductPurchase records for each cart item
+        // Create ProductPurchase records for each cart item. A buyer who left an
+        // earlier session (cancel, back button) may have changed the cart since:
+        // pending purchases follow the lines as they are now, and the ones whose
+        // line is gone are dropped, so the order paid for is the cart on screen.
         DB::transaction(function () {
+            $this->unsetRelation('items');
+            $linked = $this->items->pluck('purchase_id')->filter()->all();
+
+            ProductPurchase::query()
+                ->where('cart_id', $this->id)
+                ->where('status', PurchaseStatus::PENDING)
+                ->whereNotIn('id', $linked)
+                ->delete();
+
             foreach ($this->items as $item) {
-                // Skip if purchase already exists
-                if ($item->purchase_id) {
+                $existing = $item->purchase_id ? ProductPurchase::find($item->purchase_id) : null;
+
+                if ($existing && $existing->status === PurchaseStatus::PENDING) {
+                    $existing->update([
+                        'price_id' => $item->price_id,
+                        'quantity' => $item->quantity,
+                        'amount' => $item->subtotal,
+                        'from' => $item->from,
+                        'until' => $item->until,
+                        'meta' => $item->meta,
+                    ]);
+
+                    continue;
+                }
+
+                // Skip if purchase already exists (and is past pending)
+                if ($existing) {
                     continue;
                 }
 
