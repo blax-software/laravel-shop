@@ -57,8 +57,13 @@ class AuthController extends \BlaxSoftware\LaravelWebSockets\Websocket\Controlle
             }
         }
 
-        // Path 2: email + password → new token.
-        if (! Auth::check() && isset($data['email'], $data['password']) && Auth::attempt($data)) {
+        // Path 2: email + password → new token. Only these two keys are credentials:
+        // a stale `token` riding along would become `where token = …` on users.
+        if (
+            ! Auth::check()
+            && isset($data['email'], $data['password'])
+            && Auth::attempt(['email' => $data['email'], 'password' => $data['password']])
+        ) {
             $user = Auth::user();
 
             if (method_exists($user, 'createToken')) {
