@@ -200,10 +200,11 @@ class CartController extends \BlaxSoftware\LaravelWebSockets\Websocket\Controlle
         $order = $result['order'];
 
         // booted() adopted the client's cart before the payment was settled; a
-        // converted cart hands this connection a fresh one.
-        if ($this->cart->isConverted()) {
-            $this->cart = CartFacade::adopt(null, $this->connection->socketId);
-        }
+        // cart that became an order since hands this connection a fresh one.
+        $current = $this->cart->fresh();
+        $this->cart = ($current && ! $current->isConverted())
+            ? $current
+            : CartFacade::adopt(null, $this->connection->socketId);
 
         return $this->success([
             'status' => $result['status'],
@@ -212,7 +213,7 @@ class CartController extends \BlaxSoftware\LaravelWebSockets\Websocket\Controlle
                 'order_number' => $order->order_number,
                 'status' => $order->status,
             ] : null,
-            'cart' => CartResource::make($this->cart->fresh()),
+            'cart' => CartResource::make($this->cart),
         ]);
     }
 
