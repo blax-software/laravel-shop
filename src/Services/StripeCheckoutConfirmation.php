@@ -7,6 +7,7 @@ namespace Blax\Shop\Services;
 use Blax\Shop\Http\Controllers\StripeWebhookController;
 use Blax\Shop\Models\Cart;
 use Blax\Shop\Models\Order;
+use Illuminate\Support\Facades\Log;
 use Stripe\StripeClient;
 
 /**
@@ -66,11 +67,63 @@ class StripeCheckoutConfirmation
 
         $cart = $cart->fresh();
 
+        if ($status === self::PAID && $cart?->order) {
+            $this->linkCharge($cart->order, data_get($session, 'payment_intent'));
+        }
+
         return [
             'status' => $status,
             'order' => $cart?->order,
             'cart' => $cart,
         ];
+    }
+
+    /**
+     * What charge.succeeded does, for a shop that gets no webhooks (local dev,
+     * a misconfigured endpoint): remember the charge on the order and pull its
+     * balance transactions into the ledger (when shop.ledger.sync_on_webhook).
+     * Idempotent, and never fails the confirmation.
+     */
+    protected function linkCharge(Order $order, mixed $paymentIntent): void
+    {
+        $paymentIntentId = is_object($paymentIntent) ? ($paymentIntent->id ?? null) : $paymentIntent;
+
+        if (! is_string($paymentIntentId) || ! str_starts_with($paymentIntentId, 'pi_')) {
+            return;
+        }
+
+        try {
+            $chargeId = $order->getMeta('stripe_charge_id') ?: $this->latestCharge($paymentIntentId);
+
+            if (! is_string($chargeId) || $chargeId === '') {
+                return;
+            }
+
+            if ($order->getMeta('stripe_charge_id') !== $chargeId) {
+                $order->updateMetaKey('stripe_charge_id', $chargeId);
+            }
+
+            if (config('shop.ledger.sync_on_webhook')) {
+                app(ShopService::class)->syncLedgerForCharge($chargeId);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[shop] checkout confirmation could not link the charge', [
+                'order_id' => $order->getKey(),
+                'payment_intent' => $paymentIntentId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** The PaymentIntent's charge id (overridable for tests). */
+    protected function latestCharge(string $paymentIntentId): ?string
+    {
+        $intent = (new StripeClient((string) config('services.stripe.secret')))
+            ->paymentIntents->retrieve($paymentIntentId);
+
+        $charge = $intent->latest_charge ?? null;
+
+        return is_object($charge) ? ($charge->id ?? null) : $charge;
     }
 
     /** The Checkout Session from Stripe (overridable for tests). */

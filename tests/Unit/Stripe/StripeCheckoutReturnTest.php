@@ -3,7 +3,6 @@
 namespace Blax\Shop\Tests\Unit\Stripe;
 
 use Blax\Shop\Enums\OrderStatus;
-use Blax\Shop\Enums\PurchaseStatus;
 use Blax\Shop\Facades\Cart as CartFacade;
 use Blax\Shop\Http\Controllers\StripeWebhookController;
 use Blax\Shop\Models\Cart;
@@ -99,7 +98,25 @@ class StripeCheckoutReturnTest extends TestCase
             {
                 return $this->session;
             }
+
+            protected function latestCharge(string $paymentIntentId): ?string
+            {
+                return 'ch_for_'.$paymentIntentId;
+            }
         };
+    }
+
+    #[Test]
+    public function confirming_a_paid_session_remembers_the_charge_like_the_charge_webhook()
+    {
+        config(['shop.ledger.sync_on_webhook' => false]);
+
+        $cart = $this->guestCartWith($this->product(1000), 1);
+        $session = $this->stripeSession($cart);
+
+        $order = $this->confirmation($session)->confirm($session->id)['order'];
+
+        $this->assertSame('ch_for_'.$session->payment_intent, $order->fresh()->getMeta('stripe_charge_id'));
     }
 
     #[Test]
