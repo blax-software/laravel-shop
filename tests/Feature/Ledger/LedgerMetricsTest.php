@@ -169,6 +169,80 @@ class LedgerMetricsTest extends TestCase
     }
 
     #[Test]
+    public function paypal_payment_counts_the_charge_gross_not_stripes_zero(): void
+    {
+        // PayPal settles into the merchant's PayPal balance: Stripe's balance
+        // transaction is amount 0 with only the fee (real prod shape).
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_pp1', 'type' => 'payment', 'reporting_category' => 'charge',
+            'amount' => 0, 'fee' => 14, 'net' => -14, 'currency' => 'eur', 'created' => 1730000000,
+            'source' => (object) [
+                'id' => 'py_pp1', 'object' => 'charge', 'amount' => 2040, 'amount_captured' => 2040,
+                'currency' => 'eur', 'customer' => 'cus_P', 'billing_details' => (object) ['email' => 'p@x.io'],
+            ],
+        ]);
+
+        $row = StripeTransaction::where('stripe_id', 'txn_pp1')->firstOrFail();
+        $this->assertSame(2040, $row->amount);
+        $this->assertSame(14, $row->fee);
+        $this->assertSame(2026, $row->net);
+        $this->assertTrue($row->meta->settled_outside_stripe);
+        $this->assertSame(0, $row->meta->stripe_amount);
+        $this->assertSame(-14, $row->meta->stripe_net);
+        $this->assertSame(2040, Shop::customerLedgerTotals('cus_P')['amount']);
+    }
+
+    #[Test]
+    public function paypal_refund_from_the_webhook_charge_nets_against_the_buyer(): void
+    {
+        // The webhook passes the retrieved charge as the source for its refunds;
+        // the refund is matched on the charge by balance transaction id.
+        $charge = (object) [
+            'id' => 'py_pp2', 'object' => 'charge', 'amount' => 2040, 'amount_captured' => 2040,
+            'currency' => 'eur', 'customer' => 'cus_Q',
+            'refunds' => (object) ['data' => [
+                (object) ['id' => 'pyr_other', 'amount' => 999, 'currency' => 'eur', 'balance_transaction' => 'txn_other'],
+                (object) ['id' => 'pyr_1', 'amount' => 500, 'currency' => 'eur', 'balance_transaction' => (object) ['id' => 'txn_ppr1']],
+            ]],
+        ];
+
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_pp2', 'type' => 'payment', 'amount' => 0, 'fee' => 14, 'net' => -14,
+            'currency' => 'eur', 'created' => 1730000000,
+        ], $charge);
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_ppr1', 'type' => 'payment_refund', 'amount' => 0, 'fee' => 0, 'net' => 0,
+            'currency' => 'eur', 'created' => 1730000100,
+        ], $charge);
+
+        $this->assertSame(-500, StripeTransaction::where('stripe_id', 'txn_ppr1')->value('amount'));
+        $this->assertSame(1540, Shop::customerLedgerTotals('cus_Q')['amount']);
+    }
+
+    #[Test]
+    public function zero_amount_rows_without_a_paid_charge_stay_zero(): void
+    {
+        // No expanded charge to read from, or a charge that captured nothing:
+        // keep Stripe's figures as they are.
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_z1', 'type' => 'payment', 'amount' => 0, 'fee' => 14, 'net' => -14,
+            'currency' => 'eur', 'created' => 1730000000, 'source' => 'py_unexpanded',
+        ]);
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_z2', 'type' => 'payment', 'amount' => 0, 'fee' => 14, 'net' => -14,
+            'currency' => 'eur', 'created' => 1730000000,
+            'source' => (object) ['id' => 'py_z2', 'object' => 'charge', 'amount' => 2040, 'amount_captured' => 0],
+        ]);
+
+        foreach (['txn_z1', 'txn_z2'] as $id) {
+            $row = StripeTransaction::where('stripe_id', $id)->firstOrFail();
+            $this->assertSame(0, $row->amount);
+            $this->assertSame(-14, $row->net);
+            $this->assertObjectNotHasProperty('settled_outside_stripe', $row->meta);
+        }
+    }
+
+    #[Test]
     public function sync_ledger_for_charge_ignores_non_charge_ids(): void
     {
         // Guard returns before any Stripe call for null / empty / non-ch_ ids.

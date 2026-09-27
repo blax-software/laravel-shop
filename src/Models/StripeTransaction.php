@@ -11,6 +11,11 @@ use Illuminate\Database\Eloquent\Model;
  * One row per Stripe BalanceTransaction — the immutable, user-independent money
  * ledger. Signed cents: refunds/disputes carry negative `amount`/`net`.
  *
+ * Payments that settle outside Stripe (PayPal pays into the merchant's PayPal
+ * balance) come from Stripe with `amount` 0 and only the fee. For those rows
+ * `amount` is the charge's gross and `net` is gross minus fee; Stripe's own
+ * figures stay in `meta` (`settled_outside_stripe`, `stripe_amount`, `stripe_net`).
+ *
  * @property string      $stripe_id
  * @property string|null $source_type
  * @property string|null $reporting_category

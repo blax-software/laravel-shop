@@ -1141,25 +1141,87 @@ class ShopService
                 ?? ($s->customer_email ?? null);
         }
 
+        $amount = (int) ($txn->amount ?? 0);
+        $fee = (int) ($txn->fee ?? 0);
+        $net = (int) ($txn->net ?? 0);
+        $currency = $txn->currency ?? null;
+        $meta = [
+            'status' => $txn->status ?? null,
+            'fee_details' => isset($txn->fee_details) ? json_decode(json_encode($txn->fee_details), true) : null,
+        ];
+
+        if ($external = $this->externallySettledAmount($txn, $source)) {
+            $meta['settled_outside_stripe'] = true;
+            $meta['stripe_amount'] = $amount;
+            $meta['stripe_net'] = $net;
+            [$amount, $currency] = [$external['amount'], $external['currency'] ?? $currency];
+            $net = $amount - $fee;
+        }
+
         return [
             'stripe_id' => $txn->id,
             'source_type' => $txn->type ?? null,
             'reporting_category' => $txn->reporting_category ?? null,
             'source_id' => $sourceId,
-            'amount' => (int) ($txn->amount ?? 0),
-            'fee' => (int) ($txn->fee ?? 0),
-            'net' => (int) ($txn->net ?? 0),
-            'currency' => $txn->currency ?? null,
+            'amount' => $amount,
+            'fee' => $fee,
+            'net' => $net,
+            'currency' => $currency,
             'customer_id' => is_string($customerId) ? $customerId : null,
             'customer_email' => is_string($customerEmail) ? $customerEmail : null,
             'description' => $txn->description ?? null,
             'created' => isset($txn->created) ? Carbon::createFromTimestamp($txn->created) : null,
             'available_on' => isset($txn->available_on) ? Carbon::createFromTimestamp($txn->available_on) : null,
-            'meta' => [
-                'status' => $txn->status ?? null,
-                'fee_details' => isset($txn->fee_details) ? json_decode(json_encode($txn->fee_details), true) : null,
-            ],
+            'meta' => $meta,
         ];
+    }
+
+    /**
+     * Signed gross for a payment or refund that settled outside the Stripe
+     * balance, or null when Stripe's own `amount` already holds it.
+     *
+     * PayPal pays into the merchant's PayPal balance, so its balance transaction
+     * carries amount 0 and only Stripe's fee. The buyer still paid the charge's
+     * full amount, so read it off the charge (or refund) instead. `$source` is
+     * whatever the caller resolved: the expanded charge/refund from the importer,
+     * or the charge the webhook retrieved (for a refund, the matching refund is
+     * looked up on it by balance transaction id).
+     *
+     * @return array{amount: int, currency: string|null}|null
+     */
+    protected function externallySettledAmount($txn, $source): ?array
+    {
+        if ((int) ($txn->amount ?? 0) !== 0 || ! is_object($source)) {
+            return null;
+        }
+
+        $kind = $source->object ?? null;
+        $type = $txn->type ?? null;
+
+        if (in_array($type, ['charge', 'payment'], true) && $kind === 'charge') {
+            $gross = (int) ($source->amount_captured ?? $source->amount ?? 0);
+
+            return $gross > 0 ? ['amount' => $gross, 'currency' => $source->currency ?? null] : null;
+        }
+
+        if (! in_array($type, ['refund', 'payment_refund'], true)) {
+            return null;
+        }
+
+        $refund = $kind === 'refund' ? $source : null;
+        if ($kind === 'charge') {
+            foreach (($source->refunds->data ?? []) as $r) {
+                $btId = is_object($r->balance_transaction ?? null) ? $r->balance_transaction->id : ($r->balance_transaction ?? null);
+                if ($btId === $txn->id) {
+                    $refund = $r;
+                    break;
+                }
+            }
+        }
+
+        $refunded = (int) ($refund->amount ?? 0);
+
+        return $refunded > 0 ? ['amount' => -$refunded, 'currency' => $refund->currency ?? null] : null;
     }
 
     /**
@@ -1199,7 +1261,8 @@ class ShopService
      */
     public function syncLedgerForCharge(?string $chargeId): int
     {
-        if (! is_string($chargeId) || $chargeId === '' || ! str_starts_with($chargeId, 'ch_')) {
+        // ch_ = card and most methods; py_ = PayPal and other "payment" charges.
+        if (! is_string($chargeId) || ! (str_starts_with($chargeId, 'ch_') || str_starts_with($chargeId, 'py_'))) {
             return 0;
         }
 
