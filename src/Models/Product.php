@@ -96,6 +96,18 @@ class Product extends Model implements Purchasable, Cartable
 {
     use HasFactory, HasUuids, HasMetaTranslation, HasStocks, HasPrices, HasPricingStrategy, HasCategories, HasProductRelations, MayBePoolProduct, MayBeLoanableProduct, ChecksIfBooking;
 
+    /**
+     * Tax class of a multi-purpose voucher: a voucher (gift card, store credit) that
+     * pays for any product. Under EU VAT (Directive 2006/112/EC Art. 30a/30b; in
+     * Germany § 3 Abs. 15 UStG) selling it is not a taxable supply: VAT is due only
+     * when it is redeemed, on the full price of what it pays for, because the voucher
+     * is a means of payment there, not a discount. So no tax rate applies when it is
+     * sold ({@see \Blax\Shop\Services\TaxService::ratesFor()}). A single-purpose
+     * voucher (one product, VAT known at sale) is taxed at sale like the product and
+     * keeps its normal tax class.
+     */
+    public const TAX_CLASS_MULTI_PURPOSE_VOUCHER = 'multi-purpose-voucher';
+
     protected $fillable = [
         'slug',
         'sku',
@@ -543,6 +555,12 @@ class Product extends Model implements Purchasable, Cartable
                 ->orWhere('sku', 'like', "%{$search}%")
                 ->orWhere('name', 'like', "%{$search}%");
         });
+    }
+
+    /** A multi-purpose voucher: sold without VAT, taxed when redeemed ({@see TAX_CLASS_MULTI_PURPOSE_VOUCHER}). */
+    public function isMultiPurposeVoucher(): bool
+    {
+        return $this->tax_class === self::TAX_CLASS_MULTI_PURPOSE_VOUCHER;
     }
 
     public function isVisible(): bool

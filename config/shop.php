@@ -161,6 +161,10 @@ return [
             static fn ($id) => $id !== '',
         )),
         'require' => (bool) env('SHOP_TAX_REQUIRE', false),
+        // Product tax classes whose SALE carries no VAT (TaxService::ratesFor): a
+        // multi-purpose voucher is taxed when redeemed, not when sold (EU VAT
+        // Directive Art. 30b, DE § 3 Abs. 15 UStG). See Product::TAX_CLASS_*.
+        'untaxed_classes' => ['multi-purpose-voucher'],
     ],
 
     // API Routes configuration

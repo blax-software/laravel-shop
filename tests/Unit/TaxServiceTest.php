@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Blax\Shop\Tests\Unit;
 
 use Blax\Shop\Exceptions\TaxRateNotConfiguredException;
+use Blax\Shop\Models\Product;
 use Blax\Shop\Services\TaxService;
 use Blax\Shop\Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
@@ -64,5 +65,48 @@ class TaxServiceTest extends TestCase
             ['txr_a', 'txr_b'],
             TaxService::rates(false, ['txr_a', '', null, 0, false, 'txr_b']),
         );
+    }
+
+    #[Test]
+    public function a_multi_purpose_voucher_is_sold_without_a_rate(): void
+    {
+        // Its sale is not a taxable supply; VAT is charged when it is redeemed.
+        config(['shop.tax.rates' => ['txr_19'], 'shop.tax.require' => true]);
+        $voucher = new Product(['tax_class' => Product::TAX_CLASS_MULTI_PURPOSE_VOUCHER]);
+
+        $this->assertTrue($voucher->isMultiPurposeVoucher());
+        $this->assertTrue(TaxService::untaxedAtSale($voucher));
+        $this->assertSame([], TaxService::ratesFor($voucher));
+        $this->assertSame([], TaxService::ratesFor($voucher, false, ['txr_19']));
+    }
+
+    #[Test]
+    public function a_taxable_product_gets_the_same_rates_as_rates(): void
+    {
+        config(['shop.tax.rates' => ['txr_19']]);
+        $course = new Product(['tax_class' => 'standard']);
+
+        $this->assertFalse($course->isMultiPurposeVoucher());
+        $this->assertSame(['txr_19'], TaxService::ratesFor($course));
+        $this->assertSame(['txr_x'], TaxService::ratesFor($course, false, ['txr_x']));
+        $this->assertSame(['txr_19'], TaxService::ratesFor(new Product()));
+        $this->assertSame(['txr_19'], TaxService::ratesFor(null));
+    }
+
+    #[Test]
+    public function an_exempt_customer_stays_exempt_for_a_taxable_product(): void
+    {
+        config(['shop.tax.rates' => ['txr_19']]);
+
+        $this->assertSame([], TaxService::ratesFor(new Product(['tax_class' => 'standard']), true));
+    }
+
+    #[Test]
+    public function the_untaxed_classes_come_from_config(): void
+    {
+        config(['shop.tax.rates' => ['txr_19'], 'shop.tax.untaxed_classes' => ['gift-card']]);
+
+        $this->assertSame([], TaxService::ratesFor(new Product(['tax_class' => 'gift-card'])));
+        $this->assertSame(['txr_19'], TaxService::ratesFor(new Product(['tax_class' => Product::TAX_CLASS_MULTI_PURPOSE_VOUCHER])));
     }
 }
