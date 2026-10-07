@@ -90,6 +90,15 @@ return [
             'adjustment',
             'dispute',
             'dispute_reversal',
+            // A direct debit (SEPA, ACH) that bounced after it was booked as a
+            // payment: the gross comes back off, plus the failure fee.
+            'payment_failure_refund',
+            'refund_failure',
+            // Account-level Stripe fees (Billing, Tax, FX). Stored as fee with
+            // amount 0, so they lower net without counting as refunds.
+            'stripe_fee',
+            'stripe_fx_fee',
+            'tax_fee',
             // PayPal's own fee on a payment that settled in a PayPal account
             // (amount 0, net = -fee). See `paypal` below.
             'paypal_fee',

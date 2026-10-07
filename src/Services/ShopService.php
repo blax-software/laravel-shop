@@ -954,6 +954,7 @@ class ShopService
     {
         return config('shop.ledger.revenue_types', [
             'charge', 'payment', 'refund', 'payment_refund', 'adjustment', 'dispute', 'dispute_reversal',
+            'payment_failure_refund', 'refund_failure', 'stripe_fee', 'stripe_fx_fee', 'tax_fee', 'paypal_fee',
         ]);
     }
 
@@ -1207,6 +1208,16 @@ class ShopService
             $meta['stripe_net'] = $net;
             [$amount, $currency] = [$external['amount'], $external['currency'] ?? $currency];
             $net = $amount - $fee;
+        }
+
+        // Stripe books its account-level fees (Billing, Tax, FX) as a negative
+        // amount. Store them as a fee with amount 0, so they lower net but are
+        // not mistaken for refunds in the gross/refunds split.
+        if (in_array($txn->type ?? null, ['stripe_fee', 'stripe_fx_fee', 'tax_fee'], true) && $amount !== 0) {
+            $meta['stripe_amount'] = $amount;
+            $fee -= $amount;
+            $amount = 0;
+            $net = -$fee;
         }
 
         return [

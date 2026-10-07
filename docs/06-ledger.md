@@ -2,6 +2,8 @@
 
 The `stripe_transactions` table is a user-independent ledger of every money movement, one row per transaction in the account where it happened. Amounts are signed cents: `amount` is the gross, `fee` the provider's fee, `net = amount - fee`. Revenue figures (`Shop::ledgerTotals`, `revenueLedgerByDay`, `customerLedgerTotals`, `ledgerAmountByCustomer`) sum the rows whose `source_type` is in `shop.ledger.revenue_types`.
 
+Besides charges, refunds and disputes, the default revenue types include bounced direct debits (`payment_failure_refund`, `refund_failure`) and Stripe's account-level fees (`stripe_fee`, `stripe_fx_fee`, `tax_fee`). Stripe reports those fees as a negative amount; the ledger stores them as `fee` with amount 0, so they lower net without showing up as refunds.
+
 `provider` says which system a row comes from (`stripe`, `paypal`) and `account` which account of it (the PayPal merchant id; null for Stripe). `Shop::ledgerTotalsByAccount($from, $until)` splits the totals per account.
 
 ## Filling it

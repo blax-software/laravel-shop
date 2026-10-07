@@ -79,6 +79,41 @@ class LedgerMetricsTest extends TestCase
     }
 
     #[Test]
+    public function stripe_account_fees_count_as_fees_not_refunds(): void
+    {
+        // Stripe books Billing/Tax fees as a negative amount (real prod shape).
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_billing', 'type' => 'stripe_fee', 'reporting_category' => 'fee',
+            'amount' => -14, 'fee' => 0, 'net' => -14, 'currency' => 'eur', 'created' => strtotime('2025-10-01'),
+        ]);
+        $this->txn(['amount' => 2550, 'fee' => 104, 'net' => 2446]);
+
+        $row = StripeTransaction::where('stripe_id', 'txn_billing')->firstOrFail();
+        $this->assertSame(0, $row->amount);
+        $this->assertSame(14, $row->fee);
+        $this->assertSame(-14, $row->net);
+        $this->assertSame(-14, $row->meta->stripe_amount);
+
+        $totals = Shop::ledgerTotals(Carbon::parse('2025-01-01'), Carbon::parse('2026-12-31'));
+        $this->assertSame(2550, $totals['gross']);
+        $this->assertSame(0, $totals['refunds']);
+        $this->assertSame(118, $totals['fees']);
+        $this->assertSame(2432, $totals['net']);
+    }
+
+    #[Test]
+    public function a_bounced_direct_debit_takes_the_payment_back_with_its_fee(): void
+    {
+        // SEPA: booked as a payment, then failed with a 3.50 failure fee.
+        $this->txn(['source_type' => 'payment', 'amount' => 240, 'fee' => 35, 'net' => 205, 'customer_id' => 'cus_S']);
+        $this->txn(['source_type' => 'payment_failure_refund', 'amount' => -240, 'fee' => 315, 'net' => -555, 'customer_id' => 'cus_S']);
+
+        $totals = Shop::ledgerTotals(Carbon::parse('2025-01-01'), Carbon::parse('2026-12-31'));
+        $this->assertSame(-350, $totals['net']);
+        $this->assertSame(0, Shop::customerLedgerTotals('cus_S')['amount']);
+    }
+
+    #[Test]
     public function customer_totals_attribute_by_id_or_email(): void
     {
         // Two charges + a refund under one customer.
