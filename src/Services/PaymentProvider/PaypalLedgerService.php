@@ -172,7 +172,19 @@ class PaypalLedgerService
             return 'updated';
         }
 
-        $model::query()->create($row);
+        try {
+            $model::query()->create($row);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // A concurrent import (manual run during the scheduled one) inserted
+            // the same transaction first: update that row instead.
+            $existing = $model::query()->where('stripe_id', $row['stripe_id'])->first();
+            if (! $existing) {
+                throw $e;
+            }
+            $existing->fill($row)->save();
+
+            return 'updated';
+        }
 
         return 'created';
     }
