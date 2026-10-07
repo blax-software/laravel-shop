@@ -90,6 +90,35 @@ return [
             'adjustment',
             'dispute',
             'dispute_reversal',
+            // PayPal's own fee on a payment that settled in a PayPal account
+            // (amount 0, net = -fee). See `paypal` below.
+            'paypal_fee',
+        ],
+    ],
+
+    /*
+     * PayPal accounts that receive money (read-only, via the Transaction Search
+     * reporting API). `shop:import-paypal-ledger` mirrors each account into the
+     * same ledger as Stripe, with `provider` = paypal and `account` = the PayPal
+     * merchant id, so revenue sums every account the business is paid into.
+     *
+     * PayPal checkouts that run through Stripe settle into the PayPal account:
+     * Stripe's ledger row books the gross and Stripe's fee, the PayPal row adds
+     * PayPal's own fee (`paypal_fee`). Direct PayPal sales (not via Stripe) are
+     * booked in full as `payment`. The REST app needs the "Transaction search"
+     * permission; nothing is ever written to PayPal.
+     *
+     * Add one entry per account; an entry without credentials is skipped.
+     */
+    'paypal' => [
+        'base_url' => env('PAYPAL_BASE_URL', 'https://api-m.paypal.com'),
+
+        'accounts' => [
+            [
+                'name' => 'default',
+                'client_id' => env('PAYPAL_CLIENT_ID'),
+                'secret' => env('PAYPAL_SECRET'),
+            ],
         ],
     ],
 

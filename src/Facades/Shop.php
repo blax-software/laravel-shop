@@ -67,6 +67,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Illuminate\Support\Carbon|null ledgerEarliest()
  * @method static \Illuminate\Support\Collection revenueLedgerByDay(\DateTimeInterface $from, \DateTimeInterface $until)
  * @method static array ledgerTotals(\DateTimeInterface $from, \DateTimeInterface $until)
+ * @method static \Illuminate\Support\Collection ledgerTotalsByAccount(\DateTimeInterface $from, \DateTimeInterface $until)
  * @method static array customerLedgerTotals(string|array $customerIds = [], string|array $emails = [], ?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null)
  * @method static \Illuminate\Support\Collection ledgerAmountByCustomer(?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null)
  * @method static array ledgerRowFromBalanceTransaction($txn, $source = null)

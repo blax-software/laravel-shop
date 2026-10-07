@@ -1026,6 +1026,47 @@ class ShopService
     }
 
     /**
+     * {@see ledgerTotals} split per account the money moved through: one entry
+     * per `provider` + `account` (Stripe, each PayPal account). The entries sum
+     * to ledgerTotals. Before the provider columns are migrated everything is
+     * reported as the one Stripe account.
+     *
+     * @return \Illuminate\Support\Collection<int, array{provider: string, account: string|null, gross: int, refunds: int, fees: int, net: int, count: int}>
+     */
+    public function ledgerTotalsByAccount(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
+    {
+        $model = $this->ledgerModel();
+        $table = (new $model)->getTable();
+
+        if (! \Illuminate\Support\Facades\Schema::hasColumn($table, 'provider')) {
+            return collect([['provider' => 'stripe', 'account' => null] + $this->ledgerTotals($from, $until)]);
+        }
+
+        return $model::query()
+            ->whereBetween('created', [$from, $until])
+            ->whereIn('source_type', $this->ledgerRevenueTypes())
+            ->groupBy('provider', 'account')
+            ->select('provider', 'account')
+            ->selectRaw('SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as gross')
+            ->selectRaw('SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END) as refunds')
+            ->selectRaw('SUM(fee) as fees')
+            ->selectRaw('SUM(net) as net')
+            ->selectRaw('COUNT(*) as count')
+            ->orderBy('provider')
+            ->get()
+            ->map(fn ($r) => [
+                'provider' => (string) $r->provider,
+                'account' => $r->account,
+                'gross' => (int) $r->gross,
+                'refunds' => (int) $r->refunds,
+                'fees' => (int) $r->fees,
+                'net' => (int) $r->net,
+                'count' => (int) $r->count,
+            ])
+            ->values();
+    }
+
+    /**
      * Money one buyer actually paid us, attributed from the user-independent
      * ledger by ANY of their Stripe customer id(s) OR buyer email(s) — so a
      * customer whose local user was deleted, or who paid as a guest before
@@ -1149,6 +1190,16 @@ class ShopService
             'status' => $txn->status ?? null,
             'fee_details' => isset($txn->fee_details) ? json_decode(json_encode($txn->fee_details), true) : null,
         ];
+
+        // The PaymentIntent links this row to the same payment in another
+        // account's ledger (PayPal writes it into its custom field).
+        $paymentIntent = $source->payment_intent ?? $chargeSource->payment_intent ?? null;
+        if (is_object($paymentIntent)) {
+            $paymentIntent = $paymentIntent->id ?? null;
+        }
+        if (is_string($paymentIntent) && $paymentIntent !== '') {
+            $meta['payment_intent'] = $paymentIntent;
+        }
 
         if ($external = $this->externallySettledAmount($txn, $source)) {
             $meta['settled_outside_stripe'] = true;
