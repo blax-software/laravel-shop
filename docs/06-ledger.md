@@ -20,6 +20,8 @@ PAYPAL_CLIENT_ID=...
 PAYPAL_SECRET=...
 ```
 
+Set `shop.paypal.required` to true where PayPal must be counted: the import then throws when no account has credentials or an import fails, so the scheduler's failure handling reports it instead of the fees silently going uncounted.
+
 More accounts go into `shop.paypal.accounts` (publish the config), one entry each with `name`, `client_id`, `secret` and an optional `base_url` (`https://api-m.sandbox.paypal.com` for sandbox).
 
 ## How PayPal rows count

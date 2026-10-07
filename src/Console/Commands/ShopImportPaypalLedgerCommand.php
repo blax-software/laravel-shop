@@ -30,20 +30,31 @@ class ShopImportPaypalLedgerCommand extends Command
             $accounts = array_values(array_filter($accounts, fn ($a) => $a['name'] === $only));
         }
 
+        $required = (bool) config('shop.paypal.required', false);
+
         if (! $accounts) {
-            $this->info('No PayPal account configured (shop.paypal.accounts), nothing to import.');
+            $message = 'No PayPal account configured (shop.paypal.accounts), nothing to import.';
+            if ($required) {
+                throw new \RuntimeException($message . ' shop.paypal.required is on: set PAYPAL_CLIENT_ID and PAYPAL_SECRET.');
+            }
+            $this->info($message);
 
             return self::SUCCESS;
         }
 
         if (! $paypal->hasProviderColumns()) {
-            $this->error('The ledger table has no provider/account columns yet. Run the laravel-shop migrations first.');
+            $message = 'The ledger table has no provider/account columns yet. Run the laravel-shop migrations first.';
+            if ($required) {
+                throw new \RuntimeException($message);
+            }
+            $this->error($message);
 
             return self::FAILURE;
         }
 
         $dry = (bool) $this->option('dry-run');
         $failed = false;
+        $errors = [];
 
         foreach ($accounts as $account) {
             try {
@@ -54,6 +65,7 @@ class ShopImportPaypalLedgerCommand extends Command
                 $result = $paypal->import($account, $since, $dry);
             } catch (\Throwable $e) {
                 $this->error(sprintf('[%s] %s', $account['name'], $e->getMessage()));
+                $errors[] = sprintf('[%s] %s', $account['name'], $e->getMessage());
                 $failed = true;
 
                 continue;
@@ -92,6 +104,11 @@ class ShopImportPaypalLedgerCommand extends Command
                     ], array_keys($byType), $byType)
                 );
             }
+        }
+
+        // Every account was tried; now make a required import's failure loud.
+        if ($failed && $required) {
+            throw new \RuntimeException('PayPal ledger import failed: ' . implode('; ', $errors));
         }
 
         return $failed ? self::FAILURE : self::SUCCESS;

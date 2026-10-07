@@ -122,6 +122,14 @@ return [
     'paypal' => [
         'base_url' => env('PAYPAL_BASE_URL', 'https://api-m.paypal.com'),
 
+        /*
+         * When true, shop:import-paypal-ledger throws if no account has
+         * credentials or an account's import fails, so a scheduler failure
+         * alert fires instead of PayPal fees silently going uncounted. Off by
+         * default: an app without PayPal stays quiet.
+         */
+        'required' => false,
+
         'accounts' => [
             [
                 'name' => 'default',

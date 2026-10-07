@@ -257,6 +257,30 @@ class PaypalLedgerTest extends TestCase
     }
 
     #[Test]
+    public function a_required_import_throws_when_unconfigured_or_failing(): void
+    {
+        config()->set('shop.paypal.required', true);
+        config()->set('shop.paypal.accounts', [['name' => 'default', 'client_id' => null, 'secret' => null]]);
+
+        try {
+            $this->artisan('shop:import-paypal-ledger')->run();
+            $this->fail('an unconfigured required import must throw');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('PAYPAL_CLIENT_ID', $e->getMessage());
+        }
+
+        config()->set('shop.paypal.accounts', [['name' => 'main', 'client_id' => 'id', 'secret' => 'bad']]);
+        Http::fake(['*/v1/oauth2/token' => Http::response(['error' => 'invalid_client', 'error_description' => 'Client Authentication failed'], 401)]);
+
+        try {
+            $this->artisan('shop:import-paypal-ledger')->run();
+            $this->fail('a failing required import must throw');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Client Authentication failed', $e->getMessage());
+        }
+    }
+
+    #[Test]
     public function command_without_accounts_is_a_no_op(): void
     {
         config()->set('shop.paypal.accounts', [['name' => 'default', 'client_id' => null, 'secret' => null]]);
