@@ -70,9 +70,10 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Illuminate\Support\Collection ledgerTotalsByAccount(\DateTimeInterface $from, \DateTimeInterface $until)
  * @method static array customerLedgerTotals(string|array $customerIds = [], string|array $emails = [], ?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null)
  * @method static \Illuminate\Support\Collection ledgerAmountByCustomer(?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null)
- * @method static array ledgerRowFromBalanceTransaction($txn, $source = null)
+ * @method static array ledgerRowFromBalanceTransaction($txn, $source = null, bool $withTax = true)
  * @method static string recordBalanceTransaction($txn, $source = null)
  * @method static int syncLedgerForCharge(?string $chargeId)
+ * @method static array backfillLedgerTax(bool $dryRun = false, ?\DateTimeInterface $since = null, bool $recheck = false, ?callable $progress = null)
  *
  * Refunds:
  * @method static object refundOrder(\Blax\Shop\Models\Order $order, int $amount, ?string $reason = null, array $params = [])

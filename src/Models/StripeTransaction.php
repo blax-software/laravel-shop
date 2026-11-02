@@ -16,6 +16,12 @@ use Illuminate\Database\Eloquent\Model;
  * `amount` is the charge's gross and `net` is gross minus fee; Stripe's own
  * figures stay in `meta` (`settled_outside_stripe`, `stripe_amount`, `stripe_net`).
  *
+ * `tax` is the VAT inside `amount`, signed like it (a refund carries the
+ * refunded share of its charge's VAT). It comes from Stripe per charge (the
+ * invoice, else the Checkout Session); `meta.tax_source` says which (`invoice`,
+ * `checkout_session`, or `none` when Stripe holds no VAT data for the charge).
+ * NULL = unknown.
+ *
  * @property string      $stripe_id
  * @property string|null $source_type
  * @property string|null $reporting_category
@@ -23,6 +29,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int         $amount
  * @property int         $fee
  * @property int         $net
+ * @property int|null    $tax
  * @property string|null $currency
  * @property string|null $customer_id
  * @property string|null $customer_email
@@ -41,6 +48,7 @@ class StripeTransaction extends Model
         'amount' => 'integer',
         'fee' => 'integer',
         'net' => 'integer',
+        'tax' => 'integer',
         'created' => 'datetime',
         'available_on' => 'datetime',
         'meta' => 'object',

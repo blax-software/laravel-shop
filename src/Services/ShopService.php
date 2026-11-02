@@ -24,6 +24,14 @@ use Stripe\Stripe;
 
 class ShopService
 {
+    /** Charge VAT per charge id / `pi:` payment intent, for one process. */
+    protected array $ledgerVatCache = [];
+
+    /** Retrieved invoices and Checkout Sessions, for one process. */
+    protected array $ledgerStripeCache = [];
+
+    protected bool $ledgerTaxColumn = false;
+
     // =========================================================================
     // PRODUCT QUERIES
     // =========================================================================
@@ -975,9 +983,11 @@ class ShopService
      * One row per day with signed `gross` (SUM amount), `fee` (SUM fee) and
      * `net` (SUM net = the money kept after fees and refunds) plus the row
      * `count`. Refund/dispute days push `gross`/`net` down. Feed the `net`
-     * column into a cumulative sum for a break-even balance line.
+     * column into a cumulative sum for a break-even balance line. `tax` is the
+     * signed VAT inside `gross` (rows with unknown VAT count as 0), so
+     * `net - tax` is the day's money kept without VAT.
      *
-     * @return \Illuminate\Support\Collection<int, object{date: string, gross: int, fee: int, net: int, count: int}>
+     * @return \Illuminate\Support\Collection<int, object{date: string, gross: int, fee: int, net: int, count: int, tax: int}>
      */
     public function revenueLedgerByDay(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
     {
@@ -985,6 +995,7 @@ class ShopService
             ->whereBetween('created', [$from, $until])
             ->whereIn('source_type', $this->ledgerRevenueTypes())
             ->selectRaw('DATE(created) as date, SUM(amount) as gross, SUM(fee) as fee, SUM(net) as net, COUNT(*) as count')
+            ->selectRaw($this->ledgerTaxSumSql())
             ->groupBy('date')
             ->orderBy('date')
             ->get()
@@ -994,6 +1005,7 @@ class ShopService
                 'fee' => (int) $r->fee,
                 'net' => (int) $r->net,
                 'count' => (int) $r->count,
+                'tax' => (int) $r->tax,
             ]);
     }
 
@@ -1001,8 +1013,11 @@ class ShopService
      * Window totals over the revenue-bearing ledger, in cents: gross sales
      * (positive charge lines), the negative refund total, Stripe fees, and the
      * resulting net collected. `count` is the number of ledger rows in range.
+     * `tax` is the signed VAT inside those rows (charges add, refunds take
+     * their share back; unknown counts as 0), so `net - tax` is the money kept
+     * without VAT.
      *
-     * @return array{gross: int, refunds: int, fees: int, net: int, count: int}
+     * @return array{gross: int, refunds: int, fees: int, net: int, count: int, tax: int}
      */
     public function ledgerTotals(\DateTimeInterface $from, \DateTimeInterface $until): array
     {
@@ -1015,6 +1030,7 @@ class ShopService
             ->selectRaw('SUM(fee) as fees')
             ->selectRaw('SUM(net) as net')
             ->selectRaw('COUNT(*) as count')
+            ->selectRaw($this->ledgerTaxSumSql())
             ->first();
 
         return [
@@ -1023,6 +1039,7 @@ class ShopService
             'fees' => (int) ($row->fees ?? 0),
             'net' => (int) ($row->net ?? 0),
             'count' => (int) ($row->count ?? 0),
+            'tax' => (int) ($row->tax ?? 0),
         ];
     }
 
@@ -1032,7 +1049,7 @@ class ShopService
      * to ledgerTotals. Before the provider columns are migrated everything is
      * reported as the one Stripe account.
      *
-     * @return \Illuminate\Support\Collection<int, array{provider: string, account: string|null, gross: int, refunds: int, fees: int, net: int, count: int}>
+     * @return \Illuminate\Support\Collection<int, array{provider: string, account: string|null, gross: int, refunds: int, fees: int, net: int, count: int, tax: int}>
      */
     public function ledgerTotalsByAccount(\DateTimeInterface $from, \DateTimeInterface $until): \Illuminate\Support\Collection
     {
@@ -1053,6 +1070,7 @@ class ShopService
             ->selectRaw('SUM(fee) as fees')
             ->selectRaw('SUM(net) as net')
             ->selectRaw('COUNT(*) as count')
+            ->selectRaw($this->ledgerTaxSumSql())
             ->orderBy('provider')
             ->get()
             ->map(fn ($r) => [
@@ -1063,6 +1081,7 @@ class ShopService
                 'fees' => (int) $r->fees,
                 'net' => (int) $r->net,
                 'count' => (int) $r->count,
+                'tax' => (int) $r->tax,
             ])
             ->values();
     }
@@ -1076,11 +1095,12 @@ class ShopService
      * `amount` = SUM(amount) over revenue-type rows = gross charges minus
      * refunds: the euros we kept, before Stripe's per-charge fee. This is the
      * figure that catches subscription payments the per-user product_purchases
-     * sum misses (they are stored there as amount=0).
+     * sum misses (they are stored there as amount=0). `tax` is the signed VAT
+     * inside `amount` (unknown counts as 0).
      *
      * @param  string|array<int,string>  $customerIds  Stripe customer id(s) (cus_…)
      * @param  string|array<int,string>  $emails  buyer email(s)
-     * @return array{amount: int, gross: int, refunds: int, fees: int, net: int, count: int}
+     * @return array{amount: int, gross: int, refunds: int, fees: int, net: int, count: int, tax: int}
      */
     public function customerLedgerTotals(
         string|array $customerIds = [],
@@ -1091,7 +1111,7 @@ class ShopService
         $customerIds = array_values(array_filter((array) $customerIds, static fn ($v) => is_string($v) && $v !== ''));
         $emails = array_values(array_filter((array) $emails, static fn ($v) => is_string($v) && $v !== ''));
 
-        $zero = ['amount' => 0, 'gross' => 0, 'refunds' => 0, 'fees' => 0, 'net' => 0, 'count' => 0];
+        $zero = ['amount' => 0, 'gross' => 0, 'refunds' => 0, 'fees' => 0, 'net' => 0, 'count' => 0, 'tax' => 0];
 
         // No identity to match on → nothing attributable. Guard so an empty
         // whereIn can never degrade into a match-everything.
@@ -1117,6 +1137,7 @@ class ShopService
             ->selectRaw('SUM(fee) as fees')
             ->selectRaw('SUM(net) as net')
             ->selectRaw('COUNT(*) as count')
+            ->selectRaw($this->ledgerTaxSumSql())
             ->first();
 
         return [
@@ -1126,6 +1147,7 @@ class ShopService
             'fees' => (int) ($row->fees ?? 0),
             'net' => (int) ($row->net ?? 0),
             'count' => (int) ($row->count ?? 0),
+            'tax' => (int) ($row->tax ?? 0),
         ];
     }
 
@@ -1161,12 +1183,15 @@ class ShopService
      * importer path). A refund's buyer is read from its underlying charge so
      * refunds net against the right customer.
      *
+     * Once the ledger has its `tax` column the row also carries `tax`, the VAT
+     * inside `amount` ({@see ledgerRowTax}); it is looked up only when
+     * `$withTax` is true, else null.
+     *
      * @return array<string, mixed>
      */
-    public function ledgerRowFromBalanceTransaction($txn, $source = null): array
+    public function ledgerRowFromBalanceTransaction($txn, $source = null, bool $withTax = true): array
     {
-        $source = is_object($source) ? $source : (is_object($txn->source ?? null) ? $txn->source : null);
-        $sourceId = $source?->id ?? (is_string($txn->source ?? null) ? $txn->source : null);
+        [$source, $sourceId] = $this->ledgerSourceOf($txn, $source);
 
         $chargeSource = is_object($source->charge ?? null) ? $source->charge : null;
 
@@ -1220,7 +1245,7 @@ class ShopService
             $net = -$fee;
         }
 
-        return [
+        $row = [
             'stripe_id' => $txn->id,
             'source_type' => $txn->type ?? null,
             'reporting_category' => $txn->reporting_category ?? null,
@@ -1236,6 +1261,33 @@ class ShopService
             'available_on' => isset($txn->available_on) ? Carbon::createFromTimestamp($txn->available_on) : null,
             'meta' => $meta,
         ];
+
+        // Only once the column exists, so the row still saves before the migration.
+        if ($this->ledgerHasTaxColumn()) {
+            $row['tax'] = null;
+            if ($withTax) {
+                [$row['tax'], $taxSource] = $this->ledgerRowTax($row['source_type'], $source, $sourceId, $amount, $meta['payment_intent'] ?? null);
+                if ($taxSource !== null) {
+                    $row['meta']['tax_source'] = $taxSource;
+                }
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * The object behind a balance transaction and its id: the explicit
+     * `$source`, else the transaction's own (expanded or id-only) `source`.
+     *
+     * @return array{0: object|null, 1: string|null}
+     */
+    protected function ledgerSourceOf($txn, $source): array
+    {
+        $source = is_object($source) ? $source : (is_object($txn->source ?? null) ? $txn->source : null);
+        $sourceId = $source?->id ?? (is_string($txn->source ?? null) ? $txn->source : null);
+
+        return [$source, is_string($sourceId) ? $sourceId : null];
     }
 
     /**
@@ -1291,11 +1343,36 @@ class ShopService
      * id). Never downgrades a known customer_id/email back to null — so the
      * real-time webhook, which resolves the buyer, is not clobbered by a later
      * importer pass that couldn't. Returns 'created' or 'updated'.
+     *
+     * The VAT (`tax`) is looked up once: a row whose VAT is already known for
+     * the same amount keeps it without a Stripe call, and a failed lookup never
+     * replaces a known value.
      */
     public function recordBalanceTransaction($txn, $source = null): string
     {
-        $row = $this->ledgerRowFromBalanceTransaction($txn, $source);
+        $row = $this->ledgerRowFromBalanceTransaction($txn, $source, false);
         $existing = $this->ledgerModel()::query()->where('stripe_id', $row['stripe_id'])->first();
+
+        if ($this->ledgerHasTaxColumn()) {
+            $existingSource = $existing ? ($existing->meta->tax_source ?? null) : null;
+            $known = $existing && ($existing->tax !== null || $existingSource === 'none');
+
+            if ($known && (int) $existing->amount === $row['amount']) {
+                [$tax, $taxSource] = [$existing->tax, $existingSource];
+            } else {
+                [$txnSource, $sourceId] = $this->ledgerSourceOf($txn, $source);
+                [$tax, $taxSource] = $this->ledgerRowTax($row['source_type'], $txnSource, $sourceId, $row['amount'], $row['meta']['payment_intent'] ?? null);
+
+                if ($tax === null && $taxSource === null && $existing?->tax !== null) {
+                    [$tax, $taxSource] = [$existing->tax, $existingSource];
+                }
+            }
+
+            $row['tax'] = $tax;
+            if ($taxSource !== null) {
+                $row['meta']['tax_source'] = $taxSource;
+            }
+        }
 
         if ($existing) {
             if ($row['customer_id'] === null && $existing->customer_id !== null) {
@@ -1335,10 +1412,7 @@ class ShopService
 
         try {
             Stripe::setApiKey($secret);
-            $charge = Charge::retrieve([
-                'id' => $chargeId,
-                'expand' => ['balance_transaction', 'refunds.data.balance_transaction'],
-            ]);
+            $charge = $this->retrieveLedgerSyncCharge($chargeId);
 
             $count = 0;
             if (is_object($charge->balance_transaction ?? null)) {
@@ -1362,6 +1436,463 @@ class ShopService
 
             return 0;
         }
+    }
+
+    /**
+     * The charge for {@see syncLedgerForCharge}, with its balance transaction,
+     * its refunds' balance transactions and its invoice expanded (the invoice
+     * holds the VAT, so expanding it saves a call). API versions without
+     * `Charge.invoice` (2025-03-31 and later) refuse that expansion; the charge
+     * is then fetched without it.
+     */
+    protected function retrieveLedgerSyncCharge(string $chargeId): object
+    {
+        $expand = ['balance_transaction', 'refunds.data.balance_transaction'];
+
+        try {
+            return Charge::retrieve(['id' => $chargeId, 'expand' => [...$expand, 'invoice']]);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            return Charge::retrieve(['id' => $chargeId, 'expand' => $expand]);
+        }
+    }
+
+    // =========================================================================
+    // LEDGER VAT
+    // =========================================================================
+
+    /**
+     * Ledger row types whose amount is a share of a charge, and so carries the
+     * charge's VAT: the charge itself (`charge`, `payment`), and what gives
+     * some of it back or returns it (`refund`, `payment_refund`, a bounced
+     * debit's `payment_failure_refund`, a failed refund's `refund_failure`).
+     *
+     * @return list<string>
+     */
+    protected function ledgerTaxTypes(): array
+    {
+        return ['charge', 'payment', 'refund', 'payment_refund', 'payment_failure_refund', 'refund_failure'];
+    }
+
+    /** Whether the ledger table has the `tax` column (a found column is remembered). */
+    protected function ledgerHasTaxColumn(): bool
+    {
+        if ($this->ledgerTaxColumn) {
+            return true;
+        }
+
+        $model = $this->ledgerModel();
+
+        return $this->ledgerTaxColumn = \Illuminate\Support\Facades\Schema::hasColumn((new $model)->getTable(), 'tax');
+    }
+
+    /** `SUM(tax) as tax` for the aggregates, or `0 as tax` before the column exists. */
+    protected function ledgerTaxSumSql(): string
+    {
+        return $this->ledgerHasTaxColumn() ? 'SUM(COALESCE(tax, 0)) as tax' : '0 as tax';
+    }
+
+    /**
+     * The VAT inside one ledger row's `amount`, signed like the amount, and
+     * where it came from: `[tax, source]`.
+     *
+     * The charge's VAT comes from Stripe: its invoice (`tax`, pro-rated by the
+     * captured amount over the invoice total, so a partly credit-paid invoice
+     * counts only the cash part), else the Checkout Session of its payment
+     * intent (`total_details.amount_tax`). A row then carries the share of it
+     * its amount is of the charge, so a refund carries the refunded share,
+     * negative. Prices may or may not include VAT; only Stripe's figures count.
+     *
+     * Returns `[null, 'none']` when Stripe holds no VAT data for the charge,
+     * `[null, null]` when the row is not a charge share or the lookup failed
+     * (it is tried again on the next import). Never throws.
+     *
+     * @return array{0: int|null, 1: string|null}
+     */
+    protected function ledgerRowTax(?string $type, ?object $source, ?string $sourceId, int $amount, ?string $paymentIntent): array
+    {
+        if (! in_array($type, $this->ledgerTaxTypes(), true)) {
+            return [null, null];
+        }
+
+        if ($amount === 0) {
+            return [0, null];
+        }
+
+        try {
+            [$charge, $chargeId] = $this->ledgerChargeOf($source, $sourceId);
+            $isCharge = in_array($type, ['charge', 'payment'], true);
+
+            $vat = $this->ledgerChargeVat($charge ?? $chargeId, $paymentIntent, ! $isCharge);
+
+            // A refund known only by its id: ask Stripe which charge it refunds.
+            if ($vat === null && $charge === null && $chargeId === null && $this->isLedgerRefundId($sourceId)) {
+                $refund = $this->stripeClient()->refunds->retrieve($sourceId);
+                $refundCharge = $refund->charge ?? null;
+                $refundIntent = $refund->payment_intent ?? null;
+
+                $vat = $this->ledgerChargeVat(
+                    is_object($refundCharge) ? $refundCharge : (is_string($refundCharge) ? $refundCharge : null),
+                    $paymentIntent ?? (is_string($refundIntent) ? $refundIntent : null),
+                    true,
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[shop:ledger] VAT lookup failed', ['source' => $sourceId, 'error' => $e->getMessage()]);
+
+            return [null, null];
+        }
+
+        if ($vat === null) {
+            return [null, null];
+        }
+
+        if ($vat['tax'] === null) {
+            return [null, 'none'];
+        }
+
+        return [$vat['base'] > 0 ? (int) round($amount * $vat['tax'] / $vat['base']) : 0, $vat['source']];
+    }
+
+    /**
+     * The charge a row belongs to, as `[object|null, id|null]`: the source
+     * itself when it is a charge (`ch_`, `py_`), the refunded charge when it is
+     * a refund.
+     *
+     * @return array{0: object|null, 1: string|null}
+     */
+    protected function ledgerChargeOf(?object $source, ?string $sourceId): array
+    {
+        $isCharge = static fn ($id) => is_string($id) && (str_starts_with($id, 'ch_') || str_starts_with($id, 'py_'));
+
+        if ($source !== null) {
+            $kind = $source->object ?? null;
+            $id = $source->id ?? null;
+
+            if ($kind === 'charge' || ($kind === null && $isCharge($id))) {
+                return [$source, is_string($id) ? $id : null];
+            }
+
+            if ($kind === 'refund' || ($kind === null && $this->isLedgerRefundId($id))) {
+                $charge = $source->charge ?? null;
+                if (is_object($charge)) {
+                    return [$charge, is_string($charge->id ?? null) ? $charge->id : null];
+                }
+
+                return [null, $isCharge($charge) ? $charge : null];
+            }
+
+            return [null, null];
+        }
+
+        return [null, $isCharge($sourceId) ? $sourceId : null];
+    }
+
+    protected function isLedgerRefundId(mixed $id): bool
+    {
+        return is_string($id) && (str_starts_with($id, 're_') || str_starts_with($id, 'pyr_'));
+    }
+
+    /**
+     * One charge's VAT as `{tax, base, source}`: `tax` is the VAT inside the
+     * charge's captured amount `base` (null when Stripe holds none, `source`
+     * then `none`). Remembered per charge and payment intent for the process,
+     * so a charge and its refunds cost one lookup. With `$fromLedger`, the
+     * charge's own ledger row is asked first (refunds of a known charge then
+     * need no Stripe call). Returns null when nothing identifies the charge or
+     * the lookup failed.
+     *
+     * @return array{tax: int|null, base: int, source: string}|null
+     */
+    protected function ledgerChargeVat(object|string|null $charge, ?string $paymentIntent = null, bool $fromLedger = false): ?array
+    {
+        $chargeId = is_object($charge) ? ($charge->id ?? null) : $charge;
+        $chargeId = is_string($chargeId) && $chargeId !== '' ? $chargeId : null;
+
+        if (is_object($charge) && $paymentIntent === null) {
+            $paymentIntent = $this->ledgerIdOf($charge->payment_intent ?? null);
+        }
+        $paymentIntent = is_string($paymentIntent) && $paymentIntent !== '' ? $paymentIntent : null;
+
+        $keys = array_values(array_filter([$chargeId, $paymentIntent ? 'pi:'.$paymentIntent : null]));
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $this->ledgerVatCache)) {
+                return $this->ledgerVatCache[$key] ?: null;
+            }
+        }
+
+        if ($keys === []) {
+            return null;
+        }
+
+        try {
+            $vat = $fromLedger ? $this->ledgerVatFromChargeRow($chargeId, $paymentIntent) : null;
+
+            if ($vat === null && ! is_object($charge)) {
+                if ($chargeId === null) {
+                    // Only a payment intent, and no ledger row has it: nothing
+                    // to ask Stripe here, and nothing to remember.
+                    return null;
+                }
+                $charge = $this->retrieveLedgerCharge($chargeId);
+            }
+
+            if ($vat === null && is_object($charge)) {
+                $vat = $this->ledgerVatOfCharge($charge);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[shop:ledger] VAT lookup failed', [
+                'charge' => $chargeId,
+                'payment_intent' => $paymentIntent,
+                'error' => $e->getMessage(),
+            ]);
+            $vat = null;
+        }
+
+        if (is_object($charge) && ($pi = $this->ledgerIdOf($charge->payment_intent ?? null))) {
+            $keys[] = 'pi:'.$pi;
+        }
+        foreach (array_unique($keys) as $key) {
+            // Failures are remembered too, so one broken charge is not asked
+            // again for each of its refunds in the same run.
+            $this->rememberLedgerLookup($this->ledgerVatCache, $key, $vat ?? false);
+        }
+
+        return $vat;
+    }
+
+    /**
+     * The VAT of a charge whose ledger row already has it, matched on the
+     * charge id or its payment intent.
+     *
+     * @return array{tax: int|null, base: int, source: string}|null
+     */
+    protected function ledgerVatFromChargeRow(?string $chargeId, ?string $paymentIntent): ?array
+    {
+        if ($chargeId === null && $paymentIntent === null) {
+            return null;
+        }
+
+        $row = $this->ledgerModel()::query()
+            ->whereIn('source_type', ['charge', 'payment'])
+            ->where('amount', '!=', 0)
+            ->where(function ($q) use ($chargeId, $paymentIntent) {
+                if ($chargeId !== null) {
+                    $q->orWhere('source_id', $chargeId);
+                }
+                if ($paymentIntent !== null) {
+                    $q->orWhere('meta->payment_intent', $paymentIntent);
+                }
+            })
+            ->where(fn ($q) => $q->whereNotNull('tax')->orWhere('meta->tax_source', 'none'))
+            ->first();
+
+        if (! $row) {
+            return null;
+        }
+
+        return [
+            'tax' => $row->tax === null ? null : (int) $row->tax,
+            'base' => (int) $row->amount,
+            'source' => (string) ($row->meta->tax_source ?? 'ledger'),
+        ];
+    }
+
+    /**
+     * The VAT inside a Stripe charge, from its invoice, else from the Checkout
+     * Session of its payment intent. `source` is `none` (and `tax` null) when
+     * neither exists.
+     *
+     * @return array{tax: int|null, base: int, source: string}
+     */
+    protected function ledgerVatOfCharge(object $charge): array
+    {
+        $captured = (int) ($charge->amount_captured ?? $charge->amount ?? 0);
+
+        $invoice = $charge->invoice ?? null;
+        if (is_string($invoice) && $invoice !== '') {
+            $invoice = $this->retrieveLedgerInvoice($invoice);
+        }
+
+        if (is_object($invoice)) {
+            return [
+                'tax' => $this->ledgerProRate($this->ledgerInvoiceTax($invoice), $captured, (int) ($invoice->total ?? 0)),
+                'base' => $captured,
+                'source' => 'invoice',
+            ];
+        }
+
+        $paymentIntent = $this->ledgerIdOf($charge->payment_intent ?? null);
+        $session = $paymentIntent ? $this->retrieveLedgerCheckoutSession($paymentIntent) : null;
+
+        if (is_object($session)) {
+            return [
+                'tax' => $this->ledgerProRate((int) ($session->total_details->amount_tax ?? 0), $captured, (int) ($session->amount_total ?? 0)),
+                'base' => $captured,
+                'source' => 'checkout_session',
+            ];
+        }
+
+        return ['tax' => null, 'base' => $captured, 'source' => 'none'];
+    }
+
+    /**
+     * An invoice's VAT: `tax` (API versions up to 2025-02-24), else the sum of
+     * `total_tax_amounts`, else of `total_taxes` (2025-03-31 and later).
+     * Inclusive and exclusive taxes both count.
+     */
+    protected function ledgerInvoiceTax(object $invoice): int
+    {
+        if (isset($invoice->tax) && is_numeric($invoice->tax)) {
+            return (int) $invoice->tax;
+        }
+
+        foreach (['total_tax_amounts', 'total_taxes'] as $field) {
+            $lines = $invoice->{$field} ?? null;
+            if ($lines !== null) {
+                $sum = 0;
+                foreach ($lines as $line) {
+                    $sum += (int) ($line->amount ?? 0);
+                }
+
+                return $sum;
+            }
+        }
+
+        return 0;
+    }
+
+    /** The share of `$tax` (on `$total`) the captured cash pays, capped at all of it. */
+    protected function ledgerProRate(int $tax, int $captured, int $total): int
+    {
+        if ($total <= 0 || $captured <= 0) {
+            return 0;
+        }
+
+        return (int) round($tax * min($captured, $total) / $total);
+    }
+
+    protected function ledgerIdOf(mixed $value): ?string
+    {
+        $id = is_object($value) ? ($value->id ?? null) : $value;
+
+        return is_string($id) && $id !== '' ? $id : null;
+    }
+
+    /** A charge with its invoice expanded (without, where the API version has no `Charge.invoice`). */
+    protected function retrieveLedgerCharge(string $chargeId): object
+    {
+        try {
+            return $this->stripeClient()->charges->retrieve($chargeId, ['expand' => ['invoice']]);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            return $this->stripeClient()->charges->retrieve($chargeId);
+        }
+    }
+
+    protected function retrieveLedgerInvoice(string $invoiceId): object
+    {
+        $key = 'invoice:'.$invoiceId;
+        if (! array_key_exists($key, $this->ledgerStripeCache)) {
+            $this->rememberLedgerLookup($this->ledgerStripeCache, $key, $this->stripeClient()->invoices->retrieve($invoiceId));
+        }
+
+        return $this->ledgerStripeCache[$key];
+    }
+
+    /** The Checkout Session that took the payment intent, or null when none did. */
+    protected function retrieveLedgerCheckoutSession(string $paymentIntent): ?object
+    {
+        $key = 'session:'.$paymentIntent;
+        if (! array_key_exists($key, $this->ledgerStripeCache)) {
+            $list = $this->stripeClient()->checkout->sessions->all(['payment_intent' => $paymentIntent, 'limit' => 1]);
+            $this->rememberLedgerLookup($this->ledgerStripeCache, $key, $list->data[0] ?? null);
+        }
+
+        return $this->ledgerStripeCache[$key];
+    }
+
+    /** Remember a lookup, dropping the oldest once a long-running process holds many. */
+    protected function rememberLedgerLookup(array &$cache, string $key, mixed $value): void
+    {
+        unset($cache[$key]);
+        $cache[$key] = $value;
+
+        if (count($cache) > 2000) {
+            array_shift($cache);
+        }
+    }
+
+    /**
+     * Fill `tax` on the Stripe charge, payment and refund rows that have none
+     * yet, from Stripe's own data (read-only; see {@see ledgerRowTax}). Charges
+     * go first, so their refunds reuse the charge's VAT without another call.
+     * Idempotent: rows that got a value are not touched again, and rows Stripe
+     * holds no VAT data for are marked `meta.tax_source = none` and skipped on
+     * later runs unless `$recheck`. A failed lookup leaves the row NULL and
+     * goes on. `$dryRun` writes nothing. `$progress` is called with the running
+     * totals after every row.
+     *
+     * @return array{scanned: int, filled: int, tax: int, none: int, failed: int}
+     */
+    public function backfillLedgerTax(
+        bool $dryRun = false,
+        ?\DateTimeInterface $since = null,
+        bool $recheck = false,
+        ?callable $progress = null,
+    ): array {
+        $totals = ['scanned' => 0, 'filled' => 0, 'tax' => 0, 'none' => 0, 'failed' => 0];
+
+        if (! $this->ledgerHasTaxColumn()) {
+            return $totals;
+        }
+
+        $model = $this->ledgerModel();
+        $hasProvider = \Illuminate\Support\Facades\Schema::hasColumn((new $model)->getTable(), 'provider');
+        $chargeTypes = ['charge', 'payment'];
+
+        foreach ([$chargeTypes, array_values(array_diff($this->ledgerTaxTypes(), $chargeTypes))] as $types) {
+            $rows = $model::query()
+                ->whereNull('tax')
+                ->whereIn('source_type', $types)
+                ->when($hasProvider, fn ($q) => $q->where('provider', 'stripe'))
+                ->when($since, fn ($q) => $q->where('created', '>=', $since))
+                ->lazyById(200);
+
+            foreach ($rows as $row) {
+                $meta = json_decode(json_encode($row->meta ?? new \stdClass), true) ?: [];
+                if (! $recheck && ($meta['tax_source'] ?? null) === 'none') {
+                    continue;
+                }
+
+                $totals['scanned']++;
+                [$tax, $taxSource] = $this->ledgerRowTax(
+                    $row->source_type,
+                    null,
+                    $row->source_id,
+                    (int) $row->amount,
+                    $meta['payment_intent'] ?? null,
+                );
+
+                if ($tax === null) {
+                    $taxSource === 'none' ? $totals['none']++ : $totals['failed']++;
+                } else {
+                    $totals['filled']++;
+                    $totals['tax'] += $tax;
+                }
+
+                if (! $dryRun && ($tax !== null || $taxSource !== null)) {
+                    if ($taxSource !== null) {
+                        $meta['tax_source'] = $taxSource;
+                    }
+                    $row->forceFill(['tax' => $tax, 'meta' => $meta])->save();
+                }
+
+                if ($progress) {
+                    $progress($totals);
+                }
+            }
+        }
+
+        return $totals;
     }
 
     // =========================================================================

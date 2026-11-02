@@ -14,13 +14,19 @@ use Stripe\Stripe;
  * customer — so a charge whose customer was deleted (or never existed locally)
  * is still recorded. Idempotent: upserts on the `txn_` id and preserves Stripe's
  * own `created`/`available_on` timestamps.
+ *
+ * Each charge-backed row also gets its VAT (`tax`) from Stripe, looked up once
+ * per row. `--backfill-tax` skips the import and only fills `tax` on existing
+ * charge, payment and refund rows that have none yet (read-only against Stripe).
  */
 class ShopImportStripeLedgerCommand extends Command
 {
     protected $signature = 'shop:import-stripe-ledger
                             {--dry-run : Report what would change, write nothing}
                             {--since= : Only import transactions created on/after this date (YYYY-MM-DD)}
-                            {--limit=100 : Stripe page size (max 100)}';
+                            {--limit=100 : Stripe page size (max 100)}
+                            {--backfill-tax : Only fill the VAT (tax) of existing charge, payment and refund rows that have none yet}
+                            {--recheck : With --backfill-tax, also retry rows Stripe held no VAT data for last time}';
 
     protected $description = 'Mirror all Stripe balance transactions into the local ledger (user-independent).';
 
@@ -40,6 +46,10 @@ class ShopImportStripeLedgerCommand extends Command
 
         $dry = (bool) $this->option('dry-run');
         $model = config('shop.models.stripe_transaction', \Blax\Shop\Models\StripeTransaction::class);
+
+        if ($this->option('backfill-tax')) {
+            return $this->backfillTax($dry);
+        }
 
         $params = [
             'limit' => max(1, min(100, (int) $this->option('limit'))),
@@ -112,6 +122,45 @@ class ShopImportStripeLedgerCommand extends Command
      */
     protected function rowFromTransaction($txn): array
     {
-        return \Blax\Shop\Facades\Shop::ledgerRowFromBalanceTransaction($txn);
+        // Without the VAT: recordBalanceTransaction() looks it up only where needed.
+        return \Blax\Shop\Facades\Shop::ledgerRowFromBalanceTransaction($txn, null, false);
+    }
+
+    /** `--backfill-tax`: fill the missing VAT of existing rows from Stripe. */
+    protected function backfillTax(bool $dry): int
+    {
+        $model = config('shop.models.stripe_transaction', \Blax\Shop\Models\StripeTransaction::class);
+        if (! \Illuminate\Support\Facades\Schema::hasColumn((new $model)->getTable(), 'tax')) {
+            $this->error('The ledger has no `tax` column yet. Run the migration that adds it first.');
+
+            return self::FAILURE;
+        }
+
+        $since = $this->option('since') ? Carbon::parse($this->option('since'))->startOfDay() : null;
+
+        $totals = \Blax\Shop\Facades\Shop::backfillLedgerTax(
+            $dry,
+            $since,
+            (bool) $this->option('recheck'),
+            function (array $t) {
+                if ($t['scanned'] % 100 === 0) {
+                    $this->line(sprintf('  … %d rows, %d filled, %s VAT', $t['scanned'], $t['filled'], number_format($t['tax'] / 100, 2)));
+                }
+            },
+        );
+
+        $this->newLine();
+        $this->info(sprintf(
+            '%s VAT for %d of %d rows without it: %s in total. Stripe holds no VAT data for %d, %d lookups failed%s.',
+            $dry ? '[dry-run] would fill' : 'Filled',
+            $totals['filled'],
+            $totals['scanned'],
+            number_format($totals['tax'] / 100, 2),
+            $totals['none'],
+            $totals['failed'],
+            $totals['failed'] > 0 ? ' (left empty, tried again on the next run)' : ''
+        ));
+
+        return self::SUCCESS;
     }
 }
