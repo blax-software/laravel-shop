@@ -2,7 +2,16 @@
     "name": "blax-software/laravel-shop",
     "description": "A comprehensive headless e-commerce package for Laravel",
     "type": "library",
+    "homepage": "https://www.blax.at/laravel",
     "license": "MIT",
+    "authors": [
+        {
+            "name": "Blax Software",
+            "email": "office@blax.at",
+            "homepage": "https://www.blax.at",
+            "role": "Maintainer"
+        }
+    ],
     "autoload": {
         "psr-4": {
             "Blax\\Shop\\": "src/",

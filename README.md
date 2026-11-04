@@ -223,6 +223,10 @@ run in roughly a minute with no external services required.
 
 For more detailed documentation, please refer to the `docs/` directory in the repository.
 
+## Maintainer
+
+Maintained by [Blax Software](https://www.blax.at/laravel), a software practice in Austria. Bugs and pull requests go to this repository; for project work, write to office@blax.at.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
