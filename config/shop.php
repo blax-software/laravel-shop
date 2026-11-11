@@ -247,6 +247,24 @@ return [
         // product is sold in several named prices. Off by default.
         'line_item_price_name' => env('SHOP_STRIPE_LINE_ITEM_PRICE_NAME', false),
 
+        /*
+         * Stripe Checkout Sessions built by Cart::checkoutSession().
+         *
+         * `payment_method_types`: the list sent to Stripe. ['card'] is the
+         * historic behaviour. null (or []) leaves the key out, so the payment
+         * methods enabled in the Stripe Dashboard apply (PayPal, SEPA, Link,
+         * wallets, …). A config without this key keeps ['card'].
+         *
+         * `adaptive_pricing`: null leaves the key out (the Dashboard setting
+         * applies); true/false sends adaptive_pricing.enabled. Stripe's
+         * conversion to the buyer's currency hides PayPal, Klarna and Revolut
+         * Pay on converted sessions.
+         */
+        'checkout' => [
+            'payment_method_types' => ['card'],
+            'adaptive_pricing' => null,
+        ],
+
         // Webhook events that the shop package listens for
         // You can customize this list to add/remove events as needed
         'webhook_events' => [

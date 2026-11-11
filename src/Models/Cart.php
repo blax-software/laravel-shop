@@ -2622,9 +2622,12 @@ class Cart extends Model
             ? $cancel_url.'&cart_id='.$this->id
             : $cancel_url.'?cart_id='.$this->id;
 
-        // Prepare session parameters
+        // Prepare session parameters. payment_method_types comes from
+        // shop.stripe.checkout.payment_method_types (['card'] unless configured;
+        // null leaves it out so the Dashboard's payment methods apply).
+        $methodTypes = $this->checkoutPaymentMethodTypes();
         $sessionParams = [
-            'payment_method_types' => ['card'],
+            ...($methodTypes !== null ? ['payment_method_types' => $methodTypes] : []),
             'currency' => strtolower($this->currency ?? config('shop.currency', 'usd')),
             'line_items' => $lineItems,
             'mode' => $mode,
@@ -2635,6 +2638,10 @@ class Cart extends Model
                 'cart_id' => $this->id,
             ], $options['metadata'] ?? []),
         ];
+
+        if ($adaptivePricing = $this->checkoutAdaptivePricing()) {
+            $sessionParams['adaptive_pricing'] = $adaptivePricing;
+        }
 
         // Propagate the cart id onto the subscription itself so invoice/
         // subscription webhooks can map back to this cart, not just the
@@ -2686,6 +2693,61 @@ class Cart extends Model
 
             throw $e;
         }
+    }
+
+    /**
+     * The `payment_method_types` sent to Stripe Checkout, from
+     * `shop.stripe.checkout.payment_method_types`. A config without the key
+     * keeps the historic ['card']; null or [] returns null (leave the key out,
+     * so the payment methods enabled in the Stripe Dashboard apply). A
+     * comma-separated string is accepted too.
+     *
+     * @return list<string>|null
+     */
+    protected function checkoutPaymentMethodTypes(): ?array
+    {
+        if (! config()->has('shop.stripe.checkout.payment_method_types')) {
+            return ['card'];
+        }
+
+        $types = config('shop.stripe.checkout.payment_method_types');
+
+        if (is_string($types)) {
+            $types = explode(',', $types);
+        }
+
+        if (! is_array($types)) {
+            return null;
+        }
+
+        $types = array_values(array_unique(array_filter(
+            array_map(static fn ($type) => trim((string) $type), $types),
+            static fn (string $type) => $type !== '',
+        )));
+
+        return $types === [] ? null : $types;
+    }
+
+    /**
+     * The `adaptive_pricing` block for Stripe Checkout, from
+     * `shop.stripe.checkout.adaptive_pricing`: null (the default) leaves it
+     * out, true/false sends ['enabled' => bool].
+     *
+     * @return array{enabled: bool}|null
+     */
+    protected function checkoutAdaptivePricing(): ?array
+    {
+        $enabled = config('shop.stripe.checkout.adaptive_pricing');
+
+        if ($enabled === null || $enabled === '') {
+            return null;
+        }
+
+        $enabled = is_bool($enabled)
+            ? $enabled
+            : filter_var($enabled, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        return $enabled === null ? null : ['enabled' => $enabled];
     }
 
     /**

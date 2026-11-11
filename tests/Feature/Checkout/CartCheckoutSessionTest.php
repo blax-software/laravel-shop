@@ -645,6 +645,52 @@ class CartCheckoutSessionTest extends TestCase
     /**
      * Mock Stripe Checkout Session creation to avoid actual API calls
      */
+    #[Test]
+    public function payment_method_types_and_adaptive_pricing_follow_the_config()
+    {
+        config(['shop.stripe.enabled' => true]);
+        config(['services.stripe.secret' => 'sk_test_fake']);
+
+        $product = Product::factory()->create(['name' => 'PM', 'manage_stock' => false]);
+        ProductPrice::factory()->create([
+            'purchasable_id' => $product->id,
+            'purchasable_type' => Product::class,
+            'unit_amount' => 500,
+            'currency' => 'EUR',
+            'is_default' => true,
+            'type' => 'one_time',
+            'interval' => null,
+            'interval_count' => null,
+        ]);
+        $this->cart->addToCart($product, 1);
+
+        $captured = null;
+        \Stripe\Checkout\Session::$createCallback = function ($params) use (&$captured) {
+            $captured = $params;
+            $s = new \stdClass();
+            $s->id = 'mock';
+
+            return $s;
+        };
+        $urls = ['success_url' => 'https://example.com/s', 'cancel_url' => 'https://example.com/c'];
+
+        // Default: today's card-only page, no adaptive_pricing key.
+        $this->cart->checkoutSession($urls);
+        $this->assertSame(['card'], $captured['payment_method_types']);
+        $this->assertArrayNotHasKey('adaptive_pricing', $captured);
+
+        // null leaves the key out, so the Dashboard's methods (PayPal, ...) apply.
+        config(['shop.stripe.checkout.payment_method_types' => null, 'shop.stripe.checkout.adaptive_pricing' => false]);
+        $this->cart->checkoutSession($urls);
+        $this->assertArrayNotHasKey('payment_method_types', $captured);
+        $this->assertSame(['enabled' => false], $captured['adaptive_pricing']);
+
+        config(['shop.stripe.checkout.payment_method_types' => ['card', 'paypal'], 'shop.stripe.checkout.adaptive_pricing' => true]);
+        $this->cart->checkoutSession($urls);
+        $this->assertSame(['card', 'paypal'], $captured['payment_method_types']);
+        $this->assertSame(['enabled' => true], $captured['adaptive_pricing']);
+    }
+
     protected function mockStripeCheckoutSession()
     {
         // Create a simple mock that returns a session object
