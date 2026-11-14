@@ -1227,6 +1227,16 @@ class ShopService
             $meta['payment_intent'] = $paymentIntent;
         }
 
+        // The importer expands only the refund, which names no customer: take
+        // the buyer of the same payment's charge row, so the refund nets
+        // against them in the per-customer totals.
+        if (! is_string($customerId) && ! is_string($customerEmail)) {
+            [$customerId, $customerEmail] = $this->ledgerBuyerOfPayment(
+                $meta['payment_intent'] ?? null,
+                is_string($source->charge ?? null) ? $source->charge : null,
+            );
+        }
+
         if ($external = $this->externallySettledAmount($txn, $source)) {
             $meta['settled_outside_stripe'] = true;
             $meta['stripe_amount'] = $amount;
@@ -1288,6 +1298,39 @@ class ShopService
         $sourceId = $source?->id ?? (is_string($txn->source ?? null) ? $txn->source : null);
 
         return [$source, is_string($sourceId) ? $sourceId : null];
+    }
+
+    /**
+     * The buyer the ledger already holds for a payment: its charge row, found
+     * by payment intent or charge id. [null, null] when that row is not
+     * recorded yet or names no buyer either.
+     *
+     * @return array{0: string|null, 1: string|null}
+     */
+    protected function ledgerBuyerOfPayment(?string $paymentIntent, ?string $chargeId): array
+    {
+        if (! $paymentIntent && ! $chargeId) {
+            return [null, null];
+        }
+
+        try {
+            $row = $this->ledgerModel()::query()
+                ->whereIn('source_type', ['charge', 'payment'])
+                ->where(fn ($q) => $q->whereNotNull('customer_id')->orWhereNotNull('customer_email'))
+                ->where(function ($q) use ($paymentIntent, $chargeId) {
+                    if ($paymentIntent) {
+                        $q->orWhere('meta->payment_intent', $paymentIntent);
+                    }
+                    if ($chargeId) {
+                        $q->orWhere('source_id', $chargeId);
+                    }
+                })
+                ->first(['customer_id', 'customer_email']);
+        } catch (\Throwable $e) {
+            return [null, null];
+        }
+
+        return [$row?->customer_id, $row?->customer_email];
     }
 
     /**

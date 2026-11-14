@@ -255,6 +255,37 @@ class LedgerMetricsTest extends TestCase
     }
 
     #[Test]
+    public function imported_refund_without_a_customer_takes_the_buyer_of_its_charge(): void
+    {
+        // The charge row knows the buyer; the importer expands only the refund,
+        // which carries the payment intent and charge id but no customer (prod
+        // shape of the Nov 2025 PayPal refunds).
+        $this->txn(['amount' => 1900, 'fee' => 57, 'net' => 1843, 'source_id' => 'py_r1', 'customer_id' => 'cus_R', 'meta' => ['payment_intent' => 'pi_r1']]);
+        $this->txn(['amount' => 280, 'fee' => 8, 'net' => 272, 'source_id' => 'ch_r2', 'customer_email' => 'r2@x.io']);
+
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_r1', 'type' => 'payment_refund', 'amount' => -1900, 'fee' => 0, 'net' => -1900, 'currency' => 'eur', 'created' => 1730000000,
+            'source' => (object) ['id' => 'pyr_r1', 'object' => 'refund', 'charge' => 'py_r1', 'payment_intent' => 'pi_r1'],
+        ]);
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_r2', 'type' => 'refund', 'amount' => -280, 'fee' => 0, 'net' => -280, 'currency' => 'eur', 'created' => 1730000000,
+            'source' => (object) ['id' => 're_r2', 'object' => 'refund', 'charge' => 'ch_r2'],
+        ]);
+        // No charge row to learn from: the refund stays without a buyer.
+        Shop::recordBalanceTransaction((object) [
+            'id' => 'txn_r3', 'type' => 'refund', 'amount' => -500, 'fee' => 0, 'net' => -500, 'currency' => 'eur', 'created' => 1730000000,
+            'source' => (object) ['id' => 're_r3', 'object' => 'refund', 'charge' => 'ch_unknown', 'payment_intent' => 'pi_unknown'],
+        ]);
+
+        $this->assertSame('cus_R', StripeTransaction::where('stripe_id', 'txn_r1')->value('customer_id'));
+        $this->assertSame(0, Shop::customerLedgerTotals('cus_R')['amount']);
+        $this->assertSame('r2@x.io', StripeTransaction::where('stripe_id', 'txn_r2')->value('customer_email'));
+        $this->assertSame(0, Shop::customerLedgerTotals([], 'r2@x.io')['amount']);
+        $this->assertNull(StripeTransaction::where('stripe_id', 'txn_r3')->value('customer_id'));
+        $this->assertNull(StripeTransaction::where('stripe_id', 'txn_r3')->value('customer_email'));
+    }
+
+    #[Test]
     public function zero_amount_rows_without_a_paid_charge_stay_zero(): void
     {
         // No expanded charge to read from, or a charge that captured nothing:
